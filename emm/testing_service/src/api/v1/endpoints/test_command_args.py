@@ -17,6 +17,7 @@ from src.schemas.test_command_arg import (
     TestCommandArgCreate,
     TestCommandArgResponse,
     TestCommandArgUpdate,
+    TestCommandArgsCopy,
 )
 from src.services import test_command_arg as svc
 
@@ -69,6 +70,31 @@ async def create_command_arg(
     """Create слота. Доступ: `(test_definition, *, update)`."""
     obj = await svc.create_command_arg(db, identity, test_id, body)
     return TestCommandArgResponse.model_validate(obj)
+
+
+@router.post(
+    "/copy-from",
+    response_model=list[TestCommandArgResponse],
+    summary="Скопировать параметры другого теста",
+    description=(
+        "Заменяет все слоты текущего теста независимой копией слотов источника. "
+        "Порядок, литералы, ссылки на переменные и переопределения сохраняются. "
+        "Замена выполняется целиком в одной транзакции. Нужен update на test_definition."
+    ),
+    responses={
+        403: {"description": "Нет update на test_definition."},
+        404: {"description": "Текущий тест или источник не найден."},
+        422: {"description": "Источник совпадает с текущим тестом или не содержит параметров."},
+    },
+)
+async def copy_command_args(
+    test_id: str,
+    body: TestCommandArgsCopy,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> list[TestCommandArgResponse]:
+    items = await svc.copy_command_args(db, identity, test_id, body.source_test_id)
+    return [TestCommandArgResponse.model_validate(i) for i in items]
 
 
 @router.patch(

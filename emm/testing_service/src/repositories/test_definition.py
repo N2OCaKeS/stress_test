@@ -6,9 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models import TestDefinition
 
 
-async def get_by_id(db: AsyncSession, test_id: str) -> TestDefinition | None:
+async def get_by_id(
+    db: AsyncSession, test_id: str, *, for_update: bool = False,
+) -> TestDefinition | None:
     """SELECT по PK."""
     stmt = select(TestDefinition).where(TestDefinition.id == test_id)
+    if for_update:
+        stmt = stmt.with_for_update()
     return (await db.execute(stmt)).scalar_one_or_none()
 
 

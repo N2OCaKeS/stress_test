@@ -32,6 +32,14 @@ class TestCommandArgCreate(BaseModel):
     )
 
 
+class TestCommandArgsCopy(BaseModel):
+    """Заменить параметры текущего теста копией параметров другого теста."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_test_id: str = Field(min_length=1, max_length=64)
+
+
 class TestCommandArgUpdate(BaseModel):
     """Тело PATCH /test-definitions/{test_id}/args/{arg_id}. Все поля опциональны."""
 

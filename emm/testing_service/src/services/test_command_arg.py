@@ -29,9 +29,9 @@ from src.utils.ids import test_command_arg_id as new_id
 logger = logging.getLogger(__name__)
 
 
-async def _require_test(db: AsyncSession, test_id: str):
+async def _require_test(db: AsyncSession, test_id: str, *, for_update: bool = False):
     """404, если тест не существует — слоты не бывают сиротами."""
-    test = await test_definition_repo.get_by_id(db, test_id)
+    test = await test_definition_repo.get_by_id(db, test_id, for_update=for_update)
     if test is None:
         raise NotFoundError(
             error_code="TEST_DEFINITION_NOT_FOUND",
@@ -107,7 +107,7 @@ async def create_command_arg(
         )
         raise
 
-    await _require_test(db, test_id)
+    await _require_test(db, test_id, for_update=True)
     _validate_kind_combo(payload.kind, payload.literal_value, payload.variable_id)
     if payload.kind == CommandArgKind.VARIABLE:
         await _require_variable(db, payload.variable_id)
@@ -152,7 +152,7 @@ async def update_command_arg(
         )
         raise
 
-    await _require_test(db, test_id)
+    await _require_test(db, test_id, for_update=True)
     obj = await repo.get_by_id(db, arg_id)
     if obj is None or obj.test_id != test_id:
         audit_service.emit(
@@ -207,7 +207,7 @@ async def delete_command_arg(
         )
         raise
 
-    await _require_test(db, test_id)
+    await _require_test(db, test_id, for_update=True)
     obj = await repo.get_by_id(db, arg_id)
     if obj is None or obj.test_id != test_id:
         audit_service.emit(
@@ -228,6 +228,61 @@ async def delete_command_arg(
         status="success", allowed=True,
         details={"test_id": test_id},
     )
+
+
+async def copy_command_args(
+    db: AsyncSession, identity: Identity, test_id: str, source_test_id: str,
+) -> list[TestCommandArg]:
+    """Заменить слоты копией из другого теста в одной транзакции."""
+    details = {"source_test_id": source_test_id}
+    try:
+        await permissions.require_action(db, identity, EntityType.TEST_DEFINITION, Action.UPDATE)
+    except AuthorizationError:
+        audit_service.emit(
+            "test_command_arg.copy", target_id=test_id, target_type="test_definition",
+            status="denied", allowed=False,
+            details={**details, "reason": "permission_denied"},
+        )
+        raise
+
+    try:
+        if test_id == source_test_id:
+            raise DomainValidationError(
+                error_code="COMMAND_COPY_SAME_TEST",
+                message="Choose another test to copy parameters from",
+            )
+        await _require_test(db, test_id, for_update=True)
+        await _require_test(db, source_test_id)
+        source = await repo.list_by_test(db, source_test_id)
+        if not source:
+            raise DomainValidationError(
+                error_code="COMMAND_COPY_SOURCE_EMPTY",
+                message="The source test has no command parameters",
+            )
+
+        await repo.delete_by_test(db, test_id)
+        copied = []
+        for position, arg in enumerate(source):
+            copied.append(await repo.create(db, {
+                "id": new_id(), "test_id": test_id, "position": position,
+                "kind": arg.kind, "literal_value": arg.literal_value,
+                "variable_id": arg.variable_id, "override_value": arg.override_value,
+            }))
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        audit_service.emit(
+            "test_command_arg.copy", target_id=test_id, target_type="test_definition",
+            status="failure", allowed=True,
+            details={**details, "reason": getattr(exc, "error_code", type(exc).__name__)},
+        )
+        raise
+
+    audit_service.emit(
+        "test_command_arg.copy", target_id=test_id, target_type="test_definition",
+        status="success", allowed=True, details={**details, "count": len(copied)},
+    )
+    return copied
 
 
 async def _resolve_variable_slot(db: AsyncSession, slot: TestCommandArg, launch_context: dict[str, str]):

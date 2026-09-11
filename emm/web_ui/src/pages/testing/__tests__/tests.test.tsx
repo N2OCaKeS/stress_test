@@ -20,10 +20,12 @@ vi.mock("@/api/testing/testDefinitions", () => ({
 }));
 
 const listTestCommandArgsMock = vi.fn();
+const copyTestCommandArgsMock = vi.fn();
 const createTestCommandArgMock = vi.fn();
 const updateTestCommandArgMock = vi.fn();
 const deleteTestCommandArgMock = vi.fn();
 vi.mock("@/api/testing/testCommandArgs", () => ({
+  copyTestCommandArgs: (...args: unknown[]) => copyTestCommandArgsMock(...args),
   listTestCommandArgs: (...args: unknown[]) => listTestCommandArgsMock(...args),
   createTestCommandArg: (...args: unknown[]) => createTestCommandArgMock(...args),
   updateTestCommandArg: (...args: unknown[]) => updateTestCommandArgMock(...args),
@@ -155,6 +157,8 @@ beforeEach(() => {
   listDepartmentsMock.mockResolvedValue([]);
   listTestStandsMock.mockResolvedValue({ items: [], total: 0, limit: 500, offset: 0 });
   listTestCommandArgsMock.mockResolvedValue([...SLOTS]);
+  copyTestCommandArgsMock.mockReset();
+  copyTestCommandArgsMock.mockResolvedValue([...SLOTS]);
   listGlobalVariablesMock.mockResolvedValue({ items: VARIABLES, total: VARIABLES.length, limit: 200, offset: 0 });
   createTestDefinitionMock.mockResolvedValue(TESTS[0]);
   updateTestDefinitionMock.mockResolvedValue(TESTS[0]);
@@ -283,6 +287,69 @@ describe("TestsWorkzone — конструктор команды", () => {
     expect(await screen.findByText("backup_image.py")).toBeInTheDocument();
     expect(screen.getByText("RC")).toBeInTheDocument();
     expect(listTestCommandArgsMock).toHaveBeenCalledWith("td_1");
+  });
+
+  async function chooseCopySource() {
+    await openConstructor();
+    await screen.findByText("backup_image.py");
+    fireEvent.click(screen.getByRole("button", { name: "Скопировать из" }));
+    expect(screen.getByRole("button", { name: "ОК" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Выберите тест для копирования" }));
+    expect(screen.queryByRole("option", { name: /FS-EXT4-FILL/ })).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("option", { name: /DB-PG-TPCC/ }));
+  }
+
+  it("копирует параметры выбранного теста и позволяет редактировать копию", async () => {
+    const copied = [{ ...SLOTS[0], id: "arg_copy", literal_value: "--copied-test" }];
+    await chooseCopySource();
+    expect(screen.getByText(/Параметры выбранного теста заменят текущие/)).toBeInTheDocument();
+    copyTestCommandArgsMock.mockResolvedValue(copied);
+    listTestCommandArgsMock.mockResolvedValue(copied);
+    fireEvent.click(screen.getByRole("button", { name: "ОК" }));
+    await screen.findByText("--copied-test");
+    expect(copyTestCommandArgsMock).toHaveBeenCalledWith("td_1", "td_2");
+    expect(createTestDefinitionMock).not.toHaveBeenCalled();
+    expect(screen.queryByText("backup_image.py")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Изменить слот" }));
+    fireEvent.change(screen.getByDisplayValue("--copied-test"), { target: { value: "--my-test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(updateTestCommandArgMock).toHaveBeenCalledWith(
+      "td_1", "arg_copy", expect.objectContaining({ literal_value: "--my-test" }),
+    ));
+  });
+
+  it("отмена копирования сохраняет параметры", async () => {
+    await chooseCopySource();
+    fireEvent.click(screen.getByRole("button", { name: "Отмена" }));
+    expect(copyTestCommandArgsMock).not.toHaveBeenCalled();
+    expect(screen.getByText("backup_image.py")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Скопировать из" })).toBeInTheDocument();
+  });
+
+  it("ошибка копирования сохраняет параметры и позволяет повторить запрос", async () => {
+    await chooseCopySource();
+    copyTestCommandArgsMock.mockRejectedValueOnce(new Error("network down"));
+    fireEvent.click(screen.getByRole("button", { name: "ОК" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("network down");
+    expect(screen.getByText("backup_image.py")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "ОК" }));
+    await waitFor(() => expect(copyTestCommandArgsMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("button", { name: "Скопировать из" })).toBeInTheDocument();
+  });
+
+  it("блокирует повторную отправку и редактирование во время копирования", async () => {
+    await chooseCopySource();
+    let resolveCopy!: (value: TestCommandArg[]) => void;
+    copyTestCommandArgsMock.mockImplementation(() => new Promise<TestCommandArg[]>((resolve) => {
+      resolveCopy = resolve;
+    }));
+    fireEvent.click(screen.getByRole("button", { name: "ОК" }));
+    expect(screen.getByRole("button", { name: "Копирование…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Добавить слот" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Изменить слот" })[0]).toBeDisabled();
+    resolveCopy(SLOTS);
+    await screen.findByRole("button", { name: "Скопировать из" });
+    expect(copyTestCommandArgsMock).toHaveBeenCalledTimes(1);
   });
 
   it("добавление литерал-слота вызывает createTestCommandArg с kind=literal", async () => {

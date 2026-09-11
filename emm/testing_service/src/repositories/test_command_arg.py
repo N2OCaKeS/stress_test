@@ -1,6 +1,6 @@
 """TestCommandArg-репозиторий — сырой CRUD против таблицы `test_command_args`."""
 
-from sqlalchemy import func, select
+from sqlalchemy import delete as sql_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import TestCommandArg
@@ -26,6 +26,11 @@ async def max_position(db: AsyncSession, test_id: str) -> int | None:
     """Максимальный `position` среди слотов теста — для append в конец."""
     stmt = select(func.max(TestCommandArg.position)).where(TestCommandArg.test_id == test_id)
     return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def delete_by_test(db: AsyncSession, test_id: str) -> None:
+    """Удалить все слоты теста без коммита."""
+    await db.execute(sql_delete(TestCommandArg).where(TestCommandArg.test_id == test_id))
 
 
 async def create(db: AsyncSession, data: dict) -> TestCommandArg:

@@ -120,6 +120,8 @@ describe("ServicesAcsSettings", () => {
     updateAcsDepartmentAccessMock.mockResolvedValue([]);
     renderPage();
 
+    // Дождаться применения загруженных флагов к состоянию формы.
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Alpha" })).toBeChecked());
     const betaRow = await screen.findByText("Beta");
     const betaCheckbox = betaRow.closest("label")!.querySelector(
       "input[type=checkbox]",

@@ -42,6 +42,16 @@
 | `global_variable.delete` | denied | WARNING | Нет права `delete`. |
 | `global_variable.delete` | failure | WARNING | `details = { reason: not_found }`. |
 
+## Копирование параметров теста
+
+| Action | Status | Severity | Описание / payload |
+|---|---|---|---|
+| `test_command_arg.copy` | success | INFO | Параметры заменены копией из другого теста. `target_id` — текущий тест; `details = { source_test_id, count }`. |
+| `test_command_arg.copy` | denied | WARNING | Нет права `test_definition.update`. `details = { source_test_id, reason }`. |
+| `test_command_arg.copy` | failure | WARNING | Источник пуст, не найден, совпадает с текущим тестом или произошла ошибка записи. Транзакция отменена. `details = { source_test_id, reason }`. |
+
+Значения параметров и секреты в событие не включаются.
+
 ## Домен (появится по волнам)
 
 По `ALLTA MIGRATION.md` §11 ожидаются (пока не реализовано):

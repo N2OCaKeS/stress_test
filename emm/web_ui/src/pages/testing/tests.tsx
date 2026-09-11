@@ -52,6 +52,7 @@ import {
   updateTestDefinition,
 } from "@/api/testing/testDefinitions";
 import {
+  copyTestCommandArgs,
   createTestCommandArg,
   deleteTestCommandArg,
   listTestCommandArgs,
@@ -459,6 +460,7 @@ export function TestsWorkzone() {
       {commandTest && (
         <CommandConstructorModal
           test={commandTest}
+          allTests={tests}
           variables={variables}
           variablesLoading={variablesQ.loading}
           onClose={() => setCommandTest(null)}
@@ -603,11 +605,13 @@ function TestFormModal({
 
 function CommandConstructorModal({
   test,
+  allTests,
   variables,
   variablesLoading,
   onClose,
 }: {
   test: TestDefinition;
+  allTests: TestDefinition[];
   variables: GlobalVariable[];
   variablesLoading: boolean;
   onClose: () => void;
@@ -622,10 +626,37 @@ function CommandConstructorModal({
   const [editId, setEditId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copySourceId, setCopySourceId] = useState("");
+  const [copyError, setCopyError] = useState<string | null>(null);
+  const copySources = allTests.filter((candidate) => candidate.id !== test.id);
+
   const slots = useMemo(
     () => [...(slotsQ.data ?? [])].sort((a, b) => a.position - b.position),
     [slotsQ.data],
   );
+
+  async function handleCopy() {
+    if (!copySourceId || busy) return;
+    setBusy(true);
+    setCopyError(null);
+    try {
+      const copied = await copyTestCommandArgs(test.id, copySourceId);
+      setCopyOpen(false);
+      setCopySourceId("");
+      setEditId(null);
+      setAddOpen(false);
+      slotsQ.refetch();
+      toast.success(`Параметры скопированы: ${copied.length}. Теперь их можно изменить.`);
+    } catch (e) {
+      const code = (e as { errorCode?: string })?.errorCode;
+      setCopyError(code === "COMMAND_COPY_SOURCE_EMPTY"
+        ? "В выбранном тесте нет параметров. Выберите другой тест."
+        : apiErrMsg(e, "Не удалось скопировать параметры"));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleCreate(body: SlotBody) {
     setBusy(true);
@@ -700,7 +731,7 @@ function CommandConstructorModal({
   return (
     <Modal
       open
-      onOpenChange={(next) => !next && onClose()}
+      onOpenChange={(next) => !next && !busy && onClose()}
       title={`Конструктор команды · ${test.code}`}
       subtitle={test.full_name}
       icon={<Settings2 className="w-5 h-5 text-accent" />}
@@ -711,6 +742,43 @@ function CommandConstructorModal({
           Упорядоченный список аргументов команды теста — литерал или ссылка на
           глобальную переменную. Порядок задаётся кнопками ↑/↓.
         </div>
+
+        {copyOpen ? (
+          <div className="surface-2 border border-token rounded p-3 flex flex-col gap-3">
+            <Dropdown
+              mode="single"
+              searchable
+              placeholder="Выберите тест для копирования"
+              options={copySources.map((source) => ({
+                value: source.id,
+                label: `${source.code} · ${source.full_name}`,
+              }))}
+              value={copySourceId}
+              onChange={(value) => { setCopySourceId(value); setCopyError(null); }}
+              disabled={busy}
+            />
+            <div className="text-xs text-dim">
+              Параметры выбранного теста заменят текущие. После копирования их можно
+              редактировать; исходный тест не изменится.
+            </div>
+            {copyError && <div role="alert" className="alert alert-danger text-xs">{copyError}</div>}
+            <div className="flex justify-end gap-2">
+              <Button size="sm" disabled={busy} onClick={() => setCopyOpen(false)}>Отмена</Button>
+              <Button size="sm" variant="primary" disabled={!copySourceId || busy} onClick={handleCopy}>
+                {busy ? "Копирование…" : "ОК"}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            size="sm"
+            className="inline-flex items-center gap-1.5 self-start"
+            disabled={busy || slotsQ.isFetching || !!slotsQ.error || addOpen || !!editId || copySources.length === 0}
+            onClick={() => { setCopyOpen(true); setCopySourceId(""); setCopyError(null); }}
+          >
+            <Copy className="w-3.5 h-3.5" /> Скопировать из
+          </Button>
+        )}
 
         {slotsQ.loading || variablesLoading ? (
           <div className="text-xs text-dim flex items-center gap-2">
@@ -748,7 +816,7 @@ function CommandConstructorModal({
                   variable={slot.variable_id ? variableById.get(slot.variable_id) : undefined}
                   canMoveUp={index > 0}
                   canMoveDown={index < slots.length - 1}
-                  disabled={busy}
+                  disabled={busy || copyOpen || slotsQ.isFetching}
                   onMoveUp={() => moveSlot(index, -1)}
                   onMoveDown={() => moveSlot(index, 1)}
                   onEdit={() => setEditId(slot.id)}
@@ -772,7 +840,7 @@ function CommandConstructorModal({
             size="sm"
             className="inline-flex items-center gap-1.5 self-start"
             onClick={() => setAddOpen(true)}
-            disabled={variablesLoading}
+            disabled={busy || copyOpen || slotsQ.isFetching || !!slotsQ.error || variablesLoading}
           >
             <Plus className="w-3.5 h-3.5" /> Добавить слот
           </Button>

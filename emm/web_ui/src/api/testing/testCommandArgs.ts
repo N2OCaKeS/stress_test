@@ -18,6 +18,13 @@ import type {
 
 const BASE = "/testing/v1";
 
+/** Заменить параметры теста копией параметров источника одной операцией. */
+export function copyTestCommandArgs(testId: string, sourceTestId: string): Promise<TestCommandArg[]> {
+  return apiPost<TestCommandArg[]>(`${BASE}/test-definitions/${testId}/args/copy-from`, {
+    source_test_id: sourceTestId,
+  });
+}
+
 /** `GET /test-definitions/{test_id}/args` — слоты теста по порядку `position`. */
 export function listTestCommandArgs(testId: string): Promise<TestCommandArg[]> {
   return apiGet<TestCommandArg[]>(`${BASE}/test-definitions/${testId}/args`);

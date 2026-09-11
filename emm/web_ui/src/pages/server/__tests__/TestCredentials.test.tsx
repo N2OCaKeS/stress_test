@@ -176,8 +176,8 @@ describe("ManageTab — учётка теста (test-credentials)", () => {
   });
 
   it("dep_admin своего департамента тоже видит блок", async () => {
-    currentPersona = persona({ platform_role: "dep_admin", dept_id: "dep_1" });
-    renderManage(baseServer({ department_id: "dep_1" }));
+    currentPersona = persona({ platform_role: "dep_admin", dept_id: "core" });
+    renderManage(baseServer({ department_id: "core" }));
     expect(await screen.findByText("Учётка теста")).toBeInTheDocument();
   });
 

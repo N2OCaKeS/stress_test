@@ -37,9 +37,8 @@ import {
   createHostServiceUnit,
   renameHostServiceUnit,
   deleteHostServiceUnit,
-  type HostServicesSettings,
 } from "@/api/server/hostServicesSettings";
-import type { HostServiceUnit } from "@/api/server/types";
+import type { HostServiceUnit, HostServicesSettings } from "@/api/server/types";
 import { Button } from "@/components/ui/Button";
 
 function saveError(e: unknown): string {

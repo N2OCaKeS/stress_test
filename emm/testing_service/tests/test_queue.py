@@ -530,6 +530,40 @@ class TestClaim:
         resp2 = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
         assert resp2.json()["item"] is None
 
+    async def test_claim_computes_confluence_new_page(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+    ):
+        """`CONFLUENCE_NEW_PAGE` не приходит от вызывающего — claim_next
+        считает её сам из full_name/RC/MODE/KERNEL/stand_id (backup_image.py:297)."""
+        mock_server_service(host="10.9.9.9")
+        await mock_git_token()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        var_resp = await client.get(f"{VARS_BASE}/by-code/CONFLUENCE_NEW_PAGE", headers=_hdr(admin_token))
+        assert var_resp.status_code == 200, var_resp.text
+        arg = await client.post(
+            f"{TESTS_BASE}/{test_id}/args", headers=_hdr(admin_token),
+            json={"kind": "variable", "variable_id": var_resp.json()["id"]},
+        )
+        assert arg.status_code == 201, arg.text
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+        await client.post(
+            f"{CALLBACK_BASE}/{item.prepare_request_id}/completed",
+            headers=_server_hdr("server_service", SERVER_SECRET),
+            json={
+                "correlation_id": item.id, "succeeded": True,
+                "test_username": "u", "test_password": "s3cr3t",
+                "test_ssh_private_key": "-----KEY-----",
+            },
+        )
+
+        resp = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+        assert resp.status_code == 200, resp.text
+        payload = resp.json()["item"]
+        assert payload["dates_content"] == f"--run Тест очереди_1.8.5_orel_6.1.0_{stand_id}"
+
 
 class TestCompleted:
     async def test_wrong_identity_rejected(self, client, configure_internal_keys):

@@ -483,7 +483,20 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
     item.started_at = datetime.now(timezone.utc)
     await db.commit()
 
-    ctx = item.launch_context or {}
+    ctx = dict(item.launch_context or {})
+    # `--confluence-new-page` в легаси собирается динамически из пяти частей
+    # (`backup_image.py:297`, `f'{TEST}_{RELEASE}_{MODE}_{KERNEL}_{STAND}'`),
+    # а не задаётся вызывающим — считаем её здесь и кладём в launch_context
+    # тем же кодом, что резолвит слот команды (`CONFLUENCE_NEW_PAGE`,
+    # см. миграцию `f3a8c1e9b204`). `test.full_name` — замена легаси
+    # `args.TEST` (короткое имя теста для CLI, не сохранилось при переносе);
+    # `stand.id` — замена легаси символьного имени стенда (`stand1`..`stand14`,
+    # которого у test_stands нет, см. dates_filename выше по тому же поводу).
+    # Любое значение, пришедшее в launch_context под этим кодом от
+    # вызывающего, перезаписывается — это вычисляемое поле, не входной параметр.
+    ctx["CONFLUENCE_NEW_PAGE"] = (
+        f"{test.full_name}_{ctx.get('RC', '')}_{ctx.get('MODE', '')}_{ctx.get('KERNEL', '')}_{stand.id}"
+    )
     busy_note = f"{test.code}|{ctx.get('RC', '')}|{ctx.get('KERNEL', '')}"
     try:
         await server_client.set_service_status(stand.server_id, busy_state="testing", busy_note=busy_note)

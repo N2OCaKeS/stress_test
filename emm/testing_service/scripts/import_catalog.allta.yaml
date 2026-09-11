@@ -128,24 +128,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -191,24 +191,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -258,24 +258,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -325,24 +325,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -396,24 +396,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -473,24 +473,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -539,24 +539,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -599,24 +599,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -660,24 +660,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -723,24 +723,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -796,24 +796,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -864,24 +864,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -938,24 +938,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1008,24 +1008,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1066,24 +1066,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1124,24 +1124,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1182,24 +1182,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1240,24 +1240,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1298,24 +1298,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1356,24 +1356,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1415,24 +1415,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1475,24 +1475,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1540,24 +1540,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1609,24 +1609,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1676,24 +1676,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1747,24 +1747,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1823,24 +1823,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1881,24 +1881,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -1939,24 +1939,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2000,24 +2000,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2055,24 +2055,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2114,24 +2114,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2170,24 +2170,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2229,16 +2229,16 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2272,16 +2272,16 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2321,24 +2321,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2380,24 +2380,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2435,24 +2435,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2492,24 +2492,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2552,24 +2552,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2611,24 +2611,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2673,24 +2673,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2737,24 +2737,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2800,24 +2800,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2863,24 +2863,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2926,24 +2926,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -2989,24 +2989,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3052,24 +3052,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3120,24 +3120,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3181,24 +3181,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3244,24 +3244,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3302,24 +3302,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3365,24 +3365,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3428,24 +3428,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3495,24 +3495,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3558,24 +3558,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3635,24 +3635,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3696,24 +3696,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3754,24 +3754,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3818,24 +3818,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal
@@ -3887,24 +3887,24 @@ tests:
         literal_value: "none"
       - kind: literal
         literal_value: "--confluence-parent-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: PARENT_PAGE
       - kind: literal
         literal_value: "--confluence-new-page"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
       - kind: literal
         literal_value: "-fti"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
       - kind: literal
         literal_value: "-tcyc"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
       - kind: literal
         literal_value: "-tcas"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
       - kind: literal

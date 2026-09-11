@@ -1,0 +1,1224 @@
+# Реальный каталог тестов + стенд, портированные из allta_app (dev_allta_app).
+#
+# Источники (ветка dev_allta_app):
+#   - allta_app/backup_image.py       — argparse-флаги + построение строки
+#     аргументов теста ("dates"), которую видит запускаемый на стенде скрипт.
+#   - allta_app/allta_image_conf.py   — словари topics/branches/tests/
+#     stands_groups/tests_case_zefir_key (группировка, git-ветка с кодом
+#     теста, соответствие Zephyr test case).
+#
+# `category` = git-ветка монорепо stress_test с реальным кодом теста
+# (`branches` dict из allta_image_conf.py) — совпадает с конвенцией из
+# корневого CLAUDE.md ("postgresql/balance/", "kernel/fill.py" и т.п.).
+#
+# `full_name` = человеческое имя теста ровно как в `tests`/`branches` dict
+# легаси-конфига (сознательно не переведено/не переформулировано — так его
+# знают QA-инженеры).
+#
+# `readiness: ready`  — флаг/elif в backup_image.py однозначно строит команду
+#   именно для этого теста, без свободного текста и без скрытой развилки.
+# `readiness: draft`  — argparse-флаг принимает свободную строку (testname/
+#   --test) без enum choices, либо весь механизм дальше не описан в этих двух
+#   файлах (grub maxcpus sweep, freeipa vm-hardcode) — команда реконструирована
+#   лучшим предположением, ссылка на неточность — в obsidian/reports/.
+#
+# `-tcv {RC}` (test cycle version = версия релиза) присутствует практически
+# во всех веток `dates` в backup_image.py — универсальный суффикс команды.
+# Jira/Confluence-флаги (-username/-token/-confluence-*/-fti/-tcyc/-tcas/-ba)
+# — служебная СТП-отчётность, не параметр запуска бенчмарка — сознательно
+# исключены из command (см. testing_service `stp_test_cases`/`stp_test_runs`,
+# отдельный домен СТП/Zephyr).
+#
+# Zephyr-ключи (tests_case_zefir_key) НЕ импортированы этим файлом — в схеме
+# test_definitions нет такого поля, зато есть отдельная таблица
+# `stp_test_cases.zephyr_id` (join по code) — полная таблица соответствий
+# code → BT-Txxx приведена в отчёте obsidian/reports/, заводить их — отдельный
+# скрипт/волна.
+
+stands:
+  - server_id: srv_f1af39a9541f7a396e607df8faacf54f
+    queue_enabled: true
+    is_active: true
+
+tests:
+  # --- postgresql (branch: postgresql) ---------------------------------
+
+  - code: postgresql.base
+    full_name: "postgresql benchmark"
+    category: postgresql
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-db"
+      - kind: literal
+        literal_value: "--package"
+      - kind: literal
+        literal_value: "postgresql-11"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: postgresql.vanilla
+    full_name: "postgresql benchmark vanilla"
+    category: postgresql
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-db"
+      - kind: literal
+        literal_value: "--package"
+      - kind: literal
+        literal_value: "postgresql-11"
+      - kind: literal
+        literal_value: "-psql_van"
+      - kind: literal
+        literal_value: "pv"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: postgresql.tantor_vanilla
+    full_name: "tantor benchmark vanilla"
+    category: postgresql
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-db"
+      - kind: literal
+        literal_value: "--package"
+      - kind: literal
+        literal_value: "tantor-se-server-15"
+      - kind: literal
+        literal_value: "-tantor_van"
+      - kind: literal
+        literal_value: "tv"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: postgresql.parsec
+    full_name: "postgresql benchmark parsec"
+    category: postgresql
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-db"
+      - kind: literal
+        literal_value: "--package"
+      - kind: literal
+        literal_value: "postgresql-11"
+      - kind: literal
+        literal_value: "-parsec"
+      - kind: literal
+        literal_value: "parsec"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: postgresql.audit_off
+    full_name: "postgresql benchmark audit-off"
+    category: postgresql
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # Дополнительно (не выражается слотом command): backup_image.py
+      # grub_default() при этом флаге дописывает "audit=0" в
+      # GRUB_CMDLINE_LINUX_DEFAULT перед прогоном (backup_image.py:715-716).
+      - kind: literal
+        literal_value: "-db"
+      - kind: literal
+        literal_value: "--package"
+      - kind: literal
+        literal_value: "postgresql-11"
+      - kind: literal
+        literal_value: "-psql_aud"
+      - kind: literal
+        literal_value: "off"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: postgresql.smolensk
+    full_name: "postgresql benchmark smol"
+    category: postgresql
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # Нет отдельного elif-а на 'postgresql-sm' в backup_image.py — не
+      # найдено явного CLI-флага. Предположение: это тот же тест, что
+      # postgresql.base, прогоняемый в режиме smolensk (флаг -mode на
+      # верхнем уровне backup_image.py), выражено override_value на MODE.
+      # Не подтверждено кодом — см. отчёт.
+      - kind: literal
+        literal_value: "-db"
+      - kind: literal
+        literal_value: "--package"
+      - kind: literal
+        literal_value: "postgresql-11"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+      - kind: variable
+        variable_code: MODE
+        override_value: "smolensk"
+
+  - code: postgresql.balance
+    full_name: "postgresql benchmark balance"
+    category: postgresql
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # Позиционный токен "balance" — реальный 5-й аргумент starter.sh
+      # (backup_image.py:1034), не CLI-флаг теста.
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+      - kind: literal
+        literal_value: "balance"
+
+  - code: postgresql.oom
+    full_name: "postgresql benchmark oom"
+    category: postgresql
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # Позиционный токен "oom" — 5-й аргумент starter.sh (backup_image.py:1036).
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+      - kind: literal
+        literal_value: "oom"
+
+  - code: postgresql.info_sys
+    full_name: "postgresql benchmark info-sys"
+    category: postgresql
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-tt"
+      - kind: literal
+        literal_value: "info-sys"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+      - kind: literal
+        literal_value: "balance"
+
+  - code: postgresql.info_sys_orel
+    full_name: "postgresql benchmark info-sys-orel"
+    category: postgresql
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-tt"
+      - kind: literal
+        literal_value: "info-sys-orel"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+      - kind: literal
+        literal_value: "balance"
+
+  - code: postgresql.kernels
+    full_name: "postgresql benchmark kernels"
+    category: postgresql
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # db_kernel_changer() (backup_image.py:895-941) — 4-фазный прогон
+      # (maxcpus=8/16/24/32 через grub, реролл на каждом шаге), вызывает
+      # run.py напрямую, а не starter.sh. Не сводится к одной команде —
+      # ниже один репрезентативный слот-набор, не полная последовательность.
+      - kind: literal
+        literal_value: "--package"
+      - kind: literal
+        literal_value: "postgresql-"
+      - kind: literal
+        literal_value: "-q"
+      - kind: literal
+        literal_value: "<8|16|24|32>"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: postgresql.tantor_kernels
+    full_name: "tantor benchmark kernels"
+    category: postgresql
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # См. postgresql.kernels — тот же 4-фазный сценарий, db='tantor'
+      # (backup_image.py:905-906, 910-911).
+      - kind: literal
+        literal_value: "--package"
+      - kind: literal
+        literal_value: "tantor-se-server-15"
+      - kind: literal
+        literal_value: "-db"
+      - kind: literal
+        literal_value: "tantor"
+      - kind: literal
+        literal_value: "-q"
+      - kind: literal
+        literal_value: "<8|16|24|32>"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: postgresql.olap_hq
+    full_name: "postgresql benchmark olap"
+    category: postgresql
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # -olap {значение} — dest PSQL_OLAP без choices (backup_image.py:257-261,
+      # 330), реальное значение нигде не зафиксировано в этих двух файлах.
+      - kind: literal
+        literal_value: "-db"
+      - kind: literal
+        literal_value: "--package"
+      - kind: literal
+        literal_value: "postgresql-11"
+      - kind: literal
+        literal_value: "-olap"
+      - kind: literal
+        literal_value: "<unknown>"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- file_systems (branch: file_systems) ------------------------------
+
+  - code: file_systems.ext4
+    full_name: "file system benchmark. EXT4"
+    category: file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "ext4"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: file_systems.xfs
+    full_name: "file system benchmark. XFS"
+    category: file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "xfs"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: file_systems.ntfs
+    full_name: "file system benchmark. NTFS"
+    category: file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "ntfs"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: file_systems.ext3
+    full_name: "file system benchmark. EXT3"
+    category: file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "ext3"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: file_systems.ext2
+    full_name: "file system benchmark. EXT2"
+    category: file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "ext2"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: file_systems.fat
+    full_name: "file system benchmark. FAT"
+    category: file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "fat"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: file_systems.exfat
+    full_name: "file system benchmark. EXFAT"
+    category: file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "exfat"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: file_systems.ext4_parsec
+    full_name: "file system benchmark. EXT4 parsec"
+    category: file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "ext4"
+      - kind: literal
+        literal_value: "--parsec"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: file_systems.xfs_parsec
+    full_name: "file system benchmark. XFS parsec"
+    category: file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "xfs"
+      - kind: literal
+        literal_value: "--parsec"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- cluster_file_systems (branch: cluster_file_systems) --------------
+
+  - code: cluster_file_systems.ocfs2
+    full_name: "file system benchmark. OCFS2"
+    category: cluster_file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "ocfs2"
+      - kind: literal
+        literal_value: "-vbox"
+      - kind: variable
+        variable_code: RC
+      - kind: literal
+        literal_value: "-kernel"
+      - kind: variable
+        variable_code: KERNEL
+      - kind: literal
+        literal_value: "--libvirt"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: cluster_file_systems.ceph
+    full_name: "ceph benchmark"
+    category: cluster_file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "ceph"
+      - kind: literal
+        literal_value: "-vbox"
+      - kind: variable
+        variable_code: RC
+      - kind: literal
+        literal_value: "-kernel"
+      - kind: variable
+        variable_code: KERNEL
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: cluster_file_systems.ceph_fio
+    full_name: "ceph fio benchmark"
+    category: cluster_file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "ceph"
+      - kind: literal
+        literal_value: "-vbox"
+      - kind: variable
+        variable_code: RC
+      - kind: literal
+        literal_value: "-kernel"
+      - kind: variable
+        variable_code: KERNEL
+      - kind: literal
+        literal_value: "--test-set"
+      - kind: literal
+        literal_value: "fio"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: cluster_file_systems.ceph_parsec
+    full_name: "ceph parsec benchmark"
+    category: cluster_file_systems
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-fs"
+      - kind: literal
+        literal_value: "ceph"
+      - kind: literal
+        literal_value: "-vbox"
+      - kind: variable
+        variable_code: RC
+      - kind: literal
+        literal_value: "-kernel"
+      - kind: variable
+        variable_code: KERNEL
+      - kind: literal
+        literal_value: "--parsec"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- auditd (branch: auditd) -------------------------------------------
+
+  - code: auditd.psaud
+    full_name: "auditd benchmark. psaud"
+    category: auditd
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "--testlist"
+      - kind: literal
+        literal_value: "psaud"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: auditd.fileaud
+    full_name: "auditd benchmark. fileaud"
+    category: auditd
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "--testlist"
+      - kind: literal
+        literal_value: "fileaud"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: auditd.useraud
+    full_name: "auditd benchmark. useraud"
+    category: auditd
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "--testlist"
+      - kind: literal
+        literal_value: "useraud"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- syslog_ng (branch: syslog_ng) --------------------------------------
+
+  - code: syslog_ng.base
+    full_name: "syslog-ng benchmark"
+    category: syslog_ng
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: syslog_ng.check_write_log
+    full_name: "syslog-ng benchmark check-write-log"
+    category: syslog_ng
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-cwl"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- linux_system (branch: linux_system) --------------------------------
+
+  - code: linux_system.unixbench
+    full_name: "linux_system_benchmark. UnixBench"
+    category: linux_system
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: linux_system.unixbench_parsec
+    full_name: "linux_system_benchmark. UnixBench parsec"
+    category: linux_system
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-p"
+      - kind: literal
+        literal_value: "parsec"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- overflow (branch: overflow) ----------------------------------------
+
+  - code: overflow.ram
+    full_name: "ram overflow"
+    category: overflow
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # remote_test_run() не имеет отдельной ветки под args.OVF (закомментирована,
+      # backup_image.py:1003-1027) — тест реально уходит через generic
+      # starter.sh-путь в самом низу else, с этим содержимым dates.
+      - kind: literal
+        literal_value: "-ovf"
+      - kind: literal
+        literal_value: "ram"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: overflow.storage_drive
+    full_name: "storage drive overflow"
+    category: overflow
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-ovf"
+      - kind: literal
+        literal_value: "sd"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- parsec (branch: parsec) --------------------------------------------
+
+  - code: parsec.impact_fs
+    full_name: "Parsec impact fs benchmark"
+    category: parsec
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: parsec.impact_fs_audit_off
+    full_name: "Parsec impact fs benchmark audit-off"
+    category: parsec
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # Строка dates идентична parsec.impact_fs (backup_image.py:386-388) —
+      # реальная разница только в том, что grub_default() дописывает
+      # "audit=0" в GRUB_CMDLINE_LINUX_DEFAULT (backup_image.py:715-716),
+      # это системная precondition, не аргумент команды.
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: parsec.digsig_cdt
+    full_name: "DIGSIG. Check digsig time"
+    category: parsec
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-ds"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: parsec.raw_spin_lock
+    full_name: "Raw spin lock benchmark"
+    category: parsec
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-rsl"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- apache2 (branch: apache2) -------------------------------------------
+
+  - code: apache2.reverse_proxy
+    full_name: "Apache_ReverseProxy"
+    category: apache2
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # -testname {args.APACHE} — dest без choices (backup_image.py:201-205,
+      # 323, 398-400). Значение "apache-rp" — предположение по аналогии с
+      # коротким именем теста, не подтверждено литералом в исходнике.
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "apache-rp"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: apache2.bench_pam
+    full_name: "Apache_BenchPam"
+    category: apache2
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "apache-bp"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: apache2.balance
+    full_name: "Apache_Balance"
+    category: apache2
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # Ни один elif backup_image.py не строит dates специально под
+      # Apache_Balance; allta_image_conf.py `branches` вообще не содержит
+      # ключа 'Apache_Balance' (расхождение в самом легаси-конфиге) — команда
+      # не реконструирована, оставлен только универсальный -tcv.
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- virt (branch: virt) --------------------------------------------------
+
+  - code: virt.steal_time
+    full_name: "Steal time"
+    category: virt
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # -testname {args.LVIRT} — dest без choices (backup_image.py:207-211,
+      # 319, 401-403), плюс -vbox {TCYCLE.split('_')[0]} не выражается
+      # существующими global_variables (TCYCLE не засеян).
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "steal time"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: virt.steal_time_smolensk
+    full_name: "Steal time smolensk"
+    category: virt
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "steal time-sm"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: virt.fio
+    full_name: "FIO benchmark"
+    category: virt
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "FIO"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: virt.fio_large
+    full_name: "Large FIO benchmark"
+    category: virt
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "FIO large"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: virt.unixbench
+    full_name: "Virt UnixBench"
+    category: virt
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "vUnixBench"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: virt.pingpong
+    full_name: "vPingPong"
+    category: virt
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "vPingPong"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- docker (branch: docker) -----------------------------------------------
+
+  - code: docker.web_application
+    full_name: "docker web-application"
+    category: docker
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-wa"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- astra_openvpn (branch: astra_openvpn) ---------------------------------
+
+  - code: astra_openvpn.client_connections
+    full_name: "astra openvpn client connections"
+    category: astra_openvpn
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # --test {args.VPN} — dest без choices (backup_image.py:225-229, 328),
+      # реальное значение подтеста нигде не зафиксировано в этих двух файлах.
+      - kind: literal
+        literal_value: "--test"
+      - kind: literal
+        literal_value: "<unknown>"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- exim (branch: exim) ----------------------------------------------------
+
+  - code: exim.dovecot_imap
+    full_name: "dovecot benchmark"
+    category: exim
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-tt"
+      - kind: literal
+        literal_value: "imap"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: exim.exim_smtp
+    full_name: "exim benchmark"
+    category: exim
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-tt"
+      - kind: literal
+        literal_value: "smtp"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- network (branch: network) ----------------------------------------------
+
+  - code: network.init_on_free
+    full_name: "Network benchmark. Init_on_free"
+    category: network
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # -testname {args.NETWORK} — dest без choices (backup_image.py:239-243,
+      # 320, 410-412).
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "InitOnFree"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: network.dhcp
+    full_name: "Network benchmark. DHCP"
+    category: network
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "DHCP"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- kernel (branch: kernel) -------------------------------------------------
+
+  - code: kernel.segfault
+    full_name: "segmentation_fault"
+    category: kernel
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # -kernel {args.KERNELTEST} — dest без choices (backup_image.py:245-249,
+      # 321, 413-415).
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "SegFault"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: kernel.xfs_memleak
+    full_name: "xfs memory leak"
+    category: kernel
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "XFS mem leak"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  # --- freeipa (branch: freeipa) ------------------------------------------------
+
+  - code: freeipa.auth
+    full_name: "freeipa authentication test"
+    category: freeipa
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # Особый путь freeipa_authentication_test() (backup_image.py:943-964):
+      # игнорирует args.STAND/args.KERNEL — жёстко хардкодит stand1
+      # (10.177.103.201), kernel 5.15.0-83-generic, снэпшот 1.7.5.9, и
+      # запускает не starter.sh, а git_clone.py + ipa_run.py из отдельного
+      # репозитория freeipa_test/gitipa. См. отчёт — это баг/квирк легаси.
+      - kind: literal
+        literal_value: "ipa_run.py"
+      - kind: literal
+        literal_value: "-tt"
+      - kind: literal
+        literal_value: "auth"
+
+  - code: freeipa.create_users
+    full_name: "freeipa create users test"
+    category: freeipa
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # Тот же freeipa_authentication_test() путь срабатывает для ЛЮБОГО
+      # truthy args.FREEIPA, включая 'create-users' (backup_image.py:1037-1038)
+      # — тот же stand1-хардкод, что и у freeipa.auth.
+      - kind: literal
+        literal_value: "ipa_run.py"
+      - kind: literal
+        literal_value: "-tt"
+      - kind: literal
+        literal_value: "create-users"
+
+  - code: freeipa.plugin
+    full_name: "freeipa plugin test"
+    category: freeipa
+    owner: null
+    readiness: ready
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "ipa_run.py"
+      - kind: literal
+        literal_value: "-tt"
+      - kind: literal
+        literal_value: "plugin"
+
+  # --- astraevents (branch: astraevents) -----------------------------------------
+
+  - code: astraevents.base
+    full_name: "astraeventsd benchmark"
+    category: astraevents
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      # -testname {args.ASTRAEVENTS} — dest без choices (backup_image.py:251-255,
+      # 322, 416-418).
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "astraevents"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+
+  - code: astraevents.smolensk
+    full_name: "astraeventsd benchmark smolensk"
+    category: astraevents
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_id: null
+    command:
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "astraevents-sm"
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC

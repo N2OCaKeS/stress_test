@@ -96,6 +96,17 @@ const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
     ],
   },
   config: { service: "config", to: "/admin", icon: Cog, label: "Config" },
+  // testing_service недавно добавлен в `ServiceName` (для RBAC в
+  // adminCatalog.ts), но чип по-прежнему гейтится отдельно ниже
+  // (`TESTING_CHIP` + `hasServerZoneAccess`), не через `accessible_services` —
+  // запись здесь только ради полноты `Record<ServiceName, ServiceChip>`,
+  // в `serviceChips` не участвует (см. фильтр `s !== "testing"` ниже).
+  testing: {
+    service: "testing",
+    to: "/testing",
+    icon: ListChecks,
+    label: "Тестирование",
+  },
 };
 
 const TESTING_CHIP: ServiceChip = {
@@ -173,8 +184,12 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
   }
   const serviceChips: ServiceChip[] = serviceList
     // worker — часть server-зоны; задачи под «Серверами» (/server/tasks),
-    // отдельного чипа нет. auth/config тоже без чипа.
-    .filter((s) => s !== "auth" && s !== "config" && s !== "worker")
+    // отдельного чипа нет. auth/config тоже без чипа. testing — свой чип
+    // ниже (`TESTING_CHIP`, гейтится `hasServerZoneAccess`, не
+    // `accessible_services`), чтобы не задваивался.
+    .filter(
+      (s) => s !== "auth" && s !== "config" && s !== "worker" && s !== "testing",
+    )
     // Audit log виден тем, у кого есть read-доступ к журналу: logging_admin /
     // logging_reader / logging_reader_dep / account_admin / dep_admin. У
     // dept-scoped ролей (включая dep_admin) backend режет выдачу своим отделом,

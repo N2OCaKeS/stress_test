@@ -71,6 +71,10 @@ class EntityType(StrEnum):
     # платформенных каталогов.
     DEPARTMENT_ACTIVITY_REPORT = "department_activity_report"
 
+    # Сама матрица прав: смотреть список грантов, выдавать и отзывать действия
+    # ролям. Зеркалит одноимённый entity_type в server_service/secret_service.
+    PERMISSION = "permission"
+
 
 class Action(StrEnum):
     """Fine-grained actions матрицы entity_permissions.
@@ -86,6 +90,9 @@ class Action(StrEnum):
     # SSH-ключа учётки исполнения теста (§5.3 плана миграции). Держится
     # отдельно от `view`, потому что это уже секрет, не паспортные данные.
     VIEW_TEST_CREDENTIALS = "view_test_credentials"
+    # Управление самой матрицей entity_permissions — выдать/отозвать action у роли.
+    PERMISSION_GRANT = "permission_grant"
+    PERMISSION_REVOKE = "permission_revoke"
 
 
 # Какие действия вообще осмысленны для каждого типа. Пара вне этой карты —
@@ -125,7 +132,16 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     EntityType.DEPARTMENT_ACTIVITY_REPORT: frozenset({
         Action.VIEW, Action.CREATE,
     }),
+    EntityType.PERMISSION: frozenset({
+        Action.VIEW, Action.PERMISSION_GRANT, Action.PERMISSION_REVOKE,
+    }),
 }
+
+
+def is_valid_action(entity_type: str, action: str) -> bool:
+    """True iff пара (entity_type, action) есть в whitelist'е ENTITY_ACTIONS."""
+    allowed = ENTITY_ACTIONS.get(entity_type)
+    return allowed is not None and action in allowed
 
 
 class QueueItemState(StrEnum):
@@ -233,15 +249,21 @@ class StpCellStatus(StrEnum):
 class PlatformRole(StrEnum):
     """Платформенные роли, которые видит testing_service (`Identity.platform_role`).
 
-    Единственное значение, которое здесь имеет собственную семантику —
     `DEPARTMENT_ADMIN`: `permissions.require_department_action` даёт ему
     bypass матрицы прав на бизнес-данных СВОЕГО отдела (тот же приём, что
-    `server_service.permissions.require_host_service_action`). Остальные
-    платформенные роли (`account_admin`/`loging_admin`/`loging_reader`) не
-    несут `department_id` вообще и просто не проходят department-scoped
-    проверки — отдельно перечислять их здесь не нужно.
+    `server_service.permissions.require_host_service_action`); тот же bypass
+    использует `permission_service` для управления матрицей своего отдела.
+
+    `ACCOUNT_ADMIN`: платформенный мета-админ, без `department_id` и без
+    сервисных ролей — обычные бизнес-эндпоинты testing_service ему в принципе
+    недоступны (`get_current_identity` отбивает по `SERVICE_ACCESS_DENIED`,
+    в allowed_services у него testing_service нет). Пропускается только на
+    `/permissions*` через `PermissionMatrixIdentity` — там он мета-админ
+    матрицы прав любого отдела, аналогично `server_service`. `loging_admin`/
+    `loging_reader` собственной семантики в testing_service не несут.
     """
 
+    ACCOUNT_ADMIN = "account_admin"
     DEPARTMENT_ADMIN = "department_admin"
 
 
@@ -253,6 +275,11 @@ class ServiceRole(StrEnum):
 
 
 SYSTEM_SERVICE_ROLES: frozenset[str] = frozenset({ServiceRole.GUEST, ServiceRole.ADMIN})
+
+
+def is_system_role(role: str) -> bool:
+    """True iff `role` — системная (`admin`/`guest`) с неизменяемой матрицей."""
+    return role in SYSTEM_SERVICE_ROLES
 
 
 class GlobalVariableSource(StrEnum):

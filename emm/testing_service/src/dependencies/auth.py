@@ -28,7 +28,7 @@ import httpx
 from fastapi import Depends, Header, Request
 
 from src.core.config import get_settings
-from src.core.constants import SERVICE_NAME
+from src.core.constants import SERVICE_NAME, PlatformRole
 from src.core.exceptions import (
     AuthenticationError,
     AuthorizationError,
@@ -45,10 +45,12 @@ __all__ = [
     "CurrentIdentity",
     "CurrentUserIdentity",
     "Identity",
+    "PermissionMatrixIdentity",
     "SERVICE_NAME",
     "get_authenticated_identity",
     "get_bearer_token",
     "get_current_identity",
+    "get_permission_matrix_identity",
     "require_internal_caller",
     "require_user_context",
 ]
@@ -336,6 +338,72 @@ def get_bearer_token(request: Request) -> str:
 
 
 BearerToken = Annotated[str, Depends(get_bearer_token)]
+
+
+async def get_permission_matrix_identity(request: Request) -> Identity:
+    """Resolve identity для эндпоинтов управления матрицей прав (`/permissions*`).
+
+    Платформенный `account_admin` управляет матрицей `entity_permissions`
+    любого отдела (мета-админ), но не оперирует бизнес-данными testing_service
+    вообще — у него нет ни департамента, ни `testing_service` в
+    `allowed_services`, поэтому обычный `get_current_identity` отбил бы его
+    403 `SERVICE_ACCESS_DENIED` ещё до того, как endpoint увидит запрос. Здесь
+    для него проверяем только active + not banned и пропускаем без
+    department-service-access гейта; сам bypass на матрицу (снятие ролевой
+    проверки и dept-isolation) делает `permission_service` — это единственное
+    место, куда account_admin получает доступ.
+
+    Для всех прочих caller'ов поведение как у `CurrentUserIdentity`: обычная
+    проверка доступа к `testing_service` (`SERVICE_ACCESS_DENIED`) и отказ
+    OAuth m2m identity (`USER_CONTEXT_REQUIRED`). Доступ к самой матрице для
+    них по-прежнему решает ролевая проверка `(permission, *, ...)` в
+    `permission_service`.
+    """
+    token = _extract_bearer(request)
+    if token is None:
+        raise AuthenticationError(
+            error_code="ACCESS_TOKEN_MISSING",
+            message="Missing bearer token",
+        )
+    body = getattr(request.state, "introspect_body", None)
+    if body is None:
+        body = await _introspect(token)
+    if not body.get("active"):
+        raise AuthenticationError(
+            error_code="ACCESS_TOKEN_INVALID",
+            message="Token is invalid, expired or revoked",
+        )
+    identity = _to_identity(body)
+    if identity.is_banned:
+        raise AuthenticationError(
+            error_code="USER_BANNED",
+            message="User is banned",
+        )
+    if identity.platform_role != PlatformRole.ACCOUNT_ADMIN:
+        if SERVICE_NAME not in identity.allowed_services:
+            raise AuthorizationError(
+                error_code="SERVICE_ACCESS_DENIED",
+                message=f"User's department has no access to {SERVICE_NAME}",
+            )
+        if identity.actor_type == "oauth_client":
+            raise AuthorizationError(
+                error_code="USER_CONTEXT_REQUIRED",
+                message=(
+                    "This endpoint requires user context; "
+                    "OAuth client_credentials tokens are not accepted"
+                ),
+            )
+    audit_context.update_context(
+        actor_id=identity.user_id,
+        username=identity.username,
+        department_id=identity.department_id,
+        department_name=identity.department_name,
+        subject_type=identity.actor_type,
+    )
+    return identity
+
+
+PermissionMatrixIdentity = Annotated[Identity, Depends(get_permission_matrix_identity)]
 
 
 # ── Service-to-service (internal endpoints) ─────────────────────────────────

@@ -130,6 +130,7 @@ const KNOWN_UI_SERVICES: ServiceName[] = [
   "worker",
   "logging",
   "config",
+  "testing",
 ];
 
 const SERVICE_BACKEND_TO_UI: Record<string, ServiceName> = {
@@ -139,6 +140,7 @@ const SERVICE_BACKEND_TO_UI: Record<string, ServiceName> = {
   loging_service: "logging",
   logging_service: "logging",
   config_service: "config",
+  testing_service: "testing",
 };
 
 function toUiService(name: string): ServiceName | null {

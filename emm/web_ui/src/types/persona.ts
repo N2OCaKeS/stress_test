@@ -18,7 +18,8 @@ export type ServiceName =
   | "server"
   | "worker"
   | "logging"
-  | "config";
+  | "config"
+  | "testing";
 
 export type ServiceRole = "admin" | "operator" | "reader";
 

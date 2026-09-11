@@ -543,3 +543,95 @@ export interface StpCell {
 export interface StpCellManualUpdateRequest {
   status: StpCellStatus | string;
 }
+
+// ── permissions (entity_permissions matrix) ───────────────────────────────
+
+/**
+ * Тип сущности матрицы прав. Полный список — `EntityType` enum в
+ * `testing_service/src/core/constants.py`. testing_service не имеет
+ * инстанс-уровневого ACL (в отличие от server_service) — вся матрица
+ * тип-wide.
+ */
+export type TestingEntityType =
+  | "global_variable"
+  | "test_definition"
+  | "test_stand"
+  | "department_test_settings"
+  | "test_run"
+  | "stp_test_case"
+  | "stp_test_run"
+  | "stp_cell"
+  | "department_integration_settings"
+  | "department_report_member"
+  | "department_activity_report"
+  | "permission"
+  | (string & {});
+
+/** Имя роли. Системные — `guest`/`admin`; остальные — кастомные, per department. */
+export type TestingRoleName = "guest" | "admin" | (string & {});
+
+/** Имя действия. Полный whitelist — `Action` enum + `ENTITY_ACTIONS` в constants.py. */
+export type TestingActionName =
+  | "view"
+  | "create"
+  | "update"
+  | "delete"
+  | "view_test_credentials"
+  | "permission_grant"
+  | "permission_revoke"
+  | (string & {});
+
+/** Одна строка матрицы `entity_permissions` в ответе (без `describe`). */
+export interface TestingPermissionEntry {
+  id: string;
+  entity_type: TestingEntityType;
+  role: TestingRoleName;
+  action: TestingActionName;
+  department_id: string | null;
+  granted_by: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+}
+
+/** Строка матрицы, обогащённая описаниями каталога (`describe=true`). */
+export interface TestingPermissionDescribedEntry extends TestingPermissionEntry {
+  entity_description: string;
+  action_description: string;
+  sensitive: boolean;
+}
+
+/** Действие в каталоге прав — имя, описание, флаги чувствительности. */
+export interface TestingPermissionCatalogAction {
+  action: TestingActionName;
+  description: string;
+  /** Чувствительное действие — CRITICAL severity в audit. */
+  sensitive: boolean;
+  /** Служебный callback воркера; у testing_service сейчас всегда `false` —
+   * callback'и закрыты `require_internal_caller`, не матрицей. */
+  worker_only: boolean;
+}
+
+/** Сущность каталога прав с описанием и набором её действий. */
+export interface TestingPermissionCatalogItem {
+  entity_type: TestingEntityType;
+  description: string;
+  actions: TestingPermissionCatalogAction[];
+}
+
+/** Envelope для `GET /permissions` и `GET /permissions/{entity_type}`. */
+export interface TestingPermissionListResponse {
+  items: (TestingPermissionEntry | TestingPermissionDescribedEntry)[];
+  total: number;
+  /** True — строки обогащены описаниями (`describe=true`). */
+  described: boolean;
+}
+
+/**
+ * Тело `PUT /permissions/{entity_type}/{role}/{action}`. Опустить поле —
+ * grant в свой отдел (или system-wide для `account_admin`); передать свой
+ * `department_id` — то же самое явно. Чужой `department_id` → 403
+ * `DEPARTMENT_ISOLATION` (кроме `account_admin` — ему можно любой).
+ */
+export interface TestingPermissionGrantRequest {
+  target_department_id?: string | null;
+}

@@ -63,6 +63,8 @@ SERVICE_EVENTS = [
     {"action": "department_report_member.update", "description": "Department report member updated", "default_severity": "INFO"},
     {"action": "department_report_member.delete", "description": "Department report member removed", "default_severity": "WARNING"},
     {"action": "department_activity_report.generate", "description": "Department activity report generation attempted (manual trigger)", "default_severity": "INFO"},
+    {"action": "permission.grant", "description": "entity_permission row granted", "default_severity": "CRITICAL"},
+    {"action": "permission.revoke", "description": "entity_permission row revoked", "default_severity": "CRITICAL"},
 ]
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
@@ -149,6 +151,12 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("department_activity_report.generate", "success"): "INFO",
     ("department_activity_report.generate", "failure"): "WARNING",
     ("department_activity_report.generate", "denied"): "WARNING",
+    ("permission.grant", "success"): "CRITICAL",
+    ("permission.grant", "failure"): "WARNING",
+    ("permission.grant", "denied"): "WARNING",
+    ("permission.revoke", "success"): "CRITICAL",
+    ("permission.revoke", "failure"): "WARNING",
+    ("permission.revoke", "denied"): "WARNING",
 }
 
 

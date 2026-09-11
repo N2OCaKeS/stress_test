@@ -54,6 +54,7 @@ import { ServicesPasswordPolicy } from "./services/ServicesPasswordPolicy";
 import { ServicesNavLink } from "./services/ServicesNavLink";
 import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesSecretPermissions } from "./services/ServicesSecretPermissions";
+import { ServicesTestingPermissions } from "./services/ServicesTestingPermissions";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
 import { ServicesEncryptionRotation } from "./services/ServicesEncryptionRotation";
@@ -94,6 +95,7 @@ const isLoggingAdmin = (p: Persona) => p.platform_role === "logging_admin";
  * templates / policies) to whoever has admin on that service. */
 const hasSecretServiceAdmin = (p: Persona) => p.service_roles?.secret === "admin";
 const hasServerServiceAdmin = (p: Persona) => p.service_roles?.server === "admin";
+const hasTestingServiceAdmin = (p: Persona) => p.service_roles?.testing === "admin";
 
 /**
  * Static catalogue items — cluster + auth admin + per-service feature pages
@@ -375,6 +377,21 @@ const STATIC_ITEMS: AdminItem[] = [
     visibleFor: (p) => isDepAdmin(p) || hasSecretServiceAdmin(p),
   },
 
+  // Services block — testing. testing_service не блокирует account_admin
+  // middleware'ом (в отличие от server/secret) — он мета-админ матрицы любого
+  // отдела, поэтому visibleFor включает его наравне с dep_admin/testing.admin.
+  {
+    id: "services.testing.permissions",
+    label: "Матрица разрешений",
+    hint: "RBAC testing_service",
+    icon: ShieldCheck,
+    block: "services",
+    group: "testing",
+    content: ServicesTestingPermissions,
+    visibleFor: (p) =>
+      isAccountAdmin(p) || isDepAdmin(p) || hasTestingServiceAdmin(p),
+  },
+
   // Services block — loging (service-specific pages; roles are dynamic).
   // Администрирование логирования (правила severity/suppress, retention,
   // severity-overrides) — только платформенный loging_admin. account_admin и
@@ -527,6 +544,9 @@ function roleItemVisibility(serviceName: string): (p: Persona) => boolean {
     case "secret_service":
       return (p) =>
         isAccountAdmin(p) || isDepAdmin(p) || hasSecretServiceAdmin(p);
+    case "testing_service":
+      return (p) =>
+        isAccountAdmin(p) || isDepAdmin(p) || hasTestingServiceAdmin(p);
     case "loging_service":
       return (p) =>
         isAccountAdmin(p) || isDepAdmin(p) || isLoggingAdmin(p);
@@ -544,6 +564,8 @@ function roleItemGroup(svc: Service): string {
       return "server";
     case "secret_service":
       return "secret";
+    case "testing_service":
+      return "testing";
     case "loging_service":
       return "loging";
     default:

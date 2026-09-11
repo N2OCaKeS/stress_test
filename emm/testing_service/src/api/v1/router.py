@@ -14,6 +14,7 @@ from src.api.v1.endpoints.department_report_members import router as department_
 from src.api.v1.endpoints.department_test_settings import router as department_test_settings_router
 from src.api.v1.endpoints.global_variables import router as global_variables_router
 from src.api.v1.endpoints.health import router as health_router
+from src.api.v1.endpoints.permissions import router as permissions_router
 from src.api.v1.endpoints.stp import router as stp_router
 from src.api.v1.endpoints.test_command_args import router as test_command_args_router
 from src.api.v1.endpoints.test_definitions import router as test_definitions_router
@@ -34,3 +35,4 @@ router.include_router(stp_router, tags=["stp"])
 router.include_router(department_integration_settings_router, tags=["department-integration-settings"])
 router.include_router(department_report_members_router, tags=["department-report-members"])
 router.include_router(department_activity_reports_router, tags=["department-activity-reports"])
+router.include_router(permissions_router, tags=["permissions"])

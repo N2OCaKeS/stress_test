@@ -233,6 +233,41 @@ describe("TestsWorkzone — каталог тестов из API", () => {
     await waitFor(() => expect(confirmMock).toHaveBeenCalled());
     await waitFor(() => expect(deleteTestDefinitionMock).toHaveBeenCalledWith("td_1"));
   });
+
+  it("клонирование теста предзаполняет форму и копирует слоты команды исходного теста", async () => {
+    createTestDefinitionMock.mockResolvedValue({ ...TESTS[0], id: "td_3", code: "FS-EXT4-FILL.copy" });
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Клонировать тест" })[0]);
+
+    // Форма предзаполнена из td_1: код с суффиксом ".copy", остальные поля как у исходного.
+    const codeInput = await screen.findByDisplayValue("FS-EXT4-FILL.copy");
+    expect(screen.getByDisplayValue("filesystem / ext4 fill+remove cycle")).toBeInTheDocument();
+    fireEvent.change(codeInput, { target: { value: "FS-EXT4-FILL-2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Создать" }));
+
+    await waitFor(() =>
+      expect(createTestDefinitionMock).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "FS-EXT4-FILL-2", category: "filesystem" }),
+      ),
+    );
+    // Слоты td_1 (SLOTS) перенесены на новый тест в том же порядке/составе.
+    await waitFor(() => expect(listTestCommandArgsMock).toHaveBeenCalledWith("td_1"));
+    await waitFor(() => expect(createTestCommandArgMock).toHaveBeenCalledTimes(2));
+    expect(createTestCommandArgMock).toHaveBeenNthCalledWith(1, "td_3", {
+      kind: "literal",
+      literal_value: "backup_image.py",
+      variable_id: null,
+      override_value: null,
+    });
+    expect(createTestCommandArgMock).toHaveBeenNthCalledWith(2, "td_3", {
+      kind: "variable",
+      literal_value: null,
+      variable_id: "gv_1",
+      override_value: null,
+    });
+  });
 });
 
 describe("TestsWorkzone — конструктор команды", () => {

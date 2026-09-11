@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   Cog,
+  Copy,
   Database,
   FileText,
   FlaskConical,
@@ -134,7 +135,7 @@ const CATEGORY_VISUAL: Record<string, { label: string; icon: LucideIcon; badge: 
   other: { label: "Прочее", icon: Cog, badge: "accent" },
 };
 
-/** Категория в `test_definitions` — свободная строка, не enum. Известные значения красим по каталогу выше, неизвестные — тем же нейтральным видом, что и "Прочее". */
+/** `category` в `test_definitions` — имя git-ветки монорепо (её же клонирует starter.sh при запуске), свободная строка, не enum. Известные значения красим по каталогу выше, неизвестные — тем же нейтральным видом, что и "Прочее". */
 function categoryVisual(category: string | null | undefined): { label: string; icon: LucideIcon; badge: BadgeKind } {
   const key = category ?? "other";
   return CATEGORY_VISUAL[key] ?? { label: key, icon: Cog, badge: "accent" };
@@ -166,6 +167,7 @@ export function TestsWorkzone() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState<string | "all">("all");
   const [formTarget, setFormTarget] = useState<"create" | TestDefinition | null>(null);
+  const [cloneSource, setCloneSource] = useState<TestDefinition | null>(null);
   const [commandTest, setCommandTest] = useState<TestDefinition | null>(null);
   const [variablesModalOpen, setVariablesModalOpen] = useState(false);
 
@@ -219,7 +221,32 @@ export function TestsWorkzone() {
     try {
       const created = await createTestDefinition(body);
       toast.success(`Тест «${body.code}» создан`);
+      // Клон "из шаблона" — переносим слоты команды исходного теста один в
+      // один (тот же variable_id валиден и у нового теста: global_variables
+      // платформенные, не per-test). Порядок не переставляем — create-эндпоинт
+      // без явной position сам добавляет слот в конец, поэтому обходим
+      // исходные слоты по возрастанию position.
+      if (cloneSource) {
+        try {
+          const sourceArgs = await listTestCommandArgs(cloneSource.id);
+          const ordered = [...sourceArgs].sort((a, b) => a.position - b.position);
+          for (const arg of ordered) {
+            await createTestCommandArg(created.id, {
+              kind: arg.kind as CommandArgKind,
+              literal_value: arg.literal_value,
+              variable_id: arg.variable_id,
+              override_value: arg.override_value,
+            });
+          }
+          if (ordered.length > 0) {
+            toast.success(`Скопировано слотов команды: ${ordered.length}`);
+          }
+        } catch (e) {
+          toast.error(apiErrMsg(e, "Тест создан, но не удалось скопировать слоты команды исходного теста"));
+        }
+      }
       setFormTarget(null);
+      setCloneSource(null);
       testsQ.refetch();
       // Сразу открываем конструктор команды — иначе созданный тест без единого
       // слота команды выглядит как "потерянный", а кнопку "Конструктор" в
@@ -315,7 +342,10 @@ export function TestsWorkzone() {
           size="sm"
           variant="primary"
           className="inline-flex items-center gap-1.5"
-          onClick={() => setFormTarget("create")}
+          onClick={() => {
+            setCloneSource(null);
+            setFormTarget("create");
+          }}
         >
           <Plus className="w-3.5 h-3.5" /> Добавить тест
         </Button>
@@ -349,8 +379,7 @@ export function TestsWorkzone() {
                 <tr>
                   <th>Код</th>
                   <th>Полное имя</th>
-                  <th>Категория</th>
-                  <th>Владелец-контур</th>
+                  <th>Ветка git</th>
                   <th>Команда</th>
                   <th>Статус</th>
                   <th></th>
@@ -366,7 +395,6 @@ export function TestsWorkzone() {
                       <td>
                         <span className={`badge badge-${meta.badge}`}>{meta.label}</span>
                       </td>
-                      <td>{test.owner ?? "—"}</td>
                       <td>
                         <Button
                           size="sm"
@@ -379,6 +407,17 @@ export function TestsWorkzone() {
                       <td><TextStatusBadge value={test.readiness ?? "draft"} /></td>
                       <td>
                         <div className="flex items-center gap-1 justify-end">
+                          <Button
+                            size="sm"
+                            aria-label="Клонировать тест"
+                            title="Создать новый тест на основе этого — с той же командой"
+                            onClick={() => {
+                              setCloneSource(test);
+                              setFormTarget("create");
+                            }}
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </Button>
                           <Button size="sm" aria-label="Изменить тест" onClick={() => setFormTarget(test)}>
                             <Pencil className="w-3.5 h-3.5" />
                           </Button>
@@ -392,7 +431,7 @@ export function TestsWorkzone() {
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="text-center text-dim py-6">Нет тестов по выбранным фильтрам</td>
+                    <td colSpan={6} className="text-center text-dim py-6">Нет тестов по выбранным фильтрам</td>
                   </tr>
                 )}
               </tbody>
@@ -405,8 +444,12 @@ export function TestsWorkzone() {
         <TestFormModal
           mode={formTarget === "create" ? "create" : "edit"}
           initial={formTarget === "create" ? undefined : formTarget}
+          template={formTarget === "create" ? cloneSource ?? undefined : undefined}
           stands={standsQ.data ?? []}
-          onClose={() => setFormTarget(null)}
+          onClose={() => {
+            setFormTarget(null);
+            setCloneSource(null);
+          }}
           onSubmit={(body) =>
             formTarget === "create" ? handleCreate(body) : handleUpdate(formTarget, body)
           }
@@ -440,21 +483,27 @@ export function TestsWorkzone() {
 function TestFormModal({
   mode,
   initial,
+  template,
   stands,
   onClose,
   onSubmit,
 }: {
   mode: "create" | "edit";
   initial?: TestDefinition;
+  /** Только для mode="create": исходный тест, из которого предзаполняются поля
+   * и (в TestsWorkzone.handleCreate) копируются слоты команды — "клонирование". */
+  template?: TestDefinition;
   stands: TestStand[];
   onClose: () => void;
   onSubmit: (body: TestDefinitionCreateRequest) => void | Promise<void>;
 }) {
-  const [code, setCode] = useState(initial?.code ?? "");
-  const [fullName, setFullName] = useState(initial?.full_name ?? "");
-  const [category, setCategory] = useState(initial?.category ?? "");
-  const [readiness, setReadiness] = useState(initial?.readiness ?? "draft");
-  const [pinnedStandId, setPinnedStandId] = useState(initial?.pinned_stand_id ?? "");
+  const [code, setCode] = useState(initial?.code ?? (template ? `${template.code}.copy` : ""));
+  const [fullName, setFullName] = useState(initial?.full_name ?? template?.full_name ?? "");
+  const [category, setCategory] = useState(initial?.category ?? template?.category ?? "");
+  const [readiness, setReadiness] = useState(initial?.readiness ?? template?.readiness ?? "draft");
+  const [pinnedStandId, setPinnedStandId] = useState(
+    initial?.pinned_stand_id ?? template?.pinned_stand_id ?? "",
+  );
   const [submitting, setSubmitting] = useState(false);
 
   const valid = code.trim() !== "" && fullName.trim() !== "";
@@ -481,6 +530,7 @@ function TestFormModal({
       open
       onOpenChange={(next) => !next && onClose()}
       title={mode === "create" ? "Новый тест каталога" : `Изменить тест · ${initial?.code}`}
+      subtitle={template ? `На основе «${template.code}» — команда будет скопирована` : undefined}
       icon={<FlaskConical className="w-5 h-5 text-accent" />}
       width="md"
     >
@@ -506,12 +556,12 @@ function TestFormModal({
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">Категория</span>
+          <span className="text-dim text-xs">Ветка git</span>
           <input
             className="surface-2 border border-token rounded px-2 py-1 text-sm"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            placeholder="filesystem"
+            placeholder="postgresql"
             list="tests-category-suggestions"
           />
         </label>

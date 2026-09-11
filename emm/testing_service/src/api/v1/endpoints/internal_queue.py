@@ -36,8 +36,11 @@ async def claim(
 
     Ответ несёт всё необходимое для одной SSH-сессии: `host` стенда, креды
     тестового пользователя (одноразовое чтение из Redis-стэша — второй вызов
-    `claim` того же item'а креды уже не получит), уже резолвленную команду
-    (`resolve_command`), `debug_mode`/`is_retry` для контекста воркера.
+    `claim` того же item'а креды уже не получит), содержимое `dates.conf`
+    (`dates_content`/`dates_filename`) для SFTP-записи ДО запуска, уже
+    резолвленную команду запуска `starter.sh` (`resolve_dates_content` +
+    `_resolve_git_token`, см. `services/queue.py::claim_next`),
+    `debug_mode`/`is_retry` для контекста воркера.
     """
     item = await queue_svc.claim_next(db)
     return QueueClaimResponse(item=item)

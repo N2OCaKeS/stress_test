@@ -58,6 +58,7 @@ async def _seed_test_run(*, department_id="dep_a", os_version_id="1.8.5.46", sta
 
 async def _seed_integration_settings(
     department_id: str, *, credential_id: str = "cred_x", confluence_base_url: str = "http://confluence.example",
+    bitbucket_credential_id: str | None = None,
 ) -> None:
     async with AsyncSessionLocal() as db:
         await dis_repo.create(db, {
@@ -66,6 +67,7 @@ async def _seed_integration_settings(
             "credential_id": credential_id,
             "jira_base_url": None,
             "confluence_base_url": confluence_base_url,
+            "bitbucket_credential_id": bitbucket_credential_id,
         })
         await db.commit()
 
@@ -352,10 +354,11 @@ class TestQueueTrigger:
     ):
         calls, _state = mock_confluence
         mock_secret_client["cred_x"] = ("bot", "tok123")
+        mock_secret_client["cred_bitbucket"] = ("git-bot", "git-token")
         mock_server_service()
         stand_id, _ = await _create_stand(client, admin_token, department_id="dep_a")
         await _create_test_def(client, admin_token, stand_id)
-        await _seed_integration_settings("dep_a")
+        await _seed_integration_settings("dep_a", bitbucket_credential_id="cred_bitbucket")
 
         resp = await client.post(RUNS_BASE, headers=_hdr(admin_token), json=_payload([stand_id]))
         assert resp.status_code == 201, resp.text

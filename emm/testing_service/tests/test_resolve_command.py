@@ -156,3 +156,43 @@ class TestResolveCommandMasked:
         async with AsyncSessionLocal() as db:
             masked = await svc.resolve_command_masked(db, test_id, {"TESTENV": "prod"})
         assert masked == ["prod"]
+
+
+class TestResolveDatesContent:
+    """`resolve_dates_content`/`_masked` — тот же резолв слотов, но склеенный в одну строку.
+
+    Итоговое содержимое кладётся в `dates.conf` на стенде (см.
+    `services/queue.py::claim_next`), а не передаётся как argv.
+    """
+
+    async def test_joins_slots_with_spaces(self, client, admin_token):
+        test_id = await _create_test(client, admin_token)
+        variable_id = await _variable_id(client, admin_token, "TESTENV")
+        await _add_literal(client, admin_token, test_id, "-sn", position=0)
+        await _add_variable(client, admin_token, test_id, variable_id, position=1)
+        async with AsyncSessionLocal() as db:
+            content = await svc.resolve_dates_content(db, test_id, {"TESTENV": "prod"})
+        assert content == "-sn prod"
+
+    async def test_empty_command_resolves_to_empty_string(self, client, admin_token):
+        test_id = await _create_test(client, admin_token)
+        async with AsyncSessionLocal() as db:
+            content = await svc.resolve_dates_content(db, test_id, {})
+        assert content == ""
+
+    async def test_masked_hides_sensitive_variable(self, client, admin_token):
+        test_id = await _create_test(client, admin_token)
+        password_id = await _variable_id(client, admin_token, "TEST_PASSWORD")
+        await _add_literal(client, admin_token, test_id, "-ba", position=0)
+        await _add_variable(client, admin_token, test_id, password_id, position=1)
+        async with AsyncSessionLocal() as db:
+            content = await svc.resolve_dates_content(db, test_id, {"TEST_PASSWORD": "hunter2"})
+            masked = await svc.resolve_dates_content_masked(db, test_id, {"TEST_PASSWORD": "hunter2"})
+        assert content == "-ba hunter2"
+        assert masked == "-ba ***"
+
+    async def test_unknown_test_id_raises_not_found(self):
+        async with AsyncSessionLocal() as db:
+            with pytest.raises(NotFoundError) as exc:
+                await svc.resolve_dates_content(db, "tdef_nope", {})
+        assert exc.value.error_code == "TEST_DEFINITION_NOT_FOUND"

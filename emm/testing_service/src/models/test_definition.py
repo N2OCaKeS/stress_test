@@ -41,6 +41,11 @@ class TestDefinition(Base):
     # этим фильтром, больше нигде. Пусто — тест считается затронутым всегда
     # (безопасный дефолт: лучше лишний прогон, чем пропущенный).
     changelog_component: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Позиционный $5 у legacy `starter.sh` — какой флаг `run.py` клонированной
+    # ветки передаст конечному скрипту: "kernel"/"balance"/"oom" или пусто
+    # (generic `run.py -n <файл>` без доп. флага). Не enum на уровне БД —
+    # просто строка, значение диктует сам `starter.sh` (см. import_catalog).
+    starter_suffix: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Soft-FK на auth_service identity (`usr_<hex>`/`bot_<hex>`).
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

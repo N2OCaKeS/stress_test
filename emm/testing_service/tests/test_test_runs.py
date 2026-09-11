@@ -26,6 +26,7 @@ from tests.test_queue import (  # noqa: F401 — фикстуры переисп
     _create_test_def,
     _server_hdr,
     configure_internal_keys,
+    mock_git_token,
     mock_server_service,
     recorded_calls,
     SERVER_SECRET,
@@ -217,9 +218,10 @@ class TestCreateTestRun:
 
 class TestAggregateStatus:
     async def test_status_succeeded_when_only_item_succeeds(
-        self, client, admin_token, mock_server_service, configure_internal_keys,
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
     ):
         mock_server_service()
+        await mock_git_token()
         stand_id, _ = await _create_stand(client, admin_token)
         await _create_test_def(client, admin_token, stand_id)
 
@@ -235,9 +237,10 @@ class TestAggregateStatus:
         assert final.json()["status"] == "succeeded"
 
     async def test_status_partially_failed_on_mixed_outcomes(
-        self, client, admin_token, mock_server_service, configure_internal_keys,
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
     ):
         mock_server_service()
+        await mock_git_token()
         stand_ok, _ = await _create_stand(client, admin_token, department_id="dep_a")
         stand_fail, _ = await _create_stand(client, admin_token, department_id="dep_a")
         await _create_test_def(client, admin_token, stand_ok)

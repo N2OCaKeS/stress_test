@@ -260,6 +260,34 @@ async def _resolve_variable_slot(db: AsyncSession, slot: TestCommandArg, launch_
     return variable, value
 
 
+async def _resolve_slots(
+    db: AsyncSession,
+    test_id: str,
+    launch_context: dict[str, str],
+    *,
+    masked: bool,
+) -> list[str]:
+    """Общий проход по слотам теста, отдающий список токенов по порядку `position`.
+
+    `masked=False` — сырые значения (`resolve_command`/`resolve_dates_content`).
+    `masked=True` — variable-слоты с `is_sensitive=true` отдают `***`
+    (`resolve_command_masked`/`resolve_dates_content_masked`).
+    """
+    await _require_test(db, test_id)
+    slots = await repo.list_by_test(db, test_id)
+
+    tokens: list[str] = []
+    for slot in slots:
+        if slot.kind == CommandArgKind.LITERAL:
+            tokens.append(str(slot.literal_value))
+            continue
+
+        variable, value = await _resolve_variable_slot(db, slot, launch_context)
+        tokens.append("***" if masked and variable.is_sensitive else value)
+
+    return tokens
+
+
 async def resolve_command(
     db: AsyncSession,
     test_id: str,
@@ -273,20 +301,12 @@ async def resolve_command(
     `override_value`, если он задан, иначе ищут значение переменной по её
     `code` в `launch_context`. Отсутствие нужного кода — ошибка запуска, не
     молчаливый пропуск аргумента.
+
+    Используется конструктором UI для предпросмотра команды теста —
+    `queue.py::claim_next` для реального запуска берёт `resolve_dates_content`,
+    контент того же набора слотов, но склеенный в файл `dates.conf`.
     """
-    await _require_test(db, test_id)
-    slots = await repo.list_by_test(db, test_id)
-
-    args: list[str] = []
-    for slot in slots:
-        if slot.kind == CommandArgKind.LITERAL:
-            args.append(str(slot.literal_value))
-            continue
-
-        _variable, value = await _resolve_variable_slot(db, slot, launch_context)
-        args.append(value)
-
-    return args
+    return await _resolve_slots(db, test_id, launch_context, masked=False)
 
 
 async def resolve_command_masked(
@@ -303,16 +323,31 @@ async def resolve_command_masked(
     `is_sensitive` вообще (это метаданные каталога, которых у него нет),
     поэтому маскированную версию обязан посчитать `testing_service`.
     """
-    await _require_test(db, test_id)
-    slots = await repo.list_by_test(db, test_id)
+    return await _resolve_slots(db, test_id, launch_context, masked=True)
 
-    args: list[str] = []
-    for slot in slots:
-        if slot.kind == CommandArgKind.LITERAL:
-            args.append(str(slot.literal_value))
-            continue
 
-        variable, value = await _resolve_variable_slot(db, slot, launch_context)
-        args.append("***" if variable.is_sensitive else value)
+async def resolve_dates_content(
+    db: AsyncSession,
+    test_id: str,
+    launch_context: dict[str, str],
+) -> str:
+    """Резолвит слоты теста в содержимое файла `dates.conf` (одна строка).
 
-    return args
+    Та же логика резолва, что `resolve_command` — но слоты теста здесь
+    описывают не argv конечного скрипта, а флаги, которые легаси
+    `backup_image.py` раньше писало в `dates_<STAND>.conf`. `testing_worker`
+    кладёт результат на стенд по SFTP до того, как позвать `starter.sh`
+    (см. `services/queue.py::claim_next`).
+    """
+    tokens = await _resolve_slots(db, test_id, launch_context, masked=False)
+    return " ".join(tokens)
+
+
+async def resolve_dates_content_masked(
+    db: AsyncSession,
+    test_id: str,
+    launch_context: dict[str, str],
+) -> str:
+    """Та же логика, что `resolve_dates_content`, но для логов/аудита — см. `resolve_command_masked`."""
+    tokens = await _resolve_slots(db, test_id, launch_context, masked=True)
+    return " ".join(tokens)

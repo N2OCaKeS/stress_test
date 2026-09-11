@@ -45,15 +45,32 @@ class QueueClaimItem(BaseModel):
     test_username: str
     test_password: str
     test_ssh_private_key: str
-    command: list[str] = Field(description="Аргументы команды, уже резолвленные (`resolve_command`).")
-    command_masked: list[str] = Field(
+    command: list[str] = Field(
         description=(
-            "Та же команда, но variable-слоты с `is_sensitive=true` заменены "
-            "на `***` (`resolve_command_masked`). Единственная версия, которую "
-            "воркеру можно класть в лог — сырых кредов в командной строке лога "
-            "быть не должно."
+            "Единственный SSH-вызов: `sudo bash /home/u/starter.sh <category> "
+            "<git_token> <dates_filename> <RC> <starter_suffix>`. `starter.sh` "
+            "сам клонирует ветку и гоняет `run.py`/конечный скрипт — вне "
+            "периметра testing_service."
         ),
     )
+    command_masked: list[str] = Field(
+        description=(
+            "Та же команда, но `git_token` заменён на `***`. Единственная "
+            "версия, которую воркеру можно класть в лог — сырых кредов в "
+            "командной строке лога быть не должно."
+        ),
+    )
+    dates_content: str = Field(
+        description=(
+            "Содержимое файла `dates.conf` (`resolve_dates_content`) — воркер "
+            "кладёт его по SFTP на стенд (`/home/u/<dates_filename>`) ДО вызова "
+            "`command`."
+        ),
+    )
+    dates_content_masked: str = Field(
+        description="Та же строка, но `is_sensitive`-переменные заменены на `***` — версия для логов.",
+    )
+    dates_filename: str = Field(description="Имя файла на стенде (`dates_<queue_item_id>.conf`).")
     debug_mode: bool
     is_retry: bool
 

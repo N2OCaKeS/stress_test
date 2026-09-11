@@ -236,6 +236,7 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
             department_id=item.get("department_id"),
             pinned_stand_id=item.get("pinned_stand_id"),
             changelog_component=item.get("changelog_component"),
+            starter_suffix=item.get("starter_suffix"),
         )
         try:
             obj = await test_definition.create_test_definition(db, _SYSTEM_IDENTITY, payload)

@@ -7,10 +7,10 @@
 #     stands_groups/tests_case_zefir_key (группировка, git-ветка с кодом
 #     теста, соответствие Zephyr test case).
 #   - allta_app/starter.sh            — на стенде клонирует ветку монорепо
-#     (`category`), делает `cd <branch>` и запускает generic
-#     `python3 run.py -n dates_<STAND>.conf [-kn|-bl|-oom "$5"]`.
-#   - `<branch>/run.py` В КАЖДОЙ ветке монорепо — читает файл dates_<STAND>.conf
-#     как сырую строку и подставляет её целиком в РЕАЛЬНЫЙ тестовый скрипт
+#     (`category`), гоняет `prepare.sh` и в конце запускает generic
+#     `python3 run.py -n <dates_filename> [-kn|-bl|-oom "$5"]`.
+#   - `<branch>/run.py` В КАЖДОЙ ветке монорепо — читает файл dates.conf как
+#     сырую строку и подставляет её целиком в РЕАЛЬНЫЙ тестовый скрипт
 #     (`psb_run.py`, `fsb_run.py`, `test_run.py`, ...), импортируя
 #     `VENV_PATH` из своего `*_conf.py`. Только ветка `postgresql` имеет
 #     собственную развилку `-kn/-bl/-oom` внутри `run.py` (диспетчер на
@@ -18,35 +18,31 @@
 #     всех остальных ветках `run.py` — чистый passthrough на один жёстко
 #     заданный скрипт.
 #
-# `testing_worker` исполняет `test_command_arg` БУКВАЛЬНО как argv по SSH
-# (`shlex.join(command)` → `sh -c '...'`) — ни venv, ни `cd`, ни имя скрипта
-# сам не подставляет (emm/testing_worker/src/services/ssh_executor.py).
-# Значит каждая `command` ниже — это ПОЛНАЯ реально исполняемая строка:
-# `sudo <VENV_PATH-или-python3> <абсолютный путь к реальному скрипту> <дословно
-# развёрнутые dates-флаги>`, а не голые флаги и не `run.py -n <файл>`.
-#
-# Путь к скрипту собран как `/home/u/git/stress_test/<category>/<script>.py`
-# (абсолютный, не относительный) — это специально ИЗБЕГАЕТ необходимости в
-# `cd`: `sh -c` не даёт test_command_arg безопасно склеить `cd X && ...`
-# (shlex.join экранирует `&&` как обычный аргумент, а не shell-оператор), а
-# Python сам добавляет каталог скрипта в sys.path при запуске по абсолютному
-# пути — импорты вида `from psb_conf import ...` резолвятся так же, как при
-# `cd <branch> && python3 psb_run.py`. Предположение: prepare-for-test уже
-# кладёт каждую ветку по этому пути (см. корневой CLAUDE.md: `category` =
-# ветка монорепо). Если это не так — тесты ниже не найдут скрипт; открытый
-# вопрос зафиксирован в отчёте.
-#
-# Не устранённый этой правкой нюанс: `virt_conf.py`/`net_conf.py`/
-# `kernel_conf.py`/`aeb_conf.py` считают `REPORT_PATH = f'{os.getcwd()}/test_results'`
-# через `os.getcwd()`, а не `__file__` — без `cd` в каталог ветки отчёт
-# теста ляжет в CWD SSH-сессии (обычно `/home/u`), а не в
-# `<branch>/test_results`. Сам тест при этом не падает (`run.py` создаёт
-# каталог, если его нет), просто результат — не там, где легаси его ищет.
-# Затрагивает: virt, network, kernel, astraevents. См. отчёт.
+# Архитектура исполнения (пересмотрена — см. отчёт): `testing_worker`
+# БОЛЬШЕ НЕ вызывает конечный тестовый скрипт напрямую. Venv, `cd` в ветку,
+# имя скрипта — всё это остаётся внутри `starter.sh`/`run.py` каждой ветки,
+# вне периметра testing_service. `command` ниже — это содержимое файла
+# `dates_<queue_item_id>.conf`, которое `testing_worker` кладёт по SFTP на
+# стенд (`/home/u/<файл>`) ПЕРЕД единственным SSH-вызовом
+# `sudo bash /home/u/starter.sh <category> <git_token> <dates_filename> <RC>
+# <starter_suffix>` (см. testing_service `services/queue.py::claim_next` и
+# testing_worker `services/queue_loop.py`/`services/ssh_executor.py`).
 #
 # `category` = git-ветка монорепо stress_test с реальным кодом теста
 # (`branches` dict из allta_image_conf.py) — совпадает с конвенцией из
-# корневого CLAUDE.md ("postgresql/balance/", "kernel/fill.py" и т.п.).
+# корневого CLAUDE.md ("postgresql/balance/", "kernel/fill.py" и т.п.) и
+# подставляется в `starter.sh` буквально как позиционный `$1` (branch).
+#
+# `starter_suffix` = позиционный `$5` у `starter.sh` (`kernel`/`balance`/
+# `oom`/`null`) — определяет, каким флагом `run.py` в клонированной ветке
+# позовёт конечный скрипт (`-kn`/`-bl`/`-oom`/ничего). Источник —
+# `backup_image.py` `remote_test_run()`: `args.DB_KERNELS in ('psql',
+# 'tantor')` → отдельный 4-фазный grub-цикл (`postgresql.kernels`/
+# `postgresql.tantor_kernels` ниже, `readiness: draft` — не сводится к одной
+# команде), `elif args.PSQL_BALANCE:` → `"balance"` (буквально литерал, не
+# значение флага — задокументированный баг легаси, отсюда `starter_suffix:
+# balance` и у info-sys/info-sys-orel), `elif args.PSQL_OOM:` → `"oom"`,
+# иначе — суффикс не передаётся (`null`).
 #
 # `full_name` = человеческое имя теста ровно как в `tests`/`branches` dict
 # легаси-конфига (сознательно не переведено/не переформулировано — так его
@@ -78,10 +74,20 @@
 # `variable_code: STAND` (единственная существующая "стенд"-переменная
 # testing_service; резолвер для неё ещё не реализован — когда появится,
 # нужно свериться, что он отдаёт "голый" номер стенда, а не "standN").
-# Jira/Confluence-флаги (-username/-token/-confluence-*/-fti/-tcyc/-tcas/-ba)
-# — служебная СТП-отчётность, не параметр запуска бенчмарка — сознательно
-# исключены из command (см. testing_service `stp_test_cases`/`stp_test_runs`,
-# отдельный домен СТП/Zephyr).
+#
+# Jira/Confluence-флаги (`--username`/`--token`/`--confluence-space`/
+# `--confluence-parent-page`/`--confluence-new-page`/`-fti`/`-tcyc`/`-tcas`/
+# `-ba`, литералы дословно из `backup_image.py:293-297,304-310`) — вернулись
+# в начало command как безопасные плейсхолдеры (`"none"`), потому что
+# некоторые легаси-скрипты (например `bl_run.py`) объявляют их в своём
+# argparse как `required=True`, а testing_service намеренно НЕ хочет, чтобы
+# сам конечный скрипт стучался в Jira/Confluence — своя репортинг-логика уже
+# есть отдельно (§6.3 ALLTA MIGRATION.md). Резолв этих флагов реальными
+# credential'ами (`source=secret_service` в конструкторе слотов, §3.5 плана)
+# НЕ реализован — открытый пункт, см. отчёт. `overflow.*` — тесты из
+# отдельной ветки (`ovf_run.py`), где легаси не подставляет confluence-*
+# поля вообще (`backup_image.py:354-355`), поэтому их плейсхолдер-набор
+# короче (без `--confluence-*`).
 #
 # Zephyr-ключи (tests_case_zefir_key) НЕ импортированы этим файлом — в схеме
 # test_definitions нет такого поля, зато есть отдельная таблица
@@ -95,6 +101,7 @@ stands:
     is_active: true
 
 tests:
+
   # --- postgresql (branch: postgresql, script: psb_run.py если не указано иное) ---
 
   - code: postgresql.base
@@ -104,14 +111,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:333-335 (dates) + postgresql:postgresql/run.py:1-13 (else) + postgresql:postgresql/psb_run.py argparse
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/psb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -136,14 +174,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:336-338
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/psb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -172,14 +241,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:339-341
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/psb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -208,14 +308,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:348-350
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/psb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -244,6 +375,7 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:351-353
       # Дополнительно (не выражается слотом command): backup_image.py
@@ -251,11 +383,41 @@ tests:
       # GRUB_CMDLINE_LINUX_DEFAULT перед прогоном (backup_image.py:715-716) —
       # это провижининг стенда, не аргумент теста.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/psb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -284,6 +446,7 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:299-302,422-424 (final else — НИ ОДИН
       # elif не матчит TEST=='postgresql-sm')
@@ -297,11 +460,41 @@ tests:
       # тест как таковой в легаси нерабочий. См. отчёт — решение за владельцем
       # (исключить тест из каталога или считать, что он никогда не запускался).
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/psb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -322,6 +515,7 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: balance
     command:
       # source: dev_allta_app:allta_app/backup_image.py:345-347 (dates) +
       # backup_image.py:1033-1034 (starter.sh "balance" ветка — позиционный
@@ -332,11 +526,41 @@ tests:
       # -vbox: см. легенду readiness: draft выше (TCYCLE.split('_')[0]),
       # best-effort = RC.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/bl_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -357,15 +581,46 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: oom
     command:
       # source: dev_allta_app:allta_app/backup_image.py:345-347 (тот же elif, что
       # и balance) + backup_image.py:1035-1036 (starter.sh "oom" ветка → oom_run.py)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/oom_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -386,16 +641,47 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: balance
     command:
       # source: dev_allta_app:allta_app/backup_image.py:342-344 (PSQL_BALANCE in
       # info-sys/info-sys-orel) — тоже через starter.sh "balance" → bl_run.py,
       # -tt/--test-type choices включает 'info-sys' (postgresql:postgresql/bl_run.py:109-117)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/bl_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -420,14 +706,45 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: balance
     command:
       # source: тот же elif, что и info_sys (backup_image.py:342-344), -tt info-sys-orel
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/bl_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -452,6 +769,7 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: kernel
     command:
       # source: dev_allta_app:allta_app/backup_image.py:895-941 (db_kernel_changer) +
       # postgresql:postgresql/diff_kernel_quantity.py argparse
@@ -465,11 +783,41 @@ tests:
       # не вся последовательность. См. отчёт: architecture-gap, не сводится к
       # одному test_definition в текущей модели.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/diff_kernel_quantity.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -498,15 +846,46 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: kernel
     command:
       # source: см. postgresql.kernels — тот же 4-фазный сценарий, database='tantor'
       # (backup_image.py:905-906,910-911 добавляют `-db tantor`)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/diff_kernel_quantity.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -539,17 +918,48 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:419-421 (-olap {PSQL_OLAP}) +
       # postgresql:postgresql/psb_run.py:244,291,379 — единственное реальное
       # сравнение в скрипте: `args.OLAP == "heavy_queries"` (нет других веток),
       # совпадает с суффиксом "-hq" в TEST='PSQL OLAP-hq'.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/postgresql/psb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -580,15 +990,46 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:299-302,422-424 (final else) +
       # file_systems:file_systems/fsb_run.py argparse (-fs choices incl. 'ext4')
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/file_systems/fsb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -609,13 +1050,44 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/file_systems/fsb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -636,13 +1108,44 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/file_systems/fsb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -663,13 +1166,44 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/file_systems/fsb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -690,13 +1224,44 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/file_systems/fsb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -717,13 +1282,44 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/file_systems/fsb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -744,13 +1340,44 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/file_systems/fsb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -771,14 +1398,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:299-302,359-361
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/file_systems/fsb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -801,13 +1459,44 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/file_systems/fsb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -832,16 +1521,47 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:362-364 + cluster_file_systems:
       # cluster_file_systems/libs/libparseargs.py (-fs choices incl. 'ocfs2', -vbox/-kernel required)
       # Здесь -vbox = {args.RELEASE} НАПРЯМУЮ (не через TCYCLE) — это ready, не draft.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/cluster_file_systems/cfs_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -872,14 +1592,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:365-367
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/cluster_file_systems/cfs_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -908,14 +1659,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:368-370
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/cluster_file_systems/cfs_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -948,14 +1730,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:371-373
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/cluster_file_systems/cfs_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -988,6 +1801,7 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:314,356-358 (-aud → --testlist) +
       # auditd:auditd/aub_run.py:30-36 (--testlist choices=['psaud','useraud','fileaud'],
@@ -996,11 +1810,41 @@ tests:
       # choices), но целевой скрипт ограничивает до 3 вариантов и соответствие
       # однозначно.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/auditd/aub_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1021,13 +1865,44 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/auditd/aub_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1048,13 +1923,44 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/auditd/aub_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1077,14 +1983,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:377-379 (TEST=='syslog-ng' or 'unix')
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/syslog_ng/sng_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1101,14 +2038,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:374-376 (-cwl идёт ПОСЛЕ -tcv)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/syslog_ng/sng_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1129,14 +2097,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:377-379 (TEST=='unix')
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/linux_system/lsb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1153,15 +2152,46 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:380-382 (-p parsec идёт ПОСЛЕ -tcv) +
       # linux_system:linux_system/lsb_run.py argparse (-p/--parsec action='store', требует значение)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/linux_system/lsb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1184,16 +2214,35 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:354-355 (elif args.OVF — БЕЗ {sn}!) +
       # origin/overflow:overflow/run.py (единственная ветка без VENV_PATH — `sudo python3 ovf_run.py`) +
       # origin/overflow:overflow/ovf_run.py:265 (`if args.OVF == 'ram':` — литеральное сравнение)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "python3"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/overflow/ovf_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
@@ -1210,14 +2259,33 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: origin/overflow:overflow/ovf_run.py:268 (`elif args.OVF == 'sd':`)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "python3"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/overflow/ovf_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
@@ -1236,14 +2304,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:386-388 (elif PARSEC_IMPACT or PARSEC_IMPACT_AO)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/parsec/ps_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1260,6 +2359,7 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: тот же elif (backup_image.py:386-388) — dates идентична parsec.impact_fs.
       # Реальная разница — grub_default() дописывает "audit=0" в
@@ -1267,11 +2367,41 @@ tests:
       # стенда ДО прогона, не аргумент команды. ps_run.py не знает и не должен
       # знать про audit-off — само ядро грузится с audit=0.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/parsec/ps_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1288,14 +2418,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:389-391 (-ds идёт ПОСЛЕ -tcv)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/parsec/ps_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1314,14 +2475,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:392-394 (-rsl идёт ПОСЛЕ -tcv)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/parsec/ps_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1342,15 +2534,46 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:398-400 (-testname идёт ПОСЛЕ -tcv) +
       # apache2:apache2/apache_run.py:164 (`elif args.TESTNAME == 'rp':`)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/apache2/apache_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1371,14 +2594,45 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: apache2:apache2/apache_run.py:104 (`if args.TESTNAME == 'apache_pam':`)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/apache2/apache_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1399,17 +2653,48 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: apache2:apache2/apache_run.py:134 (`elif args.TESTNAME == 'apache_balance':`) —
       # Apache_Balance ЕСТЬ и в branches, и в tests dict allta_image_conf.py
       # ('Apache_Balance':'apache2' / 'Apache_Balance':'apache-balance'),
       # предыдущая попытка ошибочно решила, что ключа нет.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/apache2/apache_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1432,17 +2717,48 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:401-403 (-vbox {TCYCLE.split('_')[0]}
       # -testname {LVIRT}, оба ПОСЛЕ -tcv) + virt:virt/test_run.py:109 (`if args.TESTNAME == 'stealtime':`,
       # без пробела — не 'steal time'!). -vbox: см. легенду draft (TCYCLE-предположение = RC);
       # virt/test_run.py называет этот параметр `rc_vbox` — подтверждает гипотезу, не доказывает.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/virt/test_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1467,14 +2783,45 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: virt:virt/test_run.py:151 (`elif args.TESTNAME == 'stealtime_sm':`)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/virt/test_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1499,14 +2846,45 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: virt:virt/test_run.py:195 (`elif args.TESTNAME == 'fio':`, строчными — не 'FIO')
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/virt/test_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1531,14 +2909,45 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: virt:virt/test_run.py:227 (`elif args.TESTNAME == 'fio_large':`)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/virt/test_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1563,14 +2972,45 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: virt:virt/test_run.py:246 (`elif args.TESTNAME == 'unixbench':`, не 'vUnixBench')
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/virt/test_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1595,14 +3035,45 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: virt:virt/test_run.py:265 (`elif args.TESTNAME == 'pingpong':`, не 'vPingPong')
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/virt/test_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1629,17 +3100,48 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:395-397 (-wa идёт ПОСЛЕ -tcv) +
       # docker:docker/wa_run.py:11-14 (-wa action='store_true', голый флаг) +
       # docker:docker/docker_conf.py (VENV_PATH — каталог, run.py дописывает /python3.12,
       # итоговый бинарь тот же, что и у всех остальных веток)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/docker/wa_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1660,16 +3162,47 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:404-406 (--test {VPN} идёт ПОСЛЕ -tcv) +
       # astra_openvpn:astra_openvpn/ovpn_run.py:15-19 (`--test choices=["aovpncc"], default="aovpncc"`
       # — единственное допустимое значение, closed enum с одним элементом).
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/astra_openvpn/ovpn_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1692,16 +3225,47 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:407-409 (-tt {MAIL}, choices=['imap','smtp']
       # уже в самом backup_image.py argparse, идёт ПОСЛЕ -tcv) + exim:exim/exb_run.py:95-101
       # (-tt/--type-test choices=['smtp','imap'])
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/exim/exb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1722,13 +3286,44 @@ tests:
     readiness: ready
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/exim/exb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1751,16 +3346,47 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:410-412 (-vbox {TCYCLE.split('_')[0]}
       # -testname {NETWORK}, оба ПОСЛЕ -tcv) + network:network/test_run.py:111
       # (`if args.TESTNAME == 'iof':`). -vbox: см. легенду draft.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/network/test_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1785,14 +3411,45 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: network:network/test_run.py:142 (`elif args.TESTNAME == 'dhcp':`)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/network/test_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1819,16 +3476,47 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:413-415 (-vbox {TCYCLE.split('_')[0]}
       # -testname {KERNELTEST}, оба ПОСЛЕ -tcv) + kernel:kernel/test_run.py:106
       # (`if args.TESTNAME == 'segfault':`). -vbox: см. легенду draft.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/kernel/test_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1853,14 +3541,45 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: kernel:kernel/test_run.py:138 (`elif args.TESTNAME == 'xfs_memory_leak':`)
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/kernel/test_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1887,6 +3606,7 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:943-964 (freeipa_authentication_test()) +
       # backup_image.py:383-385 (-tt {FREEIPA}, choices=['auth','create-users','plugin']
@@ -1902,11 +3622,41 @@ tests:
       # нестандартный путь клонирования — если нет, скрипт не будет найден.
       # См. отчёт.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/freeipa_test/gitipa/stress_test/freeipa/ipa_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1927,16 +3677,47 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: тот же freeipa_authentication_test() путь срабатывает для ЛЮБОГО
       # truthy args.FREEIPA (backup_image.py:1037-1038), включая 'create-users' —
       # тот же stand1-хардкод и нестандартный путь, что у freeipa.auth.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/freeipa_test/gitipa/stress_test/freeipa/ipa_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1957,13 +3738,44 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/freeipa_test/gitipa/stress_test/freeipa/ipa_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1986,17 +3798,48 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:416-418 (-vbox {TCYCLE.split('_')[0]}
       # -testname {ASTRAEVENTS}, оба ПОСЛЕ -tcv) + astraevents:astraevents/aeb_run.py:105
       # (`if args.TESTNAME == 'astraevents':` — ЕДИНСТВЕННАЯ ветка в скрипте,
       # нет отдельного случая под smolensk). -vbox: см. легенду draft.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/astraevents/aeb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2021,6 +3864,7 @@ tests:
     readiness: draft
     department_id: null
     pinned_stand_id: null
+    starter_suffix: null
     command:
       # source: aeb_run.py (137 строк, полностью прочитан) НЕ ИМЕЕТ отдельной
       # ветки под smolensk — единственное сравнение `args.TESTNAME == 'astraevents'`
@@ -2030,11 +3874,41 @@ tests:
       # верхнем уровне backup_image.py, который управляет astra-modeswitch ДО
       # запуска теста (провижининг стенда), а не аргументом aeb_run.py.
       - kind: literal
-        literal_value: "sudo"
+        literal_value: "--username"
       - kind: literal
-        literal_value: "/home/u/python/Python-3.12.1/venv/bin/python3.12"
+        literal_value: "none"
       - kind: literal
-        literal_value: "/home/u/git/stress_test/astraevents/aeb_run.py"
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-fti"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
       - kind: literal
         literal_value: "-sn"
       - kind: variable

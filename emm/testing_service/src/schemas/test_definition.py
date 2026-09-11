@@ -61,6 +61,13 @@ class TestDefinitionCreate(BaseModel):
             "(§7). Пусто — тест считается затронутым любым changelog (безопасный дефолт)."
         ),
     )
+    starter_suffix: str | None = Field(
+        default=None, max_length=16,
+        description=(
+            "Позиционный $5 у legacy starter.sh (kernel/balance/oom). Пусто — "
+            "generic `run.py -n <dates_filename>` без дополнительного флага."
+        ),
+    )
 
     @field_validator("code")
     @classmethod
@@ -80,6 +87,9 @@ class TestDefinitionUpdate(BaseModel):
     pinned_stand_id: str | None = Field(default=None, description="Сменить привязанный стенд.")
     changelog_component: str | None = Field(
         default=None, max_length=128, description="Сменить компонент changelog-фильтра.",
+    )
+    starter_suffix: str | None = Field(
+        default=None, max_length=16, description="Сменить позиционный $5 у legacy starter.sh.",
     )
 
     @field_validator("code")
@@ -104,6 +114,7 @@ class TestDefinitionResponse(BaseModel):
     department_id: str | None = Field(default=None, description="Отдел-владелец.")
     pinned_stand_id: str | None = Field(default=None, description="Привязанный стенд.")
     changelog_component: str | None = Field(default=None, description="Компонент changelog-фильтра СТП.")
+    starter_suffix: str | None = Field(default=None, description="Позиционный $5 у legacy starter.sh.")
     created_at: datetime = Field(description="Когда тест заведён.")
     updated_at: datetime = Field(description="Когда последний раз изменён.")
     created_by: str | None = Field(default=None, description="Кто завёл.")

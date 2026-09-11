@@ -11,17 +11,24 @@
 
 1. `testing_client.claim()` — если очередь пуста (или testing_service
    недоступен), `item is None` → короткий сон и следующая попытка.
-2. Иначе — `ssh_executor.execute(...)` под кредами и хостом из `item`. Пока
-   команда выполняется, каждый накопленный кусок вывода уходит наружу через
+2. Если `item` несёт `dates_content` — `ssh_executor.write_remote_file(...)`
+   кладёт его по SFTP на стенд (`/home/u/<dates_filename>`) ДО запуска
+   команды: `starter.sh` читает этот файл с диска, значит он обязан там
+   оказаться раньше. Провал записи — фатален для item'а целиком, `execute()`
+   не вызывается вообще, сразу `report_completed(succeeded=False)`.
+3. `ssh_executor.execute(...)` под кредами и хостом из `item` — единственный
+   SSH-вызов `sudo bash /home/u/starter.sh ...` (что именно исполняется,
+   собрал `testing_service`, здесь просто argv). Пока команда выполняется,
+   каждый накопленный кусок вывода уходит наружу через
    `testing_client.log_chunk(...)` (§8.6 — живой лог в консоли сервера).
-3. Если до исполнения дело дошло (`result.connected`) — один
+4. Если до исполнения дело дошло (`result.connected`) — один
    `testing_client.log_segment(...)` на весь тест, с полным выводом и
    замаскированной командой (`command_masked`, посчитан `testing_service`'ом
    при `claim`, см. §8.1). Провал на уровне SSH-коннекта сегмента не
    заводит — `completed(succeeded=False)` сам по себе достаточно
    информативен для этого случая.
-4. `testing_client.report_completed(...)` с исходом.
-5. Сразу следующая итерация, без сна — под нагрузкой воркер вычерпывает
+5. `testing_client.report_completed(...)` с исходом.
+6. Сразу следующая итерация, без сна — под нагрузкой воркер вычерпывает
    очередь максимально быстро; пауза нужна только когда реально нечего делать.
 
 Тело цикла обёрнуто в `try/except Exception`: неожиданная ошибка (баг в
@@ -37,6 +44,8 @@ import asyncio
 import logging
 import shlex
 
+import asyncssh
+
 from src.core.config import get_settings
 from src.services import ssh_executor, testing_client
 
@@ -45,10 +54,50 @@ logger = logging.getLogger("testing_worker.queue_loop")
 _COMMAND_SEGMENT_LABEL = "Выполнение теста"
 
 
+async def _write_dates_file(item: dict, settings) -> str | None:
+    """SFTP-запись `dates.conf` на стенд перед запуском `starter.sh`.
+
+    Возвращает текст ошибки, если запись провалилась (вызывающий тогда
+    заканчивает item как `succeeded=False`, не пытаясь запустить команду),
+    либо `None` на успехе. Не логирует `dates_content` целиком — сырые
+    dates-флаги (потенциально с кредами Jira/Confluence) в лог не идут,
+    только факт записи и её длина.
+    """
+    dates_filename = item.get("dates_filename")
+    dates_content = item.get("dates_content")
+    if not dates_filename or dates_content is None:
+        return None
+
+    remote_path = f"/home/u/{dates_filename}"
+    try:
+        await ssh_executor.write_remote_file(
+            item["host"],
+            item["test_username"],
+            item["test_ssh_private_key"],
+            remote_path,
+            dates_content,
+            connect_timeout=settings.ssh_connect_timeout_seconds,
+        )
+    except (asyncssh.Error, OSError, ValueError, asyncio.TimeoutError, TimeoutError) as exc:
+        logger.warning(
+            "queue item %s: failed to write %s (%d bytes) over SFTP: %s",
+            item.get("queue_item_id"), remote_path, len(dates_content), type(exc).__name__,
+        )
+        return f"SFTP write of {dates_filename} failed: {type(exc).__name__}"
+    return None
+
+
 async def _run_one_item(item: dict) -> None:
     """Исполнить одно задание из `claim()`, зафиксировать лог и отчитаться `completed`."""
     settings = get_settings()
     queue_item_id = item["queue_item_id"]
+
+    write_error = await _write_dates_file(item, settings)
+    if write_error is not None:
+        await testing_client.report_completed(
+            queue_item_id, succeeded=False, exit_code=None, error=write_error,
+        )
+        return
 
     async def _on_output_chunk(text: str) -> None:
         await testing_client.log_chunk(queue_item_id, text)

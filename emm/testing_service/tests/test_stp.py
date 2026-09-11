@@ -378,7 +378,10 @@ class TestDepartmentIntegrationSettings:
 # ── /stp/generate ────────────────────────────────────────────────────────────
 
 
-async def _seed_integration_settings(department_id: str, *, credential_id="cred_x", jira_base_url="http://jira.example"):
+async def _seed_integration_settings(
+    department_id: str, *, credential_id="cred_x", jira_base_url="http://jira.example",
+    bitbucket_credential_id=None,
+):
     async with AsyncSessionLocal() as db:
         await dis_repo.create(db, {
             "id": department_integration_settings_id(),
@@ -386,6 +389,7 @@ async def _seed_integration_settings(department_id: str, *, credential_id="cred_
             "credential_id": credential_id,
             "jira_base_url": jira_base_url,
             "confluence_base_url": None,
+            "bitbucket_credential_id": bitbucket_credential_id,
         })
         await db.commit()
 
@@ -562,8 +566,9 @@ class TestStpEventDrivenStatus:
             await db.commit()
             run_id, cell_id = run.id, cell.id
 
-        await _seed_integration_settings(dept_a)
+        await _seed_integration_settings(dept_a, bitbucket_credential_id="cred_bitbucket")
         mock_secret_client["cred_x"] = ("jira_bot", "tok123")
+        mock_secret_client["cred_bitbucket"] = ("git-bot", "git-token")
 
         pushed = []
 

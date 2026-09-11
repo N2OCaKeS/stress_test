@@ -351,6 +351,107 @@ class TestExecuteChunkStreaming:
         assert len(received) >= 2
 
 
+class _FakeSftpFile:
+    """Минимальный `SFTPClientFile` — только `write()` под `async with`."""
+
+    def __init__(self, sink: list[str], write_exc: Exception | None = None) -> None:
+        self._sink = sink
+        self._write_exc = write_exc
+
+    async def write(self, content: str) -> None:
+        if self._write_exc is not None:
+            raise self._write_exc
+        self._sink.append(content)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeSftpClient:
+    """Минимальный `SFTPClient` — `open()` отдаёт `_FakeSftpFile` под `async with`."""
+
+    def __init__(
+        self, sink: list[str], *, open_exc: Exception | None = None, write_exc: Exception | None = None,
+    ) -> None:
+        self._sink = sink
+        self._open_exc = open_exc
+        self._write_exc = write_exc
+        self.opened: list[tuple[str, str]] = []
+
+    def open(self, path: str, mode: str):
+        self.opened.append((path, mode))
+        if self._open_exc is not None:
+            raise self._open_exc
+        return _FakeSftpFile(self._sink, write_exc=self._write_exc)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeSftpConnection(_FakeConnection):
+    """`_FakeConnection` + `start_sftp_client()` для `write_remote_file`."""
+
+    def __init__(self, sftp: _FakeSftpClient | None = None, sftp_exc: Exception | None = None) -> None:
+        super().__init__()
+        self._sftp = sftp
+        self._sftp_exc = sftp_exc
+
+    def start_sftp_client(self):
+        if self._sftp_exc is not None:
+            raise self._sftp_exc
+        return self._sftp
+
+
+class TestWriteRemoteFile:
+    async def test_writes_content_via_sftp(self, monkeypatch):
+        _patch_import_key(monkeypatch)
+        sink: list[str] = []
+        sftp = _FakeSftpClient(sink)
+        conn = _FakeSftpConnection(sftp=sftp)
+        _patch_connect(monkeypatch, conn=conn)
+
+        await ssh_executor.write_remote_file(
+            "10.0.0.1", "u", "keydata", "/home/u/dates_qi_1.conf", "-sn 1 -tcv 1.8.5",
+        )
+
+        assert sink == ["-sn 1 -tcv 1.8.5"]
+        assert sftp.opened == [("/home/u/dates_qi_1.conf", "w")]
+
+    async def test_invalid_private_key_raises(self, monkeypatch):
+        _patch_import_key(monkeypatch, import_exc=asyncssh.KeyImportError("bad key"))
+
+        with pytest.raises(ValueError, match="invalid SSH private key"):
+            await ssh_executor.write_remote_file(
+                "10.0.0.1", "u", "not-a-key", "/home/u/dates.conf", "content",
+            )
+
+    async def test_connect_failure_propagates(self, monkeypatch):
+        _patch_import_key(monkeypatch)
+        _patch_connect(monkeypatch, connect_exc=asyncssh.PermissionDenied("denied"))
+
+        with pytest.raises(asyncssh.PermissionDenied):
+            await ssh_executor.write_remote_file(
+                "10.0.0.1", "u", "keydata", "/home/u/dates.conf", "content",
+            )
+
+    async def test_sftp_write_failure_propagates(self, monkeypatch):
+        _patch_import_key(monkeypatch)
+        sftp = _FakeSftpClient([], write_exc=asyncssh.SFTPError(asyncssh.FX_FAILURE, "disk full"))
+        conn = _FakeSftpConnection(sftp=sftp)
+        _patch_connect(monkeypatch, conn=conn)
+
+        with pytest.raises(asyncssh.SFTPError):
+            await ssh_executor.write_remote_file(
+                "10.0.0.1", "u", "keydata", "/home/u/dates.conf", "content",
+            )
+
+
 class TestShlexJoinSafety:
     """Резолвленные аргументы не должны разваливаться в отдельные shell-команды."""
 

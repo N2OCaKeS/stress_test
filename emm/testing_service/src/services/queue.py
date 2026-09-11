@@ -10,7 +10,8 @@
    На провале — retry-логика, при исчерпании — переход к следующему item'у
    очереди стенда или `release-for-service`, если очередь опустела.
 3. `claim_next()` — `testing_worker` атомарно забирает один `ready`-item,
-   достаёт креды (одноразово), резолвит команду, узнаёт host стенда.
+   достаёт креды (одноразово), собирает содержимое `dates.conf`, git-токен
+   для `starter.sh` и команду его запуска, узнаёт host стенда.
 4. `complete_item()` — исход SSH-сессии. Та же retry-логика на провале, та же
    логика продолжения/освобождения очереди.
 
@@ -44,6 +45,7 @@ from src.core.exceptions import (
 )
 from src.dependencies.auth import Identity
 from src.models import QueueItem
+from src.repositories import department_integration_settings as dis_repo
 from src.repositories import queue_item as repo
 from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_stand as stand_repo
@@ -54,11 +56,12 @@ from src.services import (
     department_test_settings as dts_svc,
     log_rotation,
     run_summary,
+    secret_client,
     server_client,
     stp_status,
     test_run_status,
 )
-from src.services.test_command_arg import resolve_command, resolve_command_masked
+from src.services.test_command_arg import resolve_dates_content, resolve_dates_content_masked
 from src.utils.ids import queue_item_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -418,6 +421,36 @@ async def get_active_queue_item(db: AsyncSession, stand_id: str) -> QueueItem | 
     return await repo.get_active_for_stand(db, stand_id)
 
 
+_STARTER_SCRIPT_PATH = "/home/u/starter.sh"
+
+
+async def _resolve_git_token(db: AsyncSession, department_id: str) -> str:
+    """git-токен для `starter.sh` (клонирует ветку монорепо на стенде под `$2`).
+
+    В отличие от `stp.py::_resolve_jira_bearer`/`run_summary.py::_resolve_confluence_bearer`
+    (где отсутствие credential — частичный провал одного отчёта, `None`),
+    здесь недоступность токена фатальна для самого прогона — без него
+    `starter.sh` не сможет склонировать ветку. Поэтому функция поднимает
+    `AppException`, а `claim_next` заворачивает её в тот же `_fail_and_advance`,
+    что резолв dates-контента и адреса стенда.
+    """
+    settings = await dis_repo.get_by_department(db, department_id)
+    if settings is None or not settings.bitbucket_credential_id:
+        raise DomainValidationError(
+            error_code="BITBUCKET_CREDENTIAL_NOT_CONFIGURED",
+            message="department_integration_settings.bitbucket_credential_id is not configured",
+            details={"department_id": department_id},
+        )
+    _login, token = await secret_client.reveal_credential(settings.bitbucket_credential_id)
+    if not token:
+        raise ServiceUnavailableError(
+            error_code="BITBUCKET_CREDENTIAL_EMPTY",
+            message="reveal_credential returned an empty secret for bitbucket_credential_id",
+            details={"department_id": department_id},
+        )
+    return token
+
+
 async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
     """Атомарно забрать один `ready`-item (по любому стенду) для `testing_worker`."""
     item = await repo.claim_next_ready(db)
@@ -461,16 +494,37 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         logger.warning("service-status(testing) failed for queue_item %s: %s", item.id, exc)
 
     try:
-        command = await resolve_command(db, item.test_id, ctx)
-        command_masked = await resolve_command_masked(db, item.test_id, ctx)
+        dates_content = await resolve_dates_content(db, item.test_id, ctx)
+        dates_content_masked = await resolve_dates_content_masked(db, item.test_id, ctx)
     except AppException as exc:
         await _fail_and_advance(
             db, item, stand,
-            failed_step=None, error=f"resolve_command failed: {exc.message}",
+            failed_step=None, error=f"resolve_dates_content failed: {exc.message}",
             audit_action="queue_item.prepare_failed",
             is_first_ever=False,
         )
         return None
+
+    try:
+        git_token = await _resolve_git_token(db, stand.department_id)
+    except AppException as exc:
+        await _fail_and_advance(
+            db, item, stand,
+            failed_step=None, error=f"git token resolution failed: {exc.message}",
+            audit_action="queue_item.prepare_failed",
+            is_first_ever=False,
+        )
+        return None
+
+    dates_filename = f"dates_{item.id}.conf"
+    command = [
+        "sudo", "bash", _STARTER_SCRIPT_PATH,
+        test.category or "", git_token, dates_filename, ctx.get("RC", ""), test.starter_suffix or "",
+    ]
+    command_masked = [
+        "sudo", "bash", _STARTER_SCRIPT_PATH,
+        test.category or "", "***", dates_filename, ctx.get("RC", ""), test.starter_suffix or "",
+    ]
 
     try:
         connection = await server_client.get_connection_info(stand.server_id)
@@ -497,6 +551,9 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         test_ssh_private_key=creds.get("test_ssh_private_key"),
         command=command,
         command_masked=command_masked,
+        dates_content=dates_content,
+        dates_content_masked=dates_content_masked,
+        dates_filename=dates_filename,
         debug_mode=item.debug_mode,
         is_retry=item.is_retry,
     )

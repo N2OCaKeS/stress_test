@@ -274,3 +274,44 @@ async def execute(
         connected=True, succeeded=False, exit_code=exit_status, error=error,
         output=output, started_at=started_at, finished_at=finished_at,
     )
+
+
+async def write_remote_file(
+    host: str,
+    username: str,
+    ssh_private_key: str,
+    remote_path: str,
+    content: str,
+    *,
+    connect_timeout: float = 30.0,
+) -> None:
+    """Кладёт `content` в `remote_path` на стенде по SFTP, отдельным короткоживущим коннектом.
+
+    Нужен перед `execute()` для новой архитектуры запуска теста: `starter.sh`
+    читает `dates.conf` с диска, значит файл должен там оказаться раньше
+    команды его запуска. Отдельная функция, а не параметр `execute()` —
+    запись файла и запуск команды разные шаги одного пайплайна с разной
+    обработкой ошибок у вызывающего (`queue_loop.py`).
+
+    Исключения (`asyncssh.Error`/`OSError`/таймаут коннекта, невалидный ключ)
+    не перехватываются здесь — это ответственность вызывающего, симметрично
+    тому, как `execute()` сам решает, что считать провалом SSH-уровня.
+    """
+    try:
+        client_key = asyncssh.import_private_key(ssh_private_key)
+    except (asyncssh.KeyImportError, ValueError, TypeError) as exc:
+        raise ValueError(f"invalid SSH private key: {type(exc).__name__}") from exc
+
+    conn = await asyncssh.connect(
+        host=host,
+        username=username,
+        client_keys=[client_key],
+        # Тот же принцип, что у execute() — стенды часто переустанавливаются.
+        known_hosts=None,
+        connect_timeout=connect_timeout,
+        login_timeout=connect_timeout,
+    )
+    async with conn:
+        async with conn.start_sftp_client() as sftp:
+            async with sftp.open(remote_path, "w") as f:
+                await f.write(content)

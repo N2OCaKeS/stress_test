@@ -19,11 +19,12 @@ import pytest
 from src.core.constants import QueueItemState
 from src.dependencies.auth import Identity
 from src.db.session import AsyncSessionLocal
+from src.repositories import department_integration_settings as dis_repo
 from src.repositories import department_test_settings as dts_repo
 from src.repositories import queue_item as queue_repo
 from src.services import queue as queue_svc
-from src.services import server_client
-from src.utils.ids import department_test_settings_id
+from src.services import secret_client, server_client
+from src.utils.ids import department_integration_settings_id, department_test_settings_id
 from tests.conftest import auth_hdr as _hdr
 
 TESTS_BASE = "/api/testing/v1/test-definitions"
@@ -188,6 +189,34 @@ LAUNCH_CTX = {"RC": "1.8.5", "KERNEL": "6.1.0", "MODE": "orel"}
 async def _get_item(item_id: str):
     async with AsyncSessionLocal() as db:
         return await queue_repo.get_by_id(db, item_id)
+
+
+@pytest.fixture
+def mock_git_token(monkeypatch):
+    """Настраивает `bitbucket_credential_id` отдела + мокает `secret_client.reveal_credential`.
+
+    `claim_next` собирает git-токен для `starter.sh` из
+    `department_integration_settings.bitbucket_credential_id` — без него item
+    проваливается ещё до того, как воркер увидит команду (см.
+    `services/queue.py::_resolve_git_token`).
+    """
+    async def fake_reveal(cred_id: str):
+        return ("git-bot", "git-token-value")
+
+    monkeypatch.setattr(secret_client, "reveal_credential", fake_reveal)
+
+    async def _install(department_id: str = "dep_a") -> None:
+        async with AsyncSessionLocal() as db:
+            existing = await dis_repo.get_by_department(db, department_id)
+            if existing is None:
+                await dis_repo.create(db, {
+                    "id": department_integration_settings_id(),
+                    "department_id": department_id,
+                    "bitbucket_credential_id": "cred_bitbucket",
+                })
+                await db.commit()
+
+    return _install
 
 
 class TestEnqueue:
@@ -454,9 +483,10 @@ class TestClaim:
         assert resp.json()["item"] is None
 
     async def test_claims_ready_item_and_consumes_stash(
-        self, client, admin_token, mock_server_service, configure_internal_keys,
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
     ):
         mock_server_service(host="10.9.9.9")
+        await mock_git_token()
         stand_id, server_id = await _create_stand(client, admin_token)
         test_id = await _create_test_def(client, admin_token, stand_id, with_sensitive_arg=True)
         async with AsyncSessionLocal() as db:
@@ -479,8 +509,17 @@ class TestClaim:
         assert payload["host"] == "10.9.9.9"
         assert payload["test_username"] == "u"
         assert payload["test_password"] == "s3cr3t"
-        assert payload["command"] == ["--run", "s3cr3t"]
-        assert payload["command_masked"] == ["--run", "***"]
+        assert payload["command"] == [
+            "sudo", "bash", "/home/u/starter.sh", "", "git-token-value",
+            f"dates_{item.id}.conf", "1.8.5", "",
+        ]
+        assert payload["command_masked"] == [
+            "sudo", "bash", "/home/u/starter.sh", "", "***",
+            f"dates_{item.id}.conf", "1.8.5", "",
+        ]
+        assert payload["dates_content"] == "--run s3cr3t"
+        assert payload["dates_content_masked"] == "--run ***"
+        assert payload["dates_filename"] == f"dates_{item.id}.conf"
         assert payload["debug_mode"] is False
         assert payload["is_retry"] is False
 
@@ -502,9 +541,10 @@ class TestCompleted:
         assert resp.status_code == 401, resp.text
 
     async def test_success_releases_reservation_when_queue_empty(
-        self, client, admin_token, mock_server_service, configure_internal_keys, recorded_calls,
+        self, client, admin_token, mock_server_service, configure_internal_keys, recorded_calls, mock_git_token,
     ):
         mock_server_service()
+        await mock_git_token()
         stand_id, _ = await _create_stand(client, admin_token)
         test_id = await _create_test_def(client, admin_token, stand_id)
         async with AsyncSessionLocal() as db:
@@ -532,9 +572,10 @@ class TestCompleted:
         assert any(p.endswith("/release-for-service") for _, p in recorded_calls)
 
     async def test_failure_creates_retry(
-        self, client, admin_token, mock_server_service, configure_internal_keys,
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
     ):
         mock_server_service()
+        await mock_git_token()
         stand_id, _ = await _create_stand(client, admin_token)
         test_id = await _create_test_def(client, admin_token, stand_id)
         async with AsyncSessionLocal() as db:

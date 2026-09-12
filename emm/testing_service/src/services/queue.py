@@ -44,7 +44,7 @@ from src.core.exceptions import (
     ServiceUnavailableError,
 )
 from src.dependencies.auth import Identity
-from src.models import QueueItem
+from src.models import QueueItem, TestRunEntry
 from src.repositories import department_integration_settings as dis_repo
 from src.repositories import queue_item as repo
 from src.repositories import test_definition as test_definition_repo
@@ -54,7 +54,6 @@ from src.services import (
     audit_service,
     creds_stash,
     department_test_settings as dts_svc,
-    log_rotation,
     run_summary,
     secret_client,
     server_client,
@@ -78,6 +77,7 @@ async def enqueue(
     debug_mode: bool = False,
     stand_id: str | None = None,
     test_run_id: str | None = None,
+    test_run_entry_id: str | None = None,
 ) -> QueueItem:
     """Поставить тест в очередь стенда.
 
@@ -107,6 +107,12 @@ async def enqueue(
             details={"test_id": test.id, "readiness": test.readiness},
         )
 
+    entry = await db.get(TestRunEntry, test_run_entry_id) if test_run_entry_id else None
+    if test_run_entry_id and (
+        entry is None or entry.test_run_id != test_run_id or entry.test_id != test_id or debug_mode
+    ):
+        raise DomainValidationError(error_code="TEST_RUN_ENTRY_MISMATCH", message="Invalid campaign entry")
+
     if debug_mode:
         if not stand_id:
             raise DomainValidationError(
@@ -115,7 +121,7 @@ async def enqueue(
             )
         resolved_stand_id = stand_id
     else:
-        resolved_stand_id = test.pinned_stand_id
+        resolved_stand_id = entry.stand_id if entry is not None else test.pinned_stand_id
         if not resolved_stand_id:
             raise DomainValidationError(
                 error_code="TEST_NOT_PINNED_TO_STAND",
@@ -144,11 +150,6 @@ async def enqueue(
             details={"missing": missing},
         )
 
-    # Немедленная ротация (§8.5): старый незащищённый лог того же теста с
-    # тем же RC/KERNEL освобождает место сразу, не дожидаясь ежемесячной
-    # чистки — иначе перезапуски одного и того же прогона копят дубликаты.
-    await log_rotation.rotate_duplicate_if_any(db, test.id, ctx)
-
     was_empty = await repo.count_active_for_stand(db, stand.id) == 0
     position = await repo.next_position_for_stand(db, stand.id)
 
@@ -163,6 +164,7 @@ async def enqueue(
         "retry_of_id": None,
         "debug_mode": debug_mode,
         "test_run_id": test_run_id,
+        "test_run_entry_id": test_run_entry_id,
         "created_by": identity.user_id,
     }
     item = await repo.create(db, data)
@@ -317,6 +319,7 @@ async def _fail_item_and_maybe_retry(
         "retry_of_id": item.id,
         "debug_mode": item.debug_mode,
         "test_run_id": item.test_run_id,
+        "test_run_entry_id": item.test_run_entry_id,
         "created_by": item.created_by,
     })
     audit_service.emit(

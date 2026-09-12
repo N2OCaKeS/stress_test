@@ -16,6 +16,7 @@ from src.dependencies.db import get_db
 from src.schemas.common import PaginatedResponse
 from src.schemas.run_summary import RunSummaryCommentResponse
 from src.schemas.test_run import (
+    TestRunEntryResponse,
     TestRunCreate,
     TestRunCreateResponse,
     TestRunDetailResponse,
@@ -24,6 +25,9 @@ from src.schemas.test_run import (
 )
 from src.services import run_summary as run_summary_svc
 from src.services import test_run as svc
+from src.services.test_run_status import latest_attempts, result_states
+from src.repositories import test_run_entry as entry_repo
+from collections import Counter
 
 router = APIRouter(prefix="/test-runs")
 
@@ -110,6 +114,11 @@ async def get_test_run(
     """Get кампании по id. Любой аутентифицированный актор."""
     run, items = await svc.get_test_run(db, run_id)
     response = TestRunDetailResponse.model_validate(run)
+    entries = await entry_repo.list_for_run(db, run_id)
+    response.entries = [TestRunEntryResponse.model_validate(entry) for entry in entries]
+    states = result_states(items, entries)
+    response.progress = {"total": len(states), "attempts": len(items), **dict(Counter(states))}
+    current_ids = {item.id for item in latest_attempts(items)}
     response.queue_items = [
         TestRunQueueItemResponse(
             queue_item_id=item.id,
@@ -117,6 +126,9 @@ async def get_test_run(
             test_id=item.test_id,
             state=item.state,
             is_retry=item.is_retry,
+            retry_of_id=item.retry_of_id,
+            test_run_entry_id=item.test_run_entry_id,
+            is_current=item.id in current_ids,
             started_at=item.started_at,
             finished_at=item.finished_at,
             error=item.error,

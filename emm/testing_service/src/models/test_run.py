@@ -48,6 +48,7 @@ class TestRun(Base):
     department_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     test_run_stands: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    composition_source: Mapped[str] = mapped_column(String(32), nullable=False, default="legacy_queue", server_default="legacy_queue")
     final: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Soft-FK на auth_service identity (`usr_<hex>`/`bot_<hex>`).
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)

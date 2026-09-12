@@ -21,13 +21,14 @@ cycle`), то есть RC и os_version_id в этой кодовой базе �
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import Action, EntityType, TestRunStatus
 from src.core.exceptions import AppException, AuthorizationError, DomainValidationError, NotFoundError
 from src.dependencies.auth import Identity
-from src.models import TestRun
+from src.models import TestRun, TestRunEntry
 from src.repositories import queue_item as queue_item_repo
 from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_run as repo
@@ -72,6 +73,7 @@ async def create_test_run(
             message="Caller has no department_id to attribute this test run to",
         )
 
+    test_run_stands = list(dict.fromkeys(test_run_stands))
     run = await repo.create(db, {
         "id": new_id(),
         "os_version_id": os_version_id,
@@ -81,38 +83,37 @@ async def create_test_run(
         "test_run_stands": list(test_run_stands),
         "status": TestRunStatus.QUEUED,
         "final": final,
+        "composition_source": "pinned_catalog",
         "created_by": identity.user_id,
     })
+    tests = await test_definition_repo.list_by_pinned_stands(db, test_run_stands)
+    entries = [TestRunEntry(
+        id=f"entry_{uuid4().hex}", test_run_id=run.id, stand_id=test.pinned_stand_id,
+        test_id=test.id, test_code=test.code, test_name=test.full_name,
+    ) for test in tests]
+    db.add_all(entries)
     await db.commit()
     await db.refresh(run)
 
     launch_context = {"RC": os_version_id, "KERNEL": kernel, "MODE": mode}
-    stands_without_tests: list[str] = []
+    populated_stands = {entry.stand_id for entry in entries}
+    stands_without_tests = [stand_id for stand_id in test_run_stands if stand_id not in populated_stands]
     enqueue_errors: list[TestRunPartialError] = []
-
-    for stand_id in test_run_stands:
-        tests = await test_definition_repo.list_by_pinned_stand(db, stand_id)
-        if not tests:
-            stands_without_tests.append(stand_id)
-            logger.info("test_run %s: stand %s has no pinned tests, skipping", run.id, stand_id)
-            continue
-        for test in tests:
-            try:
-                await queue_svc.enqueue(
-                    db, identity, test.id,
-                    launch_context=launch_context,
-                    debug_mode=False,
-                    test_run_id=run.id,
-                )
-            except AppException as exc:
-                logger.warning(
-                    "test_run %s: enqueue failed for stand=%s test=%s: %s",
-                    run.id, stand_id, test.id, exc.message,
-                )
-                enqueue_errors.append(TestRunPartialError(
-                    stand_id=stand_id, test_id=test.id,
-                    error_code=exc.error_code, message=exc.message,
-                ))
+    for entry in entries:
+        try:
+            await queue_svc.enqueue(
+                db, identity, entry.test_id, launch_context=launch_context,
+                debug_mode=False, test_run_id=run.id, test_run_entry_id=entry.id,
+            )
+        except AppException as exc:
+            logger.warning("test_run %s: enqueue failed for stand=%s test=%s: %s", run.id, entry.stand_id, entry.test_id, exc.message)
+            entry.enqueue_error_code = exc.error_code
+            entry.enqueue_error = exc.message[:2048]
+            await db.commit()
+            enqueue_errors.append(TestRunPartialError(
+                stand_id=entry.stand_id, test_id=entry.test_id,
+                error_code=exc.error_code, message=exc.message,
+            ))
 
     new_status = await test_run_status.recompute(db, run.id, emit_audit=False)
     await db.commit()

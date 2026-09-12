@@ -114,3 +114,9 @@ async def delete(db: AsyncSession, obj: TestDefinition) -> None:
     """DELETE объекта (каскадом сносит его test_command_args). commit — на caller'е."""
     await db.delete(obj)
     await db.flush()
+
+
+async def list_by_pinned_stands(db: AsyncSession, stand_ids: list[str]) -> list[TestDefinition]:
+    stmt = (select(TestDefinition).where(TestDefinition.pinned_stand_id.in_(stand_ids))
+            .order_by(TestDefinition.pinned_stand_id, TestDefinition.code, TestDefinition.id))
+    return list((await db.execute(stmt)).scalars())

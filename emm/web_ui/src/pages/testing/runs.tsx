@@ -376,6 +376,8 @@ function RunDetailPanel({ run }: { run: TestRun }) {
   const summaryQ = useQuery(() => getRunSummaryComment(run.id), [run.id]);
   const items = useMemo(() => detailQ.data?.queue_items ?? [], [detailQ.data]);
   const now = useNow();
+  const [showHistory, setShowHistory] = useState(false);
+  const entries = useMemo(() => detailQ.data?.entries ?? [], [detailQ.data]);
 
   const standIds = useMemo(() => items.map((i) => i.stand_id), [items]);
   const testIds = useMemo(() => items.map((i) => i.test_id), [items]);
@@ -384,12 +386,12 @@ function RunDetailPanel({ run }: { run: TestRun }) {
 
   const rows = useMemo<RunQueueRow[]>(
     () =>
-      items.map((item) => ({
+      items.filter((item) => showHistory || item.is_current !== false).map((item) => ({
         ...item,
         standLabel: standLabel(standsById[item.stand_id], item.stand_id),
-        testLabel: testLabel(testsById[item.test_id], item.test_id),
+        testLabel: entries.find((entry) => entry.id === item.test_run_entry_id)?.test_name ?? testLabel(testsById[item.test_id], item.test_id),
       })),
-    [items, standsById, testsById],
+    [items, standsById, testsById, entries, showHistory],
   );
 
   const { sorted, sort, onSort } = useSortableRows<RunQueueRow, RunQueueColumn>(rows, runQueueValue, {
@@ -406,7 +408,7 @@ function RunDetailPanel({ run }: { run: TestRun }) {
         <div>
           <div className="text-sm font-medium">Тесты прогона {run.id}</div>
           <div className="text-xs text-dim">
-            {run.os_version_id} · {sorted.length} элементов очереди · создан {formatMsk(run.created_at)}
+            {run.os_version_id} · {detailQ.data?.progress?.total ?? items.length} тестов · {items.length} попыток · создан {formatMsk(run.created_at)}
           </div>
         </div>
         <div className="text-xs text-dim flex items-center gap-2">
@@ -420,6 +422,22 @@ function RunDetailPanel({ run }: { run: TestRun }) {
           {!summaryQ.loading && summary && !summary.status && <span>ещё не отправлялся</span>}
         </div>
       </div>
+
+      <div className="p-3 flex flex-wrap items-center gap-4 text-xs border-b border-token">
+        <label className="flex items-center gap-2">
+          <Checkbox checked={showHistory} onChange={(event) => setShowHistory(event.target.checked)} />
+          Показать предыдущие попытки
+        </label>
+        <Button size="sm" onClick={() => { detailQ.refetch(); summaryQ.refetch(); }}>Обновить результаты</Button>
+        {detailQ.data?.progress && <span>
+          Успешно: {detailQ.data.progress.succeeded ?? 0} · С ошибкой: {detailQ.data.progress.failed ?? 0} · Выполняются: {detailQ.data.progress.running ?? 0}
+        </span>}
+      </div>
+      {entries.filter((entry) => entry.enqueue_error_code).map((entry) => (
+        <div key={entry.id} className="p-3 text-xs text-danger">
+          {entry.test_name} · {entry.stand_id}: {entry.enqueue_error}
+        </div>
+      ))}
 
       {detailQ.loading && <div className="p-4 text-xs text-dim text-center">Загружаем элементы очереди…</div>}
       {!detailQ.loading && !!detailQ.error && (
@@ -437,7 +455,7 @@ function RunDetailPanel({ run }: { run: TestRun }) {
                 <SortableTh label="Тест" column="testLabel" sort={sort} onSort={onSort} />
                 <SortableTh label="Стенд" column="standLabel" sort={sort} onSort={onSort} />
                 <SortableTh label="Статус" column="state" sort={sort} onSort={onSort} />
-                <th>Retry</th>
+                <th>Попытка</th>
                 <SortableTh label="Начат" column="startedAt" sort={sort} onSort={onSort} />
                 <th>Время</th>
                 <th>Лог</th>
@@ -462,7 +480,7 @@ function RunDetailPanel({ run }: { run: TestRun }) {
                       <Badge kind={meta.badge}>{meta.label}</Badge>
                       {row.error && <div className="text-[10px] text-danger mt-0.5 max-w-[220px] truncate" title={row.error}>{row.error}</div>}
                     </td>
-                    <td className="text-xs">{row.is_retry ? "повтор" : "—"}</td>
+                    <td className="text-xs">{row.is_current === false ? "предыдущая" : row.is_retry ? "повтор" : "первая"}</td>
                     <td className="mono text-xs">{formatMskShort(row.started_at)}</td>
                     <td className="mono text-xs">{elapsed}</td>
                     <td>
@@ -605,7 +623,7 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
         if (!open) onClose();
       }}
       title="Запустить прогон"
-      subtitle="Один тест на стенд для всего пула, для одного РЦ/ядра/режима"
+      subtitle="Все привязанные тесты выбранных стендов для одного РЦ/ядра/режима"
       width="md"
       footer={
         <>

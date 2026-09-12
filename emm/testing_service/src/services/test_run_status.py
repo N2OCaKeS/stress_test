@@ -14,12 +14,36 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import ACTIVE_QUEUE_STATES, QueueItemState, TestRunStatus
+from src.models import QueueItem, TestRunEntry
 from src.repositories import queue_item as queue_item_repo
 from src.repositories import test_run as repo
+from src.repositories import test_run_entry as entry_repo
 from src.services import audit_service
+
+
+def latest_attempts(items: Sequence[QueueItem]) -> list[QueueItem]:
+    """Предыдущие попытки сохраняются в истории, но не считаются текущим исходом."""
+    by_id = {item.id: item for item in items}
+    superseded = set()
+    for item in items:
+        parent = by_id.get(item.retry_of_id)
+        if parent is not None and (parent.test_run_id, parent.test_id, parent.stand_id, parent.debug_mode) == (item.test_run_id, item.test_id, item.stand_id, item.debug_mode):
+            superseded.add(parent.id)
+    return [item for item in items if item.id not in superseded]
+
+
+def result_states(items: Sequence[QueueItem], entries: Sequence[TestRunEntry]) -> list[str]:
+    latest = latest_attempts(items)
+    attempted_entries = {item.test_run_entry_id for item in items}
+    return [item.state for item in latest] + [
+        QueueItemState.FAILED if entry.enqueue_error_code else QueueItemState.QUEUED
+        for entry in entries if entry.id not in attempted_entries
+    ]
 
 
 def compute_status(states: list[str]) -> str:
@@ -62,7 +86,8 @@ async def recompute(db: AsyncSession, test_run_id: str, *, emit_audit: bool = Tr
     if run is None:
         return None
     items = await queue_item_repo.list_by_test_run_id(db, test_run_id)
-    new_status = compute_status([item.state for item in items])
+    entries = await entry_repo.list_for_run(db, test_run_id)
+    new_status = compute_status(result_states(items, entries))
     if run.status != new_status:
         old_status = run.status
         run.status = new_status

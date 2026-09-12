@@ -50,7 +50,7 @@ SERVICE_EVENTS = [
     {"action": "queue_item.retry_created", "description": "A retry queue item was created after a failure", "default_severity": "INFO"},
     {"action": "queue_item.claimed", "description": "testing_worker claimed a ready queue item", "default_severity": "INFO"},
     {"action": "queue_item.completed", "description": "testing_worker reported the outcome of an SSH run", "default_severity": "INFO"},
-    {"action": "test_log.rotated", "description": "A test log was deleted by the rotation policy (duplicate relaunch or monthly retention)", "default_severity": "WARNING"},
+    {"action": "test_log.rotated", "description": "A test log was deleted by the retention policy", "default_severity": "WARNING"},
     {"action": "test_run.create", "description": "A fleet-wide test run campaign was created", "default_severity": "INFO"},
     {"action": "test_run.status_changed", "description": "A test run campaign's aggregate status changed after a queue item transition", "default_severity": "INFO"},
     {"action": "stp_test_case.create", "description": "STP test case (Zephyr mirror) created", "default_severity": "INFO"},

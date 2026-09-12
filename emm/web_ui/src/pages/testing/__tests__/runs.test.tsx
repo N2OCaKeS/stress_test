@@ -221,7 +221,7 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     await screen.findByText("run_1");
 
     fireEvent.click(screen.getByRole("button", { name: "Запустить прогон" }));
-    await screen.findByText("Один тест на стенд для всего пула, для одного РЦ/ядра/режима");
+    await screen.findByText("Все привязанные тесты выбранных стендов для одного РЦ/ядра/режима");
 
     // Пул стендов и РЦ/ядро/режим — дефолтные значения формы (все активные стенды).
     await waitFor(() => expect(listTestStandsMock).toHaveBeenCalledWith({ is_active: true, queue_enabled: true, limit: 500 }));
@@ -255,6 +255,26 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     expect(timeCellAfter.textContent).not.toBe(firstValue);
     // таймер тикает на клиенте — детали прогона за это время повторно не запрашивались
     expect(getTestRunMock.mock.calls.length).toBe(callsBefore);
+  });
+
+  it("показывает последний результат, сохраняет доступ к старому логу и имени из состава", async () => {
+    getTestRunMock.mockResolvedValue({
+      ...DETAIL,
+      entries: [{ id: "entry_1", test_run_id: "run_1", stand_id: "stand_1", test_id: "td_1", test_code: "OLD", test_name: "Тест при старте прогона", enqueue_error_code: null, enqueue_error: null }],
+      progress: { total: 1, attempts: 2, succeeded: 1 },
+      queue_items: [
+        { ...DETAIL.queue_items[0], state: "failed", error: "Ошибка первой попытки", is_current: false, test_run_entry_id: "entry_1" },
+        { ...DETAIL.queue_items[0], queue_item_id: "qi_retry", state: "succeeded", error: null, is_retry: true, retry_of_id: "qi_1", is_current: true, test_run_entry_id: "entry_1" },
+      ],
+    });
+    renderHarness();
+    await screen.findByText("Тест при старте прогона");
+    expect(screen.queryByText("Ошибка первой попытки")).not.toBeInTheDocument();
+    expect(screen.getByText(/Успешно: 1 · С ошибкой: 0/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Показать предыдущие попытки" }));
+    expect(screen.getByText("Ошибка первой попытки")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Лог" })[0]);
+    await waitFor(() => expect(getTestLogTextMock).toHaveBeenCalledWith("qi_1"));
   });
 
   it("клик «Лог» открывает модалку и подгружает реальный текст лога", async () => {

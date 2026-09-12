@@ -94,15 +94,6 @@ async def set_protected_for_branch(db: AsyncSession, os_version_major: str, prot
     await db.flush()
 
 
-async def find_unprotected_duplicates(db: AsyncSession, *, test_id: str, rc: str, kernel: str) -> list[TestLog]:
-    """Незащищённые логи с тем же `(test_id, rc, kernel)` — кандидаты немедленной ротации."""
-    stmt = select(TestLog).where(
-        TestLog.test_id == test_id, TestLog.rc == rc, TestLog.kernel == kernel,
-        TestLog.protected.is_(False),
-    )
-    return list((await db.execute(stmt)).scalars())
-
-
 async def find_stale_unprotected(db: AsyncSession, cutoff: datetime) -> list[TestLog]:
     """Незащищённые логи старше `cutoff` — кандидаты ежемесячной чистки."""
     stmt = select(TestLog).where(TestLog.protected.is_(False), TestLog.created_at < cutoff)

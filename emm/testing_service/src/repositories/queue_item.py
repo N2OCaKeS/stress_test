@@ -15,7 +15,7 @@ async def get_by_id(db: AsyncSession, item_id: str) -> QueueItem | None:
 
 async def get_by_id_for_update(db: AsyncSession, item_id: str) -> QueueItem | None:
     """SELECT ... FOR UPDATE по PK — сериализует конкурентные callback/complete на один item."""
-    stmt = select(QueueItem).where(QueueItem.id == item_id).with_for_update()
+    stmt = select(QueueItem).where(QueueItem.id == item_id).with_for_update().execution_options(populate_existing=True)
     return (await db.execute(stmt)).scalar_one_or_none()
 
 

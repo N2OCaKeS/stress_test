@@ -60,6 +60,9 @@ class QueueItem(Base):
     test_run_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("test_runs.id", ondelete="SET NULL"), nullable=True, index=True,
     )
+    test_run_entry_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("test_run_entries.id", ondelete="SET NULL"), nullable=True, index=True,
+    )
     # id запроса на стороне server_service (202-ответ prepare-for-test) —
     # для сшивки входящего callback'а и наблюдаемости.
     prepare_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

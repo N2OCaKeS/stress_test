@@ -343,7 +343,7 @@ class TestRotation:
             assert await test_log_repo.get_by_id(db, stale_protected) is not None
             assert await test_log_repo.get_by_id(db, fresh_unprotected) is not None
 
-    async def test_immediate_rotation_on_duplicate_relaunch(
+    async def test_relaunch_preserves_previous_attempt_log(
         self, client, admin_token, mock_server_service, configure_internal_keys,
     ):
         mock_server_service()
@@ -366,9 +366,13 @@ class TestRotation:
 
         async with AsyncSessionLocal() as db:
             gone = await test_log_repo.get_by_id(db, first_log.id)
-        assert gone is None
+        assert gone is not None
+        assert gone.id == first_log.id
+        response = await client.get(f"{QUEUE_ITEMS_BASE}/{first.id}/log", headers=_hdr(admin_token))
+        assert response.status_code == 200
+        assert "first run" in response.text
 
-    async def test_immediate_rotation_skips_protected_log(
+    async def test_relaunch_preserves_protected_log(
         self, client, admin_token, mock_server_service, configure_internal_keys,
     ):
         mock_server_service()

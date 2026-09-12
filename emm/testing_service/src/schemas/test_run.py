@@ -65,6 +65,7 @@ class TestRunResponse(BaseModel):
     test_run_stands: list[str] = Field(description="Пул стендов, выбранный при создании.")
     status: str = Field(description="Агрегатный статус: queued/running/succeeded/failed/partially_failed.")
     final: bool
+    composition_source: str = "legacy_queue"
     created_at: datetime
     updated_at: datetime
     created_by: str | None = None
@@ -91,12 +92,30 @@ class TestRunQueueItemResponse(BaseModel):
     test_id: str
     state: str
     is_retry: bool
+    retry_of_id: str | None = None
+    test_run_entry_id: str | None = None
+    is_current: bool = True
     started_at: datetime | None = None
     finished_at: datetime | None = None
     error: str | None = None
+
+
+class TestRunEntryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    test_run_id: str
+    stand_id: str
+    test_id: str
+    test_code: str
+    test_name: str
+    enqueue_error_code: str | None = None
+    enqueue_error: str | None = None
 
 
 class TestRunDetailResponse(TestRunResponse):
     """Ответ GET /test-runs/{id} — карточка + все дочерние queue_items."""
 
     queue_items: list[TestRunQueueItemResponse] = Field(default_factory=list)
+    entries: list[TestRunEntryResponse] = Field(default_factory=list)
+    progress: dict[str, int] = Field(default_factory=dict)

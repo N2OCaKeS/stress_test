@@ -406,6 +406,9 @@ export interface TestRunCreateResponse extends TestRun {
 
 /** Один дочерний queue_item в детальной карточке кампании. */
 export interface TestRunQueueItem {
+  retry_of_id?: string | null;
+  test_run_entry_id?: string | null;
+  is_current?: boolean;
   queue_item_id: string;
   stand_id: string;
   test_id: string;
@@ -418,6 +421,9 @@ export interface TestRunQueueItem {
 
 /** Ответ `GET /test-runs/{id}` — карточка + все дочерние queue_items. */
 export interface TestRunDetail extends TestRun {
+  composition_source?: string;
+  entries?: { id: string; test_run_id: string; stand_id: string; test_id: string; test_code: string; test_name: string; enqueue_error_code: string | null; enqueue_error: string | null }[];
+  progress?: Record<string, number>;
   queue_items: TestRunQueueItem[];
 }
 

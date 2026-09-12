@@ -65,6 +65,7 @@ async def _create_test_def_for_dept(
         TESTS_BASE, headers=_hdr(admin_token),
         json={
             "code": code, "full_name": "STP test", "department_id": department_id,
+            "readiness": "ready",
             "pinned_stand_id": pinned_stand_id,
         },
     )

@@ -35,7 +35,7 @@ import {
   Variable,
   type LucideIcon,
 } from "lucide-react";
-import { Stat, TextStatusBadge, type BadgeKind } from "./_shared";
+import { Stat, type BadgeKind } from "./_shared";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Dropdown } from "@/components/ui/Dropdown";
@@ -143,9 +143,10 @@ function categoryVisual(category: string | null | undefined): { label: string; i
 }
 
 const READINESS_OPTIONS = [
-  { value: "ready", label: "ready" },
-  { value: "draft", label: "draft" },
-  { value: "blocked", label: "blocked" },
+  { value: "ready", label: "Рабочий" },
+  { value: "review", label: "На проверке" },
+  { value: "broken", label: "Неисправен" },
+  { value: "development", label: "В разработке" },
 ];
 
 const SOURCE_OPTIONS: { value: GlobalVariableSource; label: string }[] = [
@@ -201,8 +202,9 @@ export function TestsWorkzone() {
     () => ({
       total: tests.length,
       ready: tests.filter((t) => t.readiness === "ready").length,
-      draft: tests.filter((t) => t.readiness === "draft").length,
-      blocked: tests.filter((t) => t.readiness === "blocked").length,
+      review: tests.filter((t) => t.readiness === "review").length,
+      broken: tests.filter((t) => t.readiness === "broken").length,
+      development: tests.filter((t) => t.readiness === "development").length,
     }),
     [tests],
   );
@@ -288,11 +290,12 @@ export function TestsWorkzone() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col gap-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 shrink-0">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3 shrink-0">
         <Stat title="Всего наборов" value={String(totals.total)} icon={FileText} />
-        <Stat title="Готовы к запуску" value={String(totals.ready)} icon={CheckCircle2} kind="ok" />
-        <Stat title="Требуют параметров" value={String(totals.draft)} icon={Cog} kind="warn" />
-        <Stat title="Заблокированы" value={String(totals.blocked)} icon={ShieldCheck} kind="danger" />
+        <Stat title="Рабочие" value={String(totals.ready)} icon={CheckCircle2} kind="ok" />
+        <Stat title="На проверке" value={String(totals.review)} icon={Cog} kind="warn" />
+        <Stat title="Неисправные" value={String(totals.broken)} icon={ShieldCheck} kind="danger" />
+        <Stat title="В разработке" value={String(totals.development)} icon={FlaskConical} kind="warn" />
       </div>
 
       <div className="surface border border-token rounded p-3 flex items-center gap-3 flex-wrap shrink-0">
@@ -405,7 +408,9 @@ export function TestsWorkzone() {
                           <Settings2 className="w-3.5 h-3.5" /> Конструктор
                         </Button>
                       </td>
-                      <td><TextStatusBadge value={test.readiness ?? "draft"} /></td>
+                      <td><Badge kind={test.readiness === "ready" ? "ok" : test.readiness === "broken" ? "danger" : "warn"}>
+                        {READINESS_OPTIONS.find((option) => option.value === test.readiness)?.label ?? "На проверке"}
+                      </Badge></td>
                       <td>
                         <div className="flex items-center gap-1 justify-end">
                           <Button
@@ -502,7 +507,7 @@ function TestFormModal({
   const [code, setCode] = useState(initial?.code ?? (template ? `${template.code}.copy` : ""));
   const [fullName, setFullName] = useState(initial?.full_name ?? template?.full_name ?? "");
   const [category, setCategory] = useState(initial?.category ?? template?.category ?? "");
-  const [readiness, setReadiness] = useState(initial?.readiness ?? template?.readiness ?? "draft");
+  const [readiness, setReadiness] = useState(initial?.readiness ?? "development");
   const [pinnedStandId, setPinnedStandId] = useState(
     initial?.pinned_stand_id ?? template?.pinned_stand_id ?? "",
   );
@@ -519,7 +524,7 @@ function TestFormModal({
         code: code.trim(),
         full_name: fullName.trim(),
         category: category.trim() || null,
-        readiness: readiness || null,
+        readiness,
         pinned_stand_id: pinnedStandId || null,
       });
     } finally {
@@ -573,8 +578,9 @@ function TestFormModal({
           ))}
         </datalist>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">Готовность</span>
-          <Dropdown mode="single" options={READINESS_OPTIONS} value={readiness ?? ""} onChange={setReadiness} />
+          <span className="text-dim text-xs">Статус теста</span>
+          <Dropdown mode="single" options={READINESS_OPTIONS} value={readiness} onChange={setReadiness} />
+          <span className="text-dim text-xs">«Рабочий» — обычные и debug-запуски. Остальные статусы — только debug. Статус меняется вручную; падение запуска его не меняет.</span>
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">Привязанный стенд</span>

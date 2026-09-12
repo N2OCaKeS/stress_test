@@ -227,18 +227,20 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
             stats.ok(f"[dry-run] test {code} — будет создан ({len(slots)} слот(ов))")
             continue
 
-        payload = TestDefinitionCreate(
-            code=code,
-            full_name=item.get("full_name") or code,
-            category=item.get("category"),
-            owner=item.get("owner"),
-            readiness=item.get("readiness"),
-            department_id=item.get("department_id"),
-            pinned_stand_id=item.get("pinned_stand_id"),
-            changelog_component=item.get("changelog_component"),
-            starter_suffix=item.get("starter_suffix"),
-        )
         try:
+            payload = TestDefinitionCreate(
+                code=code,
+                full_name=item.get("full_name") or code,
+                category=item.get("category"),
+                owner=item.get("owner"),
+                readiness={"draft": "development", "blocked": "broken"}.get(
+                    item.get("readiness"), item.get("readiness") or "development",
+                ),
+                department_id=item.get("department_id"),
+                pinned_stand_id=item.get("pinned_stand_id"),
+                changelog_component=item.get("changelog_component"),
+                starter_suffix=item.get("starter_suffix"),
+            )
             obj = await test_definition.create_test_definition(db, _SYSTEM_IDENTITY, payload)
         except Exception as exc:  # noqa: BLE001 — одна плохая запись не должна ронять импорт
             await db.rollback()

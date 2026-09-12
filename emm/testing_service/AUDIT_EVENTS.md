@@ -57,3 +57,9 @@
 По `ALLTA MIGRATION.md` §11 ожидаются (пока не реализовано):
 
 `test.launch`, `test.cancel`, `stp.status_updated`, `stp.test_case_created`, `test_definition.updated`, `department_report.generated`, `run_summary_comment.posted` и т.д. — заводятся вместе с сервисом, который их производит. Имена приводятся к конвенции `<object>.<verb>` (§11 плана пишет `global_variable.created` — в коде `global_variable.create`, как в остальных сервисах emm).
+
+## Отказ допуска ожидающего теста
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `queue_item.launch_rejected` | denied | WARNING | `test_id`, актуальный `readiness`; обычный запуск остановлен из-за ручной смены статуса каталога до подготовки или выдачи воркеру. |

@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import QueueItemState, TERMINAL_TEST_RUN_STATUSES
+from src.core.constants import QueueItemState, TERMINAL_TEST_RUN_STATUSES, TestReadiness
 from src.core.exceptions import (
     AppException,
     ConflictError,
@@ -93,11 +93,18 @@ async def enqueue(
     (кампания породила этот item); одиночные вызовы (UI/CLI постановка одного
     теста в очередь) оставляют его `None`, как и раньше.
     """
-    test = await test_definition_repo.get_by_id(db, test_id)
+    test = await test_definition_repo.get_by_id(db, test_id, for_update=True)
     if test is None:
         raise NotFoundError(
             error_code="TEST_DEFINITION_NOT_FOUND",
             message="Test definition not found",
+        )
+
+    if not debug_mode and test.readiness != TestReadiness.READY:
+        raise DomainValidationError(
+            error_code="TEST_REQUIRES_DEBUG",
+            message="Обычный запуск доступен только для теста со статусом «Рабочий». Используйте debug.",
+            details={"test_id": test.id, "readiness": test.readiness},
         )
 
     if debug_mode:
@@ -183,6 +190,8 @@ async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, 
     только если server_service отвечает `SERVER_NOT_BUSY` (бронь почему-то не
     держится), падаем обратно на `acquire-for-service`.
     """
+    if await _reject_unready_item(db, stand, item, is_first_ever=is_first_ever):
+        return
     settings = await dts_svc.get_effective(db, stand.department_id)
     ctx = item.launch_context or {}
     rc = ctx.get("RC")
@@ -235,6 +244,38 @@ async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, 
         status="success", allowed=True,
         details={"stand_id": stand.id, "prepare_request_id": item.prepare_request_id},
     )
+
+
+async def _reject_unready_item(db: AsyncSession, stand, item: QueueItem, *, is_first_ever: bool) -> bool:
+    if item.debug_mode:
+        return False
+    test = await test_definition_repo.get_by_id(db, item.test_id, for_update=True)
+    if test is not None and test.readiness == TestReadiness.READY:
+        return False
+    item.state = QueueItemState.FAILED
+    item.failed_step = "launch_guard"
+    item.error = "TEST_REQUIRES_DEBUG: статус теста изменён; обычный запуск запрещён."
+    item.finished_at = datetime.now(timezone.utc)
+    if item.creds_stash_key:
+        await creds_stash.pop_creds(item.creds_stash_key)
+        item.creds_stash_key = None
+    await db.commit()
+    audit_service.emit(
+        "queue_item.launch_rejected", target_id=item.id, target_type="queue_item",
+        status="denied", allowed=False,
+        details={"test_id": item.test_id, "readiness": test.readiness if test else None},
+    )
+    if item.test_run_id:
+        await test_run_status.recompute(db, item.test_run_id)
+        await db.commit()
+    # Проверка допуска не является результатом теста и не обновляет СТП.
+    if is_first_ever:
+        next_item = await repo.get_next_queued_for_stand(db, stand.id)
+        if next_item is not None:
+            await _start_or_continue_cycle(db, stand, next_item, is_first_ever=True)
+    else:
+        await _advance_stand_queue(db, stand)
+    return True
 
 
 async def _fail_item_and_maybe_retry(
@@ -466,6 +507,9 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
             error_code="QUEUE_ITEM_DATA_MISSING",
             message="Stand or test definition referenced by this queue item no longer exists",
         )
+
+    if await _reject_unready_item(db, stand, item, is_first_ever=False):
+        return None
 
     creds = None
     if item.creds_stash_key:

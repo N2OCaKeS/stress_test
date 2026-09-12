@@ -12,7 +12,7 @@ async def get_by_id(
     """SELECT по PK."""
     stmt = select(TestDefinition).where(TestDefinition.id == test_id)
     if for_update:
-        stmt = stmt.with_for_update()
+        stmt = stmt.with_for_update().execution_options(populate_existing=True)
     return (await db.execute(stmt)).scalar_one_or_none()
 
 

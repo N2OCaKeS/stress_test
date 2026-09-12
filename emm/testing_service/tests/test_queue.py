@@ -149,6 +149,7 @@ async def _create_test_def(
     payload = {
         "code": f"queue.test.{uuid.uuid4().hex[:8]}",
         "full_name": "Тест очереди",
+        "readiness": "ready",
     }
     if pinned_stand_id is not None:
         payload["pinned_stand_id"] = pinned_stand_id

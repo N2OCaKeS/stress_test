@@ -147,7 +147,7 @@ class TestListFilters:
         assert items[0]["id"] == created.json()["id"]
 
     async def test_filter_by_readiness(self, client, admin_token, no_role_token):
-        readiness = f"stage_{uuid.uuid4().hex[:8]}"
+        readiness = "review"
         created = await client.post(
             BASE, headers=_hdr(admin_token), json=_payload(readiness=readiness),
         )
@@ -188,11 +188,11 @@ class TestUpdate:
         test_id = await self._create(client, admin_token)
         resp = await client.patch(
             f"{BASE}/{test_id}", headers=_hdr(admin_token),
-            json={"readiness": "deprecated", "department_id": "dep_b"},
+            json={"readiness": "broken", "department_id": "dep_b"},
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["readiness"] == "deprecated"
+        assert body["readiness"] == "broken"
         assert body["department_id"] == "dep_b"
 
     async def test_no_role_gets_403(self, client, no_role_token, admin_token):

@@ -13,7 +13,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import CheckConstraint, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
@@ -23,13 +23,16 @@ class TestDefinition(Base):
     """Одна карточка каталога тестов."""
 
     __tablename__ = "test_definitions"
+    __table_args__ = (
+        CheckConstraint("readiness IN ('ready', 'review', 'broken', 'development')", name="ck_test_definitions_readiness"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(256), nullable=False)
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
     owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    readiness: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    readiness: Mapped[str] = mapped_column(String(32), nullable=False, default="development", server_default="development")
     # Per-department скоуп теста. Nullable — платформенные/демонстрационные
     # тесты без владельца-отдела допустимы, как и у part прочих каталогов.
     department_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

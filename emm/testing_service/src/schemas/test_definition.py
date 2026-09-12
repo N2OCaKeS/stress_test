@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from src.core.constants import TestReadiness
 
 # Код теста: латиница/цифры, `_`/`-`/`.` как разделители, не начинается с
 # разделителя. Формат достаточно свободный, чтобы вместить легаси-имена вида
@@ -40,9 +41,9 @@ class TestDefinitionCreate(BaseModel):
     )
     category: str | None = Field(default=None, max_length=64, description="Категория теста.")
     owner: str | None = Field(default=None, max_length=128, description="Ответственный за тест.")
-    readiness: str | None = Field(
-        default=None, max_length=32,
-        description="Статус готовности теста (например, draft/ready/deprecated).",
+    readiness: TestReadiness = Field(
+        default=TestReadiness.DEVELOPMENT,
+        description="ready — Рабочий; review — На проверке; broken — Неисправен; development — В разработке. Только ready допускает обычный запуск.",
     )
     department_id: str | None = Field(
         default=None, description="Отдел-владелец теста. Пусто — платформенный тест.",
@@ -82,7 +83,14 @@ class TestDefinitionUpdate(BaseModel):
     full_name: str | None = Field(default=None, min_length=1, max_length=256, description="Сменить название.")
     category: str | None = Field(default=None, max_length=64, description="Сменить категорию.")
     owner: str | None = Field(default=None, max_length=128, description="Сменить ответственного.")
-    readiness: str | None = Field(default=None, max_length=32, description="Сменить статус готовности.")
+    readiness: TestReadiness | None = Field(default=None, description="Сменить статус теста вручную.")
+
+    @field_validator("readiness")
+    @classmethod
+    def _check_readiness(cls, value: TestReadiness | None) -> TestReadiness:
+        if value is None:
+            raise ValueError("readiness cannot be null")
+        return value
     department_id: str | None = Field(default=None, description="Сменить отдел-владелец.")
     pinned_stand_id: str | None = Field(default=None, description="Сменить привязанный стенд.")
     changelog_component: str | None = Field(
@@ -110,7 +118,7 @@ class TestDefinitionResponse(BaseModel):
     full_name: str = Field(description="Отображаемое название.")
     category: str | None = Field(default=None, description="Категория теста.")
     owner: str | None = Field(default=None, description="Ответственный за тест.")
-    readiness: str | None = Field(default=None, description="Статус готовности.")
+    readiness: TestReadiness = Field(description="Ручной статус теста; не зависит от исхода запуска.")
     department_id: str | None = Field(default=None, description="Отдел-владелец.")
     pinned_stand_id: str | None = Field(default=None, description="Привязанный стенд.")
     changelog_component: str | None = Field(default=None, description="Компонент changelog-фильтра СТП.")

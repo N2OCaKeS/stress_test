@@ -78,7 +78,7 @@ const TESTS: TestDefinition[] = [
     full_name: "database / PostgreSQL TPC-C",
     category: "database",
     owner: "Backend QA",
-    readiness: "draft",
+    readiness: "development",
     department_id: null,
     pinned_stand_id: null,
     changelog_component: null,
@@ -204,7 +204,7 @@ describe("TestsWorkzone — каталог тестов из API", () => {
 
     await waitFor(() =>
       expect(createTestDefinitionMock).toHaveBeenCalledWith(
-        expect.objectContaining({ code: "NET-IPERF3", full_name: "network / iperf3 throughput" }),
+        expect.objectContaining({ code: "NET-IPERF3", full_name: "network / iperf3 throughput", readiness: "development" }),
       ),
     );
     // модалка закрылась
@@ -218,12 +218,14 @@ describe("TestsWorkzone — каталог тестов из API", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Изменить тест" })[0]);
     const fullNameInput = await screen.findByDisplayValue("filesystem / ext4 fill+remove cycle");
     fireEvent.change(fullNameInput, { target: { value: "filesystem / ext4 fill+remove cycle v2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Рабочий" }));
+    fireEvent.click(screen.getByRole("option", { name: "На проверке" }));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
 
     await waitFor(() =>
       expect(updateTestDefinitionMock).toHaveBeenCalledWith(
         "td_1",
-        expect.objectContaining({ full_name: "filesystem / ext4 fill+remove cycle v2" }),
+        expect.objectContaining({ full_name: "filesystem / ext4 fill+remove cycle v2", readiness: "review" }),
       ),
     );
   });
@@ -245,7 +247,8 @@ describe("TestsWorkzone — каталог тестов из API", () => {
 
     fireEvent.click(screen.getAllByRole("button", { name: "Клонировать тест" })[0]);
 
-    // Форма предзаполнена из td_1: код с суффиксом ".copy", остальные поля как у исходного.
+    // Копия рабочего теста требует собственной проверки.
+    expect(screen.getByRole("button", { name: "В разработке" })).toBeInTheDocument();
     const codeInput = await screen.findByDisplayValue("FS-EXT4-FILL.copy");
     expect(screen.getByDisplayValue("filesystem / ext4 fill+remove cycle")).toBeInTheDocument();
     fireEvent.change(codeInput, { target: { value: "FS-EXT4-FILL-2" } });

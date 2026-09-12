@@ -4,6 +4,13 @@ from enum import StrEnum
 
 SERVICE_NAME = "testing_service"
 
+
+class TestReadiness(StrEnum):
+    READY = "ready"
+    REVIEW = "review"
+    BROKEN = "broken"
+    DEVELOPMENT = "development"
+
 # Health/ready paths, исключаемые из rate-limit / audit / introspect.
 HEALTH_PATHS: frozenset[str] = frozenset({
     "/api/testing/v1/health",

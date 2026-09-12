@@ -28,7 +28,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +39,11 @@ class QueueItem(Base):
     """Одна постановка теста в очередь стенда."""
 
     __tablename__ = "queue_items"
+    __table_args__ = (UniqueConstraint("created_by", "client_request_id", name="uq_queue_items_client_request"),)
+
+    client_request_id: Mapped[str | None] = mapped_column(String(128))
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    stp_test_run_id: Mapped[str | None] = mapped_column(String(64))
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     stand_id: Mapped[str] = mapped_column(

@@ -1,10 +1,10 @@
 """QueueItem-репозиторий — сырой CRUD + очередные выборки против `queue_items`."""
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import ACTIVE_QUEUE_STATES, QueueItemState
-from src.models import QueueItem
+from src.models import QueueItem, TestStand
 
 
 async def get_by_id(db: AsyncSession, item_id: str) -> QueueItem | None:
@@ -21,7 +21,7 @@ async def get_by_id_for_update(db: AsyncSession, item_id: str) -> QueueItem | No
 
 async def get_by_prepare_request_id(db: AsyncSession, prepare_request_id: str) -> QueueItem | None:
     """SELECT по `prepare_request_id` — сшивка входящего callback'а server_service."""
-    stmt = select(QueueItem).where(QueueItem.prepare_request_id == prepare_request_id)
+    stmt = select(QueueItem).where(QueueItem.prepare_request_id == prepare_request_id).with_for_update().execution_options(populate_existing=True)
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
@@ -121,3 +121,30 @@ async def update(db: AsyncSession, obj: QueueItem, changes: dict) -> QueueItem:
         setattr(obj, key, value)
     await db.flush()
     return obj
+
+
+async def lock_request(db: AsyncSession, actor: str, request_id: str) -> None:
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"queue:{actor}:{request_id}"})
+
+
+async def find_request(db: AsyncSession, actor: str, request_id: str) -> QueueItem | None:
+    stmt = select(QueueItem).where(QueueItem.created_by == actor, QueueItem.client_request_id == request_id)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def has_successor(db: AsyncSession, item_id: str) -> bool:
+    stmt = select(QueueItem.id).where(QueueItem.retry_of_id == item_id).limit(1)
+    return (await db.execute(stmt)).scalar_one_or_none() is not None
+
+
+async def list_for_department(db: AsyncSession, department_id: str, *, kind: str, test_run_id: str | None, limit: int, offset: int):
+    stmt = select(QueueItem).join(TestStand, TestStand.id == QueueItem.stand_id).where(TestStand.department_id == department_id)
+    if kind == "standalone":
+        stmt = stmt.where(QueueItem.test_run_id.is_(None))
+    elif kind == "campaign":
+        stmt = stmt.where(QueueItem.test_run_id.is_not(None))
+    if test_run_id:
+        stmt = stmt.where(QueueItem.test_run_id == test_run_id)
+    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
+    items = (await db.execute(stmt.order_by(QueueItem.created_at.desc(), QueueItem.id).limit(limit).offset(offset))).scalars().all()
+    return list(items), total

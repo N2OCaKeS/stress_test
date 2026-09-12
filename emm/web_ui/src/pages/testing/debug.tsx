@@ -1,33 +1,6 @@
-/**
- * Раздел «Отладка» — разовый запуск одного теста на одном стенде вне
- * большого fleet-прогона (debug-режим, `ALLTA MIGRATION.md` §5.5, переименовано
- * из legacy «dev mode»): тест не привязан к конкретному стенду
- * (`pinned_stand_id` снимается), поэтому доступны и физические, и виртуальные
- * стенды — в отличие от «Прогонов», где виртуальные стенды не участвуют.
- *
- * Средняя панель Shell — список запусков (тот же паттерн, что и
- * `RunsMiddlePanel`/`StpMiddlePanel`: поиск+фильтр+сортировка сверху не
- * скроллятся, список скроллится). Список остаётся demo-массивом
- * (`ADHOC_RUNS`) — backend `testing_service` пока не заводит публичный
- * эндпоинт ни для постановки debug-запуска в очередь (`services/queue.py::
- * enqueue(debug_mode=True, ...)` вызывается только из тестов сервиса, ни один
- * роутер его не вызывает), ни для истории таких запусков (нет `list
- * queue_items` вне контекста `test_run`/`test_stand`, см. `queueItems.ts`).
- * Кнопка «Запустить разовый тест» поэтому остаётся демо-заглушкой.
- *
- * Реальными стали данные лога выбранного запуска — рабочая зона трактует
- * `run.id` как `queue_item_id` и подключается к настоящему backend'у:
- * во время исполнения — `WS /queue-items/{id}/log/stream` (`logStream.ts`,
- * тот же канал, что и «Живой лог теста» в консоли сервера); после завершения
- * — `GET /queue-items/{id}/log/segments` + `GET /queue-items/{id}/log` для
- * навигации по чекпоинтам/командам с реальным текстом (сегменты бэкенд пишет
- * уже в legacy-формате `dev_libs`/`Libvit.py`: `TASK`/`STATUS`/`COMMAND`/
- * `CONCLUSION` — это буквальный текст внутри сегмента, реконструировать его
- * из отдельных полей не нужно).
- */
+/** Одиночные запуски и логи реальных попыток вне кампаний. */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bug, ChevronDown, ChevronUp, Download, Flag, Play, Radio, Search, Terminal } from "lucide-react";
-import { naturalCompare } from "@/lib/naturalSort";
 import { formatElapsedHMS, formatMsk, formatMskShort } from "@/lib/datetime";
 import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
@@ -35,8 +8,12 @@ import { useQuery } from "@/api/auth/useQuery";
 import { downloadTestLog, getTestLogText, listLogSegments } from "@/api/testing/testLogs";
 import { testLogStreamProtocols, testLogStreamUrl } from "@/api/testing/logStream";
 import type { TestLogSegment, TestLogSegmentStatus } from "@/api/testing/types";
-import { TEST_CATALOG } from "./tests";
-import { STANDS, type BadgeKind } from "./_shared";
+import { listQueueItems, retryQueueItem } from "@/api/testing/queueItems";
+import { listOsVersions } from "@/api/server/osVersions";
+import { listTestDefinitions } from "@/api/testing/testDefinitions";
+import { listTestStands, getTestStand } from "@/api/testing/testStands";
+import { StandaloneLaunchModal } from "./StandaloneLaunchModal";
+import { type BadgeKind } from "./_shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -48,31 +25,18 @@ export interface AdhocRun {
   id: string;
   testCode: string;
   standName: string;
-  standId: number;
+  standId: string;
+  testName: string;
+  debugMode: boolean;
+  rc: string;
+  kernel: string;
+  error: string | null;
+  canRetry: boolean;
   mode: AdhocMode;
   status: AdhocStatus;
   startedAt: string;
+  createdAt: string;
 }
-
-function testFullName(code: string): string {
-  return TEST_CATALOG.find((t) => t.code === code)?.fullName ?? code;
-}
-
-function standByName(name: string) {
-  return STANDS.find((s) => s.name === name);
-}
-
-export const ADHOC_RUNS: AdhocRun[] = [
-  { id: "adhoc-2026090701", testCode: "STR-SEGFAULT-FUZZ", standName: "stand15-110", standId: 15, mode: "orel", status: "running", startedAt: "07.09.2026 09:40 MSK" },
-  { id: "adhoc-2026090612", testCode: "DB-PG-TPCC", standName: "vm-stand1", standId: 21, mode: "smolensk", status: "done", startedAt: "06.09.2026 22:10 MSK" },
-  { id: "adhoc-2026090605", testCode: "SEC-FREEIPA-JOIN", standName: "stand8-103", standId: 8, mode: "orel", status: "failed", startedAt: "06.09.2026 18:05 MSK" },
-  { id: "adhoc-2026090520", testCode: "FS-XFS-FILL", standName: "stand6-101", standId: 6, mode: "smolensk", status: "done", startedAt: "05.09.2026 20:12 MSK" },
-  { id: "adhoc-2026090511", testCode: "NET-IPERF3", standName: "vm-stand2", standId: 22, mode: "orel", status: "queued", startedAt: "05.09.2026 11:00 MSK" },
-  { id: "adhoc-2026090409", testCode: "OTH-UNIXBENCH", standName: "stand14-109", standId: 14, mode: "smolensk", status: "done", startedAt: "04.09.2026 09:47 MSK" },
-  { id: "adhoc-2026090318", testCode: "STR-OOM-KILLER", standName: "stand10-105", standId: 10, mode: "orel", status: "failed", startedAt: "03.09.2026 18:30 MSK" },
-  { id: "adhoc-2026090215", testCode: "DB-SYSBENCH-OLTP", standName: "stand17-112", standId: 17, mode: "smolensk", status: "done", startedAt: "02.09.2026 15:05 MSK" },
-  { id: "adhoc-2026090108", testCode: "SEC-IPTABLES", standName: "stand20-115", standId: 20, mode: "orel", status: "done", startedAt: "01.09.2026 08:22 MSK" },
-];
 
 const ADHOC_STATUS_META: Record<AdhocStatus, { label: string; badge: BadgeKind }> = {
   queued: { label: "В очереди", badge: "warn" },
@@ -93,18 +57,13 @@ function useNow(intervalMs = 1000): number {
   return now;
 }
 
-/** Демо-`startedAt` хранится как `"DD.MM.YYYY HH:MM MSK"` — для elapsed-таймера достаточно локального парсинга, без строгой сверки часовых поясов. */
-function demoStartedAtMs(startedAt: string): number | null {
-  const match = startedAt.match(/(\d{2})\.(\d{2})\.(\d{4}) (\d{2}):(\d{2})/);
-  if (!match) return null;
-  const [, d, mo, y, h, mi] = match;
-  return new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi)).getTime();
-}
-
 // ── состояние средней панели, общее для AdhocMiddlePanel и AdhocWorkzone ────
 
 export interface AdhocState {
   runs: AdhocRun[];
+  loading: boolean;
+  error: unknown;
+  refresh: () => void;
   total: number;
   search: string;
   setSearch: (v: string) => void;
@@ -117,15 +76,40 @@ export interface AdhocState {
   selectedRun: AdhocRun | null;
 }
 
-export function useAdhocState(): AdhocState {
+export function useAdhocState(enabled = true): AdhocState {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<AdhocStatus | "all">("all");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [selectedId, setSelectedId] = useState<string>(ADHOC_RUNS[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState<string>("");
 
+  const queueQ = useQuery(() => listQueueItems(), [], { enabled });
+  const versionsQ = useQuery(() => listOsVersions({ limit: 500 }), [], { enabled });
+  const testsQ = useQuery(() => listTestDefinitions({ limit: 500 }), [], { enabled });
+  const standsQ = useQuery(async () => {
+    const page = await listTestStands({ limit: 500 });
+    return Promise.all(page.items.map((stand) => getTestStand(stand.id)));
+  }, [], { enabled });
+  const allRuns = useMemo<AdhocRun[]>(() => {
+    const items = queueQ.data?.items ?? [];
+    const parents = new Set(items.map((item) => item.retry_of_id));
+    return items.map((item) => {
+      const test = testsQ.data?.items.find((candidate) => candidate.id === item.test_id);
+      const stand = standsQ.data?.find((candidate) => candidate.id === item.stand_id);
+      const server = stand?.server as { display_name?: string; hostname?: string } | undefined;
+      return {
+        id: item.id, testCode: test?.code ?? item.test_id, testName: test?.full_name ?? item.test_id,
+        standName: server?.display_name ?? server?.hostname ?? stand?.server_id ?? item.stand_id,
+        standId: item.stand_id, mode: item.mode === "smolensk" ? "smolensk" : "orel",
+        status: item.state === "succeeded" ? "done" : item.state === "failed" ? "failed" : item.state === "running" ? "running" : "queued",
+        startedAt: item.started_at ?? item.created_at, createdAt: item.created_at, debugMode: item.debug_mode,
+        rc: versionsQ.data?.items.find((version) => version.id === item.rc)?.name ?? item.rc ?? "—", kernel: item.kernel ?? "—", error: item.error,
+        canRetry: ["succeeded", "failed"].includes(item.state) && !parents.has(item.id),
+      };
+    });
+  }, [queueQ.data, testsQ.data, standsQ.data, versionsQ.data]);
   const runs = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const filtered = ADHOC_RUNS.filter((run) => {
+    const filtered = allRuns.filter((run) => {
       if (statusFilter !== "all" && run.status !== statusFilter) return false;
       if (!term) return true;
       return (
@@ -135,15 +119,23 @@ export function useAdhocState(): AdhocState {
       );
     });
     return [...filtered].sort((a, b) =>
-      sortDir === "asc" ? naturalCompare(a.id, b.id) : naturalCompare(b.id, a.id),
+      sortDir === "asc" ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
-  }, [search, statusFilter, sortDir]);
+  }, [allRuns, search, statusFilter, sortDir]);
 
-  const selectedRun = ADHOC_RUNS.find((r) => r.id === selectedId) ?? ADHOC_RUNS[0] ?? null;
+  const hasActive = allRuns.some((run) => run.status === "queued" || run.status === "running");
+  useEffect(() => {
+    if (!enabled || !hasActive) return;
+    const timer = setInterval(queueQ.refetch, 5000);
+    return () => clearInterval(timer);
+  }, [enabled, hasActive, queueQ.refetch]);
+
+  const selectedRun = runs.find((r) => r.id === selectedId) ?? runs[0] ?? null;
 
   return {
     runs,
-    total: ADHOC_RUNS.length,
+    total: queueQ.data?.total ?? 0,
+    loading: queueQ.loading, error: queueQ.error, refresh: queueQ.refetch,
     search,
     setSearch,
     statusFilter,
@@ -159,7 +151,7 @@ export function useAdhocState(): AdhocState {
 // ── средняя панель Shell: список разовых запусков ───────────────────────────
 
 export function AdhocMiddlePanel({ state }: { state: AdhocState }) {
-  const toast = useToast();
+  const [launchOpen, setLaunchOpen] = useState(false);
   return (
     <aside className="border-r border-token surface flex flex-col min-h-0">
       <div className="border-b border-token px-3 py-2 shrink-0">
@@ -197,9 +189,12 @@ export function AdhocMiddlePanel({ state }: { state: AdhocState }) {
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
+        {state.loading && <div className="p-3 text-xs">Загрузка запусков…</div>}
+        {!!state.error && <div role="alert" className="p-3 text-xs text-danger">{apiErrMsg(state.error, "Не удалось загрузить запуски")}</div>}
+        <Button size="sm" onClick={state.refresh}>Обновить запуски</Button>
         {state.runs.length === 0 && <div className="px-3 py-6 text-xs text-dim text-center">Нет запусков по фильтру</div>}
         {state.runs.map((run) => (
-          <AdhocListRow key={run.id} run={run} active={run.id === state.selectedId} onSelect={() => state.setSelectedId(run.id)} />
+          <AdhocListRow key={run.id} run={run} active={run.id === state.selectedRun?.id} onSelect={() => state.setSelectedId(run.id)} />
         ))}
       </div>
 
@@ -209,23 +204,19 @@ export function AdhocMiddlePanel({ state }: { state: AdhocState }) {
           size="sm"
           type="button"
           className="w-full flex items-center justify-center gap-2"
-          onClick={() =>
-            toast.info(
-              "Постановка разового debug-теста в очередь пока не выведена в публичный API testing_service (backend умеет debug_mode внутри, но эндпоинта для UI/CLI ещё нет) — кнопка остаётся демо-заглушкой",
-            )
-          }
+          onClick={() => setLaunchOpen(true)}
         >
           <Play className="w-3.5 h-3.5" />
           Запустить разовый тест
         </Button>
       </div>
+      {launchOpen && <StandaloneLaunchModal onClose={() => setLaunchOpen(false)} onLaunched={(id) => { state.setSelectedId(id); state.refresh(); setLaunchOpen(false); }} />}
     </aside>
   );
 }
 
 function AdhocListRow({ run, active, onSelect }: { run: AdhocRun; active: boolean; onSelect: () => void }) {
   const meta = ADHOC_STATUS_META[run.status];
-  const stand = standByName(run.standName);
   return (
     <button
       type="button"
@@ -236,11 +227,11 @@ function AdhocListRow({ run, active, onSelect }: { run: AdhocRun; active: boolea
     >
       <div className="flex items-center gap-2">
         <span className="font-semibold mono text-sm truncate">{run.id}</span>
-        {stand?.kind === "virtual" && <Badge kind="info" className="shrink-0">ВМ</Badge>}
+        {run.debugMode && <Badge kind="warn">Debug</Badge>}
         <Badge kind={meta.badge} className="shrink-0 ml-auto">{meta.label}</Badge>
       </div>
-      <div className="text-xs truncate" title={testFullName(run.testCode)}>{run.testCode}</div>
-      <div className="mono text-[11px] text-dim truncate">{run.standName} · {run.mode} · {run.startedAt}</div>
+      <div className="text-xs truncate" title={run.testName}>{run.testCode}</div>
+      <div className="mono text-[11px] text-dim truncate">{run.standName} · {run.mode} · {formatMsk(run.startedAt)}</div>
     </button>
   );
 }
@@ -563,6 +554,18 @@ function FinishedLogViewer({ queueItemId }: { queueItemId: string }) {
 // ── рабочая зона: заголовок запуска + живой/завершённый лог ────────────────
 
 export function AdhocWorkzone({ state }: { state: AdhocState }) {
+  const toast = useToast();
+  const [retrying, setRetrying] = useState(false);
+  const retryKeys = useRef<Record<string, string>>({});
+  async function retry(id: string) {
+    if (retrying) return;
+    setRetrying(true);
+    try {
+      const item = await retryQueueItem(id, retryKeys.current[id] ??= crypto.randomUUID());
+      state.setSelectedId(item.id); state.refresh();
+    } catch (error) { toast.error(apiErrMsg(error, "Не удалось повторить тест")); }
+    finally { setRetrying(false); }
+  }
   const run = state.selectedRun;
   const now = useNow();
 
@@ -571,8 +574,7 @@ export function AdhocWorkzone({ state }: { state: AdhocState }) {
   }
 
   const meta = ADHOC_STATUS_META[run.status];
-  const stand = standByName(run.standName);
-  const startedMs = demoStartedAtMs(run.startedAt);
+  const startedMs = new Date(run.startedAt).getTime();
 
   return (
     <div className="grid gap-4">
@@ -581,13 +583,13 @@ export function AdhocWorkzone({ state }: { state: AdhocState }) {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-lg font-semibold mono">{run.id}</span>
             <Badge kind={meta.badge}>{meta.label}</Badge>
-            {stand?.kind === "virtual" && <Badge kind="info">виртуальный стенд</Badge>}
+            {run.debugMode && <Badge kind="warn">Debug</Badge>}
             {run.status === "running" && startedMs !== null && (
               <span className="mono text-xs text-dim">прошло {formatElapsedHMS(now - startedMs)}</span>
             )}
           </div>
           <div className="text-xs text-dim mt-1">
-            {run.testCode} · {testFullName(run.testCode)} · {run.standName} · режим {run.mode} · запущен {run.startedAt}
+            {run.testCode} · {run.testName} · {run.standName} · режим {run.mode} · запущен {formatMsk(run.startedAt)}
           </div>
         </div>
       </div>
@@ -595,14 +597,15 @@ export function AdhocWorkzone({ state }: { state: AdhocState }) {
       <div className="alert-warn text-xs">
         <Bug className="w-3.5 h-3.5 shrink-0" />
         <span>
-          Разовый запуск вне прогона (debug-режим) — привязка к стенду снята, поэтому доступны и физические, и
-          виртуальные стенды. В «Прогонах» (fleet-wide) такие запуски не участвуют.
+          {run.debugMode ? "Debug: результат не засчитывается в СТП и прогон." : "Одиночный запуск: результат относится к выбранной СТП, вне счётчиков прогона."} РЦ {run.rc} · ядро {run.kernel}
         </span>
       </div>
 
+      {run.error && <div role="alert" className="text-xs text-danger">{run.error}</div>}
+      {run.canRetry && <Button disabled={retrying} onClick={() => retry(run.id)}>Повторить тест</Button>}
       {run.status === "queued" && (
         <div className="surface border border-token rounded p-8 text-center text-dim text-sm">
-          Тест поставлен в очередь, ожидает освобождения стенда — лога пока нет.
+          Задание в очереди или на подготовке стенда — лог исполнения пока недоступен.
         </div>
       )}
 

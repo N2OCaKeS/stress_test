@@ -51,6 +51,8 @@ async def sync_cell_from_queue_item(db: AsyncSession, item: QueueItem) -> None:
     No-op тихо, если СТП-прогон/ячейка для этого теста/стенда/RC не заведены —
     это обычный случай (не каждый тест участвует в СТП).
     """
+    if item.debug_mode or item.failed_step == "launch_guard":
+        return
     new_status = _TERMINAL_STATUS_MAP.get(item.state)
     if new_status is None:
         return
@@ -67,7 +69,7 @@ async def sync_cell_from_queue_item(db: AsyncSession, item: QueueItem) -> None:
         case = await stp_test_case_repo.get_by_code(db, test.code)
         if case is None:
             return
-        run = await stp_test_run_repo.find_latest_for_context(
+        run = await stp_test_run_repo.get_by_id(db, item.stp_test_run_id) if item.stp_test_run_id else await stp_test_run_repo.find_latest_for_context(
             db, stand_id=item.stand_id, os_version_id=rc, mode=mode, kernel=kernel,
         )
         if run is None:

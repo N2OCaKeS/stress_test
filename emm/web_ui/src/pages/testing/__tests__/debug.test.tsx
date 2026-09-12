@@ -3,6 +3,28 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { ToastProvider } from "@/contexts/ToastContext";
 import type { TestLogSegment } from "@/api/testing/types";
 
+const listQueueItemsMock = vi.fn();
+const launchQueueItemMock = vi.fn();
+const retryQueueItemMock = vi.fn();
+vi.mock("@/api/testing/queueItems", () => ({
+  listQueueItems: (...args: unknown[]) => listQueueItemsMock(...args),
+  launchQueueItem: (...args: unknown[]) => launchQueueItemMock(...args),
+  retryQueueItem: (...args: unknown[]) => retryQueueItemMock(...args),
+}));
+vi.mock("@/api/testing/testDefinitions", () => ({ listTestDefinitions: async () => ({ items: [
+  { id: "t1", code: "STR-SEGFAULT-FUZZ", full_name: "stress test", readiness: "ready", pinned_stand_id: "s1" },
+  { id: "t2", code: "DB-PG-TPCC", full_name: "database test", readiness: "development", pinned_stand_id: "s2" },
+] }) }));
+vi.mock("@/api/testing/testStands", () => ({
+  listTestStands: async () => ({ items: [{ id: "s1" }, { id: "s2" }] }),
+  getTestStand: async (id: string) => ({ id, server_id: id, server: { display_name: id === "s1" ? "stand15-110" : "vm-stand1" } }),
+}));
+vi.mock("@/api/server/osVersions", () => ({ listOsVersions: async () => ({ items: [{ id: "osv_1", name: "1.8.5", kernels: ["6.1"] }] }) }));
+const ITEMS = [
+  { id: "adhoc-2026090701", test_id: "t1", stand_id: "s1", test_run_id: null, retry_of_id: null, debug_mode: true, state: "running", rc: "1.8.5", kernel: "6.1", mode: "orel", created_at: "2026-09-07T06:40:00Z", started_at: "2026-09-07T06:40:00Z", finished_at: null, error: null },
+  { id: "adhoc-2026090612", test_id: "t2", stand_id: "s2", test_run_id: null, retry_of_id: null, debug_mode: true, state: "succeeded", rc: "1.8.5", kernel: "6.1", mode: "smolensk", created_at: "2026-09-06T19:10:00Z", started_at: "2026-09-06T19:10:00Z", finished_at: "2026-09-06T20:10:00Z", error: null },
+];
+
 const listLogSegmentsMock = vi.fn();
 const getTestLogTextMock = vi.fn();
 const downloadTestLogMock = vi.fn();
@@ -87,32 +109,57 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  listQueueItemsMock.mockResolvedValue({ items: ITEMS, total: 2 });
+  launchQueueItemMock.mockResolvedValue({ ...ITEMS[0], id: "qi_new", state: "queued" });
   sockets = [];
   vi.stubGlobal("WebSocket", FakeWebSocket as unknown as typeof WebSocket);
 });
 
-describe("AdhocMiddlePanel — список debug-запусков остаётся демо (нет публичного backend-эндпоинта)", () => {
-  it("рендерит список запусков и помечает виртуальный стенд", async () => {
+describe("AdhocMiddlePanel — реальные одиночные запуски", () => {
+  it("загружает одиночные запуски и помечает debug", async () => {
     renderHarness();
     // "adhoc-2026090701" встречается дважды: строка средней панели + заголовок
     // рабочей зоны (он выбран по умолчанию, первый в списке).
     expect((await screen.findAllByText("adhoc-2026090701")).length).toBeGreaterThan(0);
-    // "ВМ" — у двух демо-запусков виртуальный стенд (vm-stand1/vm-stand2)
-    expect(screen.getAllByText("ВМ").length).toBeGreaterThan(0);
+    expect(listQueueItemsMock).toHaveBeenCalled();
+    expect(screen.getAllByText("Debug").length).toBeGreaterThan(0);
   });
 
-  it("кнопка запуска остаётся демо-заглушкой — нет вызовов к бэкенду", async () => {
+  it("создаёт одиночный запуск с явным debug и выбранным контекстом", async () => {
     renderHarness();
     await screen.findAllByText("adhoc-2026090701");
     fireEvent.click(screen.getByRole("button", { name: /Запустить разовый тест/ }));
-    expect(await screen.findByText(/демо-заглушкой/)).toBeInTheDocument();
-    expect(listLogSegmentsMock).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Выберите тест" }));
+    fireEvent.click(await screen.findByRole("option", { name: "STR-SEGFAULT-FUZZ · stress test" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Debug" }));
+    fireEvent.click(screen.getByRole("button", { name: "Выберите стенд" }));
+    fireEvent.click(screen.getByRole("option", { name: "stand15-110" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Выберите РЦ" }));
+    fireEvent.click(screen.getByRole("option", { name: "1.8.5" }));
+    fireEvent.click(screen.getByRole("button", { name: "Запустить тест" }));
+    await waitFor(() => expect(launchQueueItemMock).toHaveBeenCalledWith(expect.objectContaining({ test_id: "t1", stand_id: "s1", debug_mode: true, os_version_id: "osv_1", kernel: "6.1" })));
+  });
+
+  it("при повторе после сетевой ошибки сохраняет идентификатор запроса", async () => {
+    launchQueueItemMock.mockRejectedValueOnce(new Error("network failure"));
+    renderHarness();
+    fireEvent.click(screen.getByRole("button", { name: /Запустить разовый тест/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Выберите тест" }));
+    fireEvent.click(await screen.findByRole("option", { name: "STR-SEGFAULT-FUZZ · stress test" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Выберите РЦ" }));
+    fireEvent.click(screen.getByRole("option", { name: "1.8.5" }));
+    fireEvent.click(screen.getByRole("button", { name: "Запустить тест" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Запустить тест" }));
+    await waitFor(() => expect(launchQueueItemMock).toHaveBeenCalledTimes(2));
+    expect(launchQueueItemMock.mock.calls[0][0].request_id).toBe(launchQueueItemMock.mock.calls[1][0].request_id);
+    expect(launchQueueItemMock.mock.calls[0][0].debug_mode).toBe(false);
   });
 
   it("нигде не осталось текста про legacy «dev mode»/«dev режим»", async () => {
     renderHarness();
     await screen.findAllByText("adhoc-2026090701");
-    expect(screen.getByText(/debug-режим/)).toBeInTheDocument();
+    expect(screen.getByText(/Debug: результат не засчитывается/)).toBeInTheDocument();
     expect(screen.queryByText(/dev mode/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/dev режим/i)).not.toBeInTheDocument();
   });
@@ -163,7 +210,7 @@ describe("AdhocWorkzone — завершённый лог (реальные се
   it("рендерит реальные сегменты с их статусами и текстом, нарезанным по байт-офсетам", async () => {
     renderHarness();
     // adhoc-2026090612 — done, DB-PG-TPCC на vm-stand1
-    fireEvent.click(screen.getByText("adhoc-2026090612"));
+    fireEvent.click(await screen.findByText("adhoc-2026090612"));
 
     await waitFor(() => expect(getTestLogTextMock).toHaveBeenCalledWith("adhoc-2026090612"));
     // "prepare-stand"/"run-test" — метки сегментов, встречаются и в навигации, и в содержимом
@@ -176,7 +223,7 @@ describe("AdhocWorkzone — завершённый лог (реальные се
 
   it("скачивание лога вызывает downloadTestLog с queue_item_id запуска", async () => {
     renderHarness();
-    fireEvent.click(screen.getByText("adhoc-2026090612"));
+    fireEvent.click(await screen.findByText("adhoc-2026090612"));
     const downloadBtn = await screen.findByRole("button", { name: /Скачать лог/ });
     fireEvent.click(downloadBtn);
     await waitFor(() => expect(downloadTestLogMock).toHaveBeenCalledWith("adhoc-2026090612"));
@@ -184,7 +231,7 @@ describe("AdhocWorkzone — завершённый лог (реальные се
 
   it("фильтр «только не-OK» убирает OK-сегмент из навигации, но не из содержимого", async () => {
     renderHarness();
-    fireEvent.click(screen.getByText("adhoc-2026090612"));
+    fireEvent.click(await screen.findByText("adhoc-2026090612"));
     await screen.findAllByText("prepare-stand");
     // до фильтра "prepare-stand" встречается дважды: кнопка навигации + блок содержимого
     expect(screen.getAllByText("prepare-stand")).toHaveLength(2);

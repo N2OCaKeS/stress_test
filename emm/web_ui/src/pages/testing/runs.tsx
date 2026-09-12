@@ -19,7 +19,7 @@
  * видно только в детальной карточке (`getTestRun`), поэтому список кампаний
  * ниже не рисует прогресс-бар по исходам, как раньше на демо-данных.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import {
   Activity,
   CheckCircle2,
@@ -52,6 +52,7 @@ import type {
 import { OS_VERSION_IDS as RC_IDS, OS_VERSIONS, SortableTh, Stat, useSortableRows, type BadgeKind } from "./_shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
+import { retryQueueItem } from "@/api/testing/queueItems";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Modal } from "@/components/ui/Modal";
@@ -341,7 +342,7 @@ export function RunsWorkzone({ state }: { state: RunsState }) {
       </div>
 
       {state.selectedRun ? (
-        <RunDetailPanel run={state.selectedRun} />
+        <RunDetailPanel run={state.selectedRun} onChanged={state.refetch} />
       ) : (
         <div className="surface border border-token rounded p-8 text-center text-dim">
           {state.loading ? "Загружаем…" : "Нет выбранного прогона"}
@@ -371,7 +372,17 @@ function runQueueValue(row: RunQueueRow, column: RunQueueColumn): string | numbe
  * `GET /test-runs`/`GET /test-stands` намеренно не отдают такое обогащение
  * списком, чтобы не бить по `server_service` на каждую строку списка кампаний.
  */
-function RunDetailPanel({ run }: { run: TestRun }) {
+function RunDetailPanel({ run, onChanged }: { run: TestRun; onChanged: () => void }) {
+  const toast = useToast();
+  const [retrying, setRetrying] = useState<string | null>(null);
+  const retryKeys = useRef<Record<string, string>>({});
+  async function retry(id: string) {
+    if (retrying) return;
+    setRetrying(id);
+    try { await retryQueueItem(id, retryKeys.current[id] ??= crypto.randomUUID()); detailQ.refetch(); onChanged(); }
+    catch (error) { toast.error(apiErrMsg(error, "Не удалось повторить тест")); }
+    finally { setRetrying(null); }
+  }
   const detailQ = useQuery(() => getTestRun(run.id), [run.id]);
   const summaryQ = useQuery(() => getRunSummaryComment(run.id), [run.id]);
   const items = useMemo(() => detailQ.data?.queue_items ?? [], [detailQ.data]);
@@ -494,6 +505,7 @@ function RunDetailPanel({ run }: { run: TestRun }) {
                         <ExternalLink className="w-3.5 h-3.5" />
                         Лог
                       </Button>
+                      {row.is_current !== false && ["succeeded", "failed"].includes(row.state) && <Button size="sm" disabled={retrying !== null} onClick={() => retry(row.queue_item_id)}>Повторить тест</Button>}
                     </td>
                   </tr>
                 );

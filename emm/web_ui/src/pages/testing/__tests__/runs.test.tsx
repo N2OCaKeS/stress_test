@@ -33,6 +33,9 @@ vi.mock("@/api/testing/testDefinitions", () => ({
   getTestDefinition: (...args: unknown[]) => getTestDefinitionMock(...args),
 }));
 
+const retryQueueItemMock = vi.fn();
+vi.mock("@/api/testing/queueItems", () => ({ retryQueueItem: (...args: unknown[]) => retryQueueItemMock(...args) }));
+
 const getTestLogTextMock = vi.fn();
 const downloadTestLogMock = vi.fn();
 vi.mock("@/api/testing/testLogs", () => ({
@@ -275,6 +278,15 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     expect(screen.getByText("Ошибка первой попытки")).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: "Лог" })[0]);
     await waitFor(() => expect(getTestLogTextMock).toHaveBeenCalledWith("qi_1"));
+  });
+
+  it("ручной повтор отправляет ID текущей попытки и обновляет прогон", async () => {
+    retryQueueItemMock.mockResolvedValue({ id: "qi_retry" });
+    renderHarness();
+    await screen.findByText("stand-B");
+    fireEvent.click(screen.getByRole("button", { name: "Повторить тест" }));
+    await waitFor(() => expect(retryQueueItemMock).toHaveBeenCalledWith("qi_2", expect.any(String)));
+    await waitFor(() => expect(getTestRunMock.mock.calls.length).toBeGreaterThan(1));
   });
 
   it("клик «Лог» открывает модалку и подгружает реальный текст лога", async () => {

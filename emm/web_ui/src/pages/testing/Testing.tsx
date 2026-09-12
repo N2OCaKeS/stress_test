@@ -33,7 +33,7 @@ import { StpMiddlePanel, StpWorkzone, useStpVersionState } from "./stp";
 const SUBSECTIONS = [
   { id: "tests", label: "Тесты", icon: FileText },
   { id: "runs", label: "Прогоны", icon: ListChecks },
-  { id: "debug", label: "Отладка", icon: Bug },
+  { id: "debug", label: "Одиночные запуски", icon: Bug },
   { id: "stp", label: "СТП", icon: Cog },
 ] as const;
 
@@ -57,7 +57,7 @@ export function Testing() {
   // подраздела — конкретное состояние нужно только своей вкладке, но само
   // по себе оно дешёвое.
   const runsState = useRunsState();
-  const adhocState = useAdhocState();
+  const adhocState = useAdhocState(activeId === "debug");
   const stpState = useStpVersionState();
 
   const middle =

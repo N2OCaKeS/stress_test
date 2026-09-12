@@ -59,6 +59,7 @@ from src.services import (
     server_client,
     stp_status,
     test_run_status,
+    launch_stp,
 )
 from src.services.test_command_arg import resolve_dates_content, resolve_dates_content_masked
 from src.utils.ids import queue_item_id as new_id
@@ -78,6 +79,10 @@ async def enqueue(
     stand_id: str | None = None,
     test_run_id: str | None = None,
     test_run_entry_id: str | None = None,
+    retry_source: QueueItem | None = None,
+    client_request_id: str | None = None,
+    request_fingerprint: str | None = None,
+    stp_test_run_id: str | None = None,
 ) -> QueueItem:
     """Поставить тест в очередь стенда.
 
@@ -121,7 +126,7 @@ async def enqueue(
             )
         resolved_stand_id = stand_id
     else:
-        resolved_stand_id = entry.stand_id if entry is not None else test.pinned_stand_id
+        resolved_stand_id = retry_source.stand_id if retry_source else entry.stand_id if entry is not None else test.pinned_stand_id
         if not resolved_stand_id:
             raise DomainValidationError(
                 error_code="TEST_NOT_PINNED_TO_STAND",
@@ -129,7 +134,7 @@ async def enqueue(
                 details={"test_id": test_id},
             )
 
-    stand = await stand_repo.get_by_id(db, resolved_stand_id)
+    stand = await stand_repo.get_by_id(db, resolved_stand_id, for_update=True)
     if stand is None:
         raise NotFoundError(
             error_code="TEST_STAND_NOT_FOUND",
@@ -160,8 +165,11 @@ async def enqueue(
         "launch_context": ctx,
         "state": QueueItemState.QUEUED,
         "position": position,
-        "is_retry": False,
-        "retry_of_id": None,
+        "is_retry": retry_source is not None,
+        "retry_of_id": retry_source.id if retry_source else None,
+        "client_request_id": client_request_id,
+        "request_fingerprint": request_fingerprint,
+        "stp_test_run_id": stp_test_run_id,
         "debug_mode": debug_mode,
         "test_run_id": test_run_id,
         "test_run_entry_id": test_run_entry_id,
@@ -177,6 +185,9 @@ async def enqueue(
         details={"test_id": test.id, "stand_id": stand.id, "debug_mode": debug_mode},
     )
 
+    if test_run_id:
+        await test_run_status.recompute(db, test_run_id)
+        await db.commit()
     if was_empty:
         await _start_or_continue_cycle(db, stand, item, is_first_ever=True)
         await db.refresh(item)
@@ -252,11 +263,14 @@ async def _reject_unready_item(db: AsyncSession, stand, item: QueueItem, *, is_f
     if item.debug_mode:
         return False
     test = await test_definition_repo.get_by_id(db, item.test_id, for_update=True)
+    error = "TEST_REQUIRES_DEBUG: статус теста изменён; обычный запуск запрещён."
     if test is not None and test.readiness == TestReadiness.READY:
-        return False
+        if not item.stp_test_run_id or await launch_stp.find_membership(db, test.code, item.stand_id, item.launch_context, item.stp_test_run_id):
+            return False
+        error = "TEST_NOT_IN_STP: тест больше не входит в выбранную СТП."
     item.state = QueueItemState.FAILED
     item.failed_step = "launch_guard"
-    item.error = "TEST_REQUIRES_DEBUG: статус теста изменён; обычный запуск запрещён."
+    item.error = error
     item.finished_at = datetime.now(timezone.utc)
     if item.creds_stash_key:
         await creds_stash.pop_creds(item.creds_stash_key)
@@ -320,6 +334,7 @@ async def _fail_item_and_maybe_retry(
         "debug_mode": item.debug_mode,
         "test_run_id": item.test_run_id,
         "test_run_entry_id": item.test_run_entry_id,
+        "stp_test_run_id": item.stp_test_run_id,
         "created_by": item.created_by,
     })
     audit_service.emit(

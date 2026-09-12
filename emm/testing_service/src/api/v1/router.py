@@ -22,7 +22,10 @@ from src.api.v1.endpoints.test_logs import router as test_logs_router
 from src.api.v1.endpoints.test_runs import router as test_runs_router
 from src.api.v1.endpoints.test_stands import router as test_stands_router
 
+from src.api.v1.endpoints.queue_items import router as queue_items_router
+
 router = APIRouter()
+router.include_router(queue_items_router, tags=["queue-items"])
 router.include_router(health_router, tags=["health"])
 router.include_router(global_variables_router, tags=["global-variables"])
 router.include_router(test_definitions_router, tags=["test-definitions"])

@@ -19,11 +19,10 @@ make test-dev TEST=testing_service/tests/test_health.py
 | `tests/test_health.py` | 5 | `/health` / `/ready` (реальные БД+Redis) / 404 на неизвестном пути / security headers / X-Request-ID echo. |
 | `tests/test_global_variables_crud.py` | 34 | Сиды миграции (обязательный набор §2.1, `is_sensitive`, `choices_source`), CRUD, права (`admin` проходит, роль без грантов и `guest` — 403, аноним — 401), UNIQUE(code) → 409, валидация кода и `choices_source`, OpenAPI-схема. |
 | `tests/test_choices_resolvers.py` | 23 | `static:` (массив строк / объектов / битый JSON), `dynamic:os_versions` и `dynamic:kernels` против замоканного `server_service` (httpx `MockTransport`), обязательный `os_version_id`, 503 на недоступном источнике, реестр `RESOLVERS`. |
-
 | `tests/test_readiness.py` | 17 | Допуск всех четырёх статусов в обычном/debug-режиме, отклонение неизвестного/null, дефолт нового теста, смена статуса перед claim и подготовкой следующего задания, отсутствие retry при отказе допуска, независимость статуса от исхода запуска, частичный отказ кампании. |
 | `tests/test_readiness_migration.py` | 1 | Upgrade существующего каталога со старыми, пустыми и неизвестными статусами; только прежний ready сохраняет обычный допуск. |
-
 | `tests/test_campaign_attempts.py` | 5 | Итог после retry и сохранение старой попытки, неизменность состава при правках каталога, дедупликация стендов, учёт ошибок постановки, миграция независимых цепочек, смена привязки во время постановки. |
+| `tests/test_public_queue.py` | 9 | Конкурентный идемпотентный запуск/retry, конфликт ключа, права отдела, допуск СТП, запрет лишних полей, debug-изоляция результатов, удаление теста из СТП до claim, фильтрация истории, сохранение кампании/стенда при ручном retry. |
 
 ## Что появится дальше
 

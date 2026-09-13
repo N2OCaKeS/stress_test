@@ -116,6 +116,18 @@ beforeEach(() => {
 });
 
 describe("AdhocMiddlePanel — реальные одиночные запуски", () => {
+  it("пагинация, поиск и статусы запрашиваются на сервере", async () => {
+    listQueueItemsMock.mockResolvedValue({ items: ITEMS, total: 62 });
+    renderHarness();
+    await screen.findAllByText("adhoc-2026090701");
+    fireEvent.click(screen.getByRole("button", { name: "Далее" }));
+    await waitFor(() => expect(listQueueItemsMock).toHaveBeenLastCalledWith(expect.objectContaining({ offset: 50, limit: 50 })));
+    fireEvent.change(screen.getByPlaceholderText("Поиск по 62 запускам…"), { target: { value: "FS-CHECK" } });
+    await waitFor(() => expect(listQueueItemsMock).toHaveBeenLastCalledWith(expect.objectContaining({ q: "FS-CHECK", offset: 0 })));
+    fireEvent.click(screen.getByRole("button", { name: "В очереди" }));
+    await waitFor(() => expect(listQueueItemsMock).toHaveBeenLastCalledWith(expect.objectContaining({ states: ["queued", "preparing", "ready"] })));
+  });
+
   it("загружает одиночные запуски и помечает debug", async () => {
     renderHarness();
     // "adhoc-2026090701" встречается дважды: строка средней панели + заголовок
@@ -186,18 +198,15 @@ describe("AdhocWorkzone — живой лог во время исполнени
 });
 
 describe("AdhocWorkzone — завершённый лог (реальные сегменты + реальный текст)", () => {
-  const FULL_TEXT = "ЧЕКПОИНТ ОДИН\nOK\nКОМАНДА ДВА\nCHANGED\n";
+  const FULL_TEXT = "ЧЕКПОИНТ ОДИН\nOK\nКОМАНДА ДВА\nCHANGED ✅\n";
 
   beforeEach(() => {
-    // Байтовые офсеты в UTF-8: латиница/цифры — 1 байт/символ, кириллица — 2.
-    // Тут все символы кириллицы, поэтому офсет считаем через TextEncoder,
-    // как это делает сам компонент.
-    const bytes = new TextEncoder().encode(FULL_TEXT);
-    const splitAt = new TextEncoder().encode("ЧЕКПОИНТ ОДИН\nOK\n").length;
+    const characters = Array.from(FULL_TEXT);
+    const splitAt = Array.from("ЧЕКПОИНТ ОДИН\nOK\n").length;
     listLogSegmentsMock.mockResolvedValue({
       items: [
         makeSegment({ id: "seg_1", position: 0, label: "prepare-stand", status: "OK", byte_offset_start: 0, byte_offset_end: splitAt }),
-        makeSegment({ id: "seg_2", position: 1, kind: "command", label: "run-test", status: "CHANGED", byte_offset_start: splitAt, byte_offset_end: bytes.length }),
+        makeSegment({ id: "seg_2", position: 1, kind: "command", label: "run-test", status: "CHANGED", byte_offset_start: splitAt, byte_offset_end: characters.length }),
       ],
       total: 2,
       limit: 500,
@@ -207,7 +216,7 @@ describe("AdhocWorkzone — завершённый лог (реальные се
     downloadTestLogMock.mockResolvedValue({ text: FULL_TEXT, filename: "adhoc-2026090612.log" });
   });
 
-  it("рендерит реальные сегменты с их статусами и текстом, нарезанным по байт-офсетам", async () => {
+  it("рендерит реальные сегменты с их статусами и текстом, нарезанным по Unicode-офсетам", async () => {
     renderHarness();
     // adhoc-2026090612 — done, DB-PG-TPCC на vm-stand1
     fireEvent.click(await screen.findByText("adhoc-2026090612"));
@@ -219,6 +228,22 @@ describe("AdhocWorkzone — завершённый лог (реальные се
     expect(screen.getByText("ЧЕКПОИНТ ОДИН")).toBeInTheDocument();
     expect(screen.getByText("КОМАНДА ДВА")).toBeInTheDocument();
     expect(screen.getAllByText("CHANGED").length).toBeGreaterThan(0);
+  });
+
+  it("показывает полный текст, если у лога нет сегментов", async () => {
+    listLogSegmentsMock.mockResolvedValue({ items: [], total: 0 });
+    renderHarness();
+    fireEvent.click(await screen.findByText("adhoc-2026090612"));
+    expect(await screen.findByText(/ЧЕКПОИНТ ОДИН.*OK.*КОМАНДА ДВА/s)).toBeInTheDocument();
+  });
+
+  it("загружает следующие страницы сегментов", async () => {
+    listLogSegmentsMock.mockResolvedValueOnce({ items: [makeSegment({ id: "first", position: 0, label: "first page" })], total: 2 })
+      .mockResolvedValueOnce({ items: [makeSegment({ id: "last", position: 1, label: "last page" })], total: 2 });
+    renderHarness();
+    fireEvent.click(await screen.findByText("adhoc-2026090612"));
+    expect((await screen.findAllByText("last page")).length).toBeGreaterThan(0);
+    expect(listLogSegmentsMock).toHaveBeenCalledWith("adhoc-2026090612", { limit: 500, offset: 1 });
   });
 
   it("скачивание лога вызывает downloadTestLog с queue_item_id запуска", async () => {

@@ -440,6 +440,7 @@ function RunDetailPanel({ run, onChanged }: { run: TestRun; onChanged: () => voi
           Показать предыдущие попытки
         </label>
         <Button size="sm" onClick={() => { detailQ.refetch(); summaryQ.refetch(); }}>Обновить результаты</Button>
+        <a className="text-accent" href={`/testing/logs?kind=campaign&test_run_id=${encodeURIComponent(run.id)}`}>Логи прогона</a>
         {detailQ.data?.progress && <span>
           Успешно: {detailQ.data.progress.succeeded ?? 0} · С ошибкой: {detailQ.data.progress.failed ?? 0} · Выполняются: {detailQ.data.progress.running ?? 0}
         </span>}
@@ -524,6 +525,7 @@ function RunDetailPanel({ run, onChanged }: { run: TestRun; onChanged: () => voi
         <RunQueueItemLogModal
           queueItemId={logTarget.queue_item_id}
           title={logTarget.testLabel}
+          campaignId={run.id}
           subtitle={`${logTarget.standLabel} · ${queueItemStateMeta(logTarget.state).label}`}
           onClose={() => setLogTarget(null)}
         />
@@ -537,11 +539,13 @@ function RunQueueItemLogModal({
   queueItemId,
   title,
   subtitle,
+  campaignId,
   onClose,
 }: {
   queueItemId: string;
   title: string;
   subtitle: string;
+  campaignId: string;
   onClose: () => void;
 }) {
   const toast = useToast();
@@ -577,6 +581,7 @@ function RunQueueItemLogModal({
         </>
       }
     >
+      <a className="text-accent text-sm" href={`/testing/logs?kind=campaign&test_run_id=${encodeURIComponent(campaignId)}&attempt_id=${encodeURIComponent(queueItemId)}`}>Открыть в истории логов (live и чекпоинты)</a>
       {logQ.loading && <div className="text-xs text-dim p-2">Загружаем лог…</div>}
       {!!logQ.error && <div className="alert-danger text-xs p-2">{apiErrMsg(logQ.error, "Лог не загрузился")}</div>}
       {logQ.data && <pre className="log-tail max-h-[60vh]">{logQ.data.text || "Лог пока пуст"}</pre>}

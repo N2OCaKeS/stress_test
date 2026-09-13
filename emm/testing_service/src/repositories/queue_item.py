@@ -1,10 +1,13 @@
 """QueueItem-репозиторий — сырой CRUD + очередные выборки против `queue_items`."""
 
-from sqlalchemy import func, select, text
+from datetime import datetime
+
+from sqlalchemy import func, or_, select, text
+from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import ACTIVE_QUEUE_STATES, QueueItemState
-from src.models import QueueItem, TestStand
+from src.models import QueueItem, TestStand, TestDefinition
 
 
 async def get_by_id(db: AsyncSession, item_id: str) -> QueueItem | None:
@@ -137,14 +140,48 @@ async def has_successor(db: AsyncSession, item_id: str) -> bool:
     return (await db.execute(stmt)).scalar_one_or_none() is not None
 
 
-async def list_for_department(db: AsyncSession, department_id: str, *, kind: str, test_run_id: str | None, limit: int, offset: int):
-    stmt = select(QueueItem).join(TestStand, TestStand.id == QueueItem.stand_id).where(TestStand.department_id == department_id)
+async def list_for_department(
+    db: AsyncSession, department_id: str, *, kind: str,
+    test_run_id: str | None, limit: int, offset: int,
+    stand_id: str | None = None, test_id: str | None = None,
+    attempt_id: str | None = None, retry_of_id: str | None = None,
+    created_from: datetime | None = None, created_until: datetime | None = None,
+    states: list[str] | None = None, debug_mode: bool | None = None,
+    q: str | None = None, order: str = "desc",
+):
+    successor = aliased(QueueItem)
+    is_current = ~select(successor.id).where(successor.retry_of_id == QueueItem.id).exists()
+    stmt = (
+        select(QueueItem, TestDefinition.code, TestDefinition.full_name, is_current)
+        .join(TestStand, TestStand.id == QueueItem.stand_id)
+        .join(TestDefinition, TestDefinition.id == QueueItem.test_id)
+        .where(TestStand.department_id == department_id)
+    )
     if kind == "standalone":
         stmt = stmt.where(QueueItem.test_run_id.is_(None))
     elif kind == "campaign":
         stmt = stmt.where(QueueItem.test_run_id.is_not(None))
-    if test_run_id:
-        stmt = stmt.where(QueueItem.test_run_id == test_run_id)
+    for column, value in (
+        (QueueItem.test_run_id, test_run_id), (QueueItem.stand_id, stand_id),
+        (QueueItem.test_id, test_id), (QueueItem.id, attempt_id),
+        (QueueItem.retry_of_id, retry_of_id), (QueueItem.debug_mode, debug_mode),
+    ):
+        if value is not None:
+            stmt = stmt.where(column == value)
+    if created_from is not None:
+        stmt = stmt.where(QueueItem.created_at >= created_from)
+    if created_until is not None:
+        stmt = stmt.where(QueueItem.created_at < created_until)
+    if states:
+        stmt = stmt.where(QueueItem.state.in_(states))
+    if q and q.strip():
+        stmt = stmt.where(or_(*[
+            column.icontains(q.strip(), autoescape=True) for column in (
+                QueueItem.id, TestDefinition.code, TestDefinition.full_name,
+                QueueItem.stand_id, TestStand.server_id,
+            )
+        ]))
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()
-    items = (await db.execute(stmt.order_by(QueueItem.created_at.desc(), QueueItem.id).limit(limit).offset(offset))).scalars().all()
-    return list(items), total
+    sort = QueueItem.created_at.asc() if order == "asc" else QueueItem.created_at.desc()
+    items = (await db.execute(stmt.order_by(sort, QueueItem.id).limit(limit).offset(offset))).all()
+    return items, total

@@ -22,6 +22,9 @@ class QueueRetryRequest(BaseModel):
 
 
 class PublicQueueItem(BaseModel):
+    test_code: str | None = None
+    test_name: str | None = None
+    is_current: bool = True
     id: str
     test_id: str
     stand_id: str

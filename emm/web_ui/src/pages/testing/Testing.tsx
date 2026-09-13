@@ -24,6 +24,7 @@ import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Bug, Cog, FileText, ListChecks, type LucideIcon } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
+import { TestingLogs } from "./logs";
 import { TestingOverview } from "./overview";
 import { TestsWorkzone } from "./tests";
 import { RunsMiddlePanel, RunsWorkzone, useRunsState } from "./runs";
@@ -34,6 +35,7 @@ const SUBSECTIONS = [
   { id: "tests", label: "Тесты", icon: FileText },
   { id: "runs", label: "Прогоны", icon: ListChecks },
   { id: "debug", label: "Одиночные запуски", icon: Bug },
+  { id: "logs", label: "Логи", icon: FileText },
   { id: "stp", label: "СТП", icon: Cog },
 ] as const;
 
@@ -108,6 +110,7 @@ export function Testing() {
           {activeId === "tests" && <TestsWorkzone />}
           {activeId === "runs" && <RunsWorkzone state={runsState} />}
           {activeId === "debug" && <AdhocWorkzone state={adhocState} />}
+          {activeId === "logs" && <TestingLogs />}
           {activeId === "stp" && <StpWorkzone state={stpState} />}
         </div>
       </main>

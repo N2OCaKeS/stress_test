@@ -1,6 +1,8 @@
 """Публичная очередь, отдельная от протокола testing_worker."""
 
 from typing import Literal
+from pydantic import AwareDatetime
+from src.core.exceptions import DomainValidationError
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.auth import CurrentUserIdentity
@@ -42,9 +44,23 @@ async def list_items(
     db: AsyncSession = Depends(get_db),
     kind: Literal["standalone", "campaign", "all"] = "standalone",
     test_run_id: str | None = None,
+    stand_id: str | None = None,
+    test_id: str | None = None,
+    attempt_id: str | None = None,
+    retry_of_id: str | None = None,
+    created_from: AwareDatetime | None = None,
+    created_until: AwareDatetime | None = None,
+    states: list[Literal["queued", "preparing", "ready", "running", "succeeded", "failed"]] | None = Query(None),
+    debug_mode: bool | None = None,
+    q: str | None = Query(None, max_length=200),
+    order: Literal["asc", "desc"] = "desc",
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
+    if created_from and created_until and created_from >= created_until:
+        raise DomainValidationError(
+            error_code="INVALID_TIME_RANGE", message="Начало периода должно быть раньше конца"
+        )
     items, total = await repo.list_for_department(
         db,
         identity.department_id or "",
@@ -52,9 +68,14 @@ async def list_items(
         test_run_id=test_run_id,
         limit=limit,
         offset=offset,
+        stand_id=stand_id, test_id=test_id, attempt_id=attempt_id,
+        retry_of_id=retry_of_id, created_from=created_from, created_until=created_until,
+        states=states, debug_mode=debug_mode, q=q, order=order,
     )
     return PaginatedResponse(
-        items=[svc.response(item) for item in items],
+        items=[svc.response(item).model_copy(update={
+            "test_code": code, "test_name": name, "is_current": current,
+        }) for item, code, name, current in items],
         total=total,
         limit=limit,
         offset=offset,

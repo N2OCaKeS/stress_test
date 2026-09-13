@@ -264,3 +264,7 @@ Header-scoping на service-уровне: отсутствие `X-Target-Departm
 - Прямой E2E с реальным `server_worker` через taskiq+redis — воркер тестируется отдельно (`make test-worker`); здесь dispatch-сторона проверена через mocked `kiq()`.
 - Реальная hardware-сторона IPMI (iDRAC / HPiLO / ipmitool) — все power/inventory-операции в server_service диспатчатся в worker, который сам мокает hardware-клиенты.
 - Производительность / нагрузочные — не входят в этот реестр.
+
+## Обнаружение ядер ОС
+
+`tests/test_os_kernel_discovery.py`: 4 проверки — разбор Packages и repo-строк, gzip/plain загрузка, сохранение каталога и отсутствие потери старых ядер при сбое. Внешняя сеть заменена MockTransport/подменой резолвера.

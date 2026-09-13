@@ -136,7 +136,7 @@ async def generate_stp(
     runs, errors = await stp_svc.generate_stp_runs(
         db, identity,
         os_version_id=body.os_version_id, mode=body.mode, kernel=body.kernel,
-        final=body.final, department_id=body.department_id,
+        final=body.final, department_id=body.department_id or identity.department_id,
     )
     return StpGenerateResponse(
         test_runs=[StpTestRunResponse.model_validate(r) for r in runs],

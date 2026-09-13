@@ -528,19 +528,19 @@ class TestRotateCredentials:
             )
 
 
-# ── Парольная политика на create / rotate ────────────────────────────────────
+# ── Приём существующего пароля BMC ──────────────────────────────────────────
 
 
 class TestPasswordPolicy:
-    """IPMI create и credentials/rotate с ручным паролем гейтятся политикой."""
+    """Пароль внешнего BMC принимается без локальной политики сложности."""
 
     @pytest.mark.parametrize(
-        "bad_password",
+        "existing_password",
         ["short1", "nodigitshere", "12345678", "ab12"],
         ids=["too_short", "no_digit", "no_letter", "short_no_min"],
     )
-    async def test_create_rejects_weak_password(
-        self, client, admin_token, make_server, bad_password,
+    async def test_create_accepts_existing_weak_password(
+        self, client, admin_token, make_server, existing_password,
     ):
         srv = await make_server(department_id="dep_a")
         resp = await client.post(
@@ -550,10 +550,13 @@ class TestPasswordPolicy:
                 "kind": "idrac",
                 "endpoint_url": "https://idrac.example.com",
                 "username": "u",
-                "password_b64": b64(bad_password),
+                "password_b64": b64(existing_password),
             },
         )
-        assert_error(resp, 422, "VALIDATION_ERROR")
+        assert resp.status_code == 201, resp.text
+        get = await client.get(f"{BASE}/{srv.id}/ipmi", headers=_hdr(admin_token))
+        assert get.status_code == 200
+        assert get.json()["password_b64"] == b64(existing_password)
 
     async def test_create_accepts_compliant_password(
         self, client, admin_token, make_server,

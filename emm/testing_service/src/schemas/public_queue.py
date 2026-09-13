@@ -22,6 +22,7 @@ class QueueRetryRequest(BaseModel):
 
 
 class PublicQueueItem(BaseModel):
+    log_status: str = "missing"
     test_code: str | None = None
     test_name: str | None = None
     is_current: bool = True

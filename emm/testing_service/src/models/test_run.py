@@ -44,6 +44,7 @@ class TestRun(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     os_version_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    kernels: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     kernel: Mapped[str] = mapped_column(String(64), nullable=False)
     department_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     test_run_stands: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)

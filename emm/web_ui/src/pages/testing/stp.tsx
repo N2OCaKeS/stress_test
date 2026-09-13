@@ -74,7 +74,6 @@ import type {
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Checkbox } from "@/components/ui/Checkbox";
 import { Modal } from "@/components/ui/Modal";
 
 // Режим безопасности Astra — доменная константа (§2.1: `MODE` глобальная
@@ -528,8 +527,6 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
         <StpGenerateModal
           mockMode={mockMode}
           version={version}
-          defaultDepartmentId={deptFilter || persona.dept_id || ""}
-          departmentOptions={departmentOptions}
           onClose={() => setGenerateOpen(false)}
           onDone={() => {
             testRunsQ.refetch();
@@ -840,36 +837,20 @@ function StpRunDetailModal({ mockMode, run, onClose }: { mockMode: boolean; run:
 function StpGenerateModal({
   mockMode,
   version,
-  defaultDepartmentId,
-  departmentOptions,
   onClose,
   onDone,
 }: {
   mockMode: boolean;
   version: OsVersion;
-  defaultDepartmentId: string;
-  departmentOptions: DropdownOption[];
   onClose: () => void;
   onDone: () => void;
 }) {
   const toast = useToast();
-  const [departmentId, setDepartmentId] = useState(defaultDepartmentId);
-  const [mode, setMode] = useState<string>(STP_MODES[0]);
-  const [kernel, setKernel] = useState(version.kernels[0] ?? "");
-  const [final, setFinal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<{ createdCount: number; errors: StpGeneratePartialError[] } | null>(null);
 
   async function submit() {
-    if (!departmentId) {
-      toast.warn("Выберите отдел");
-      return;
-    }
-    if (!kernel.trim()) {
-      toast.warn("Укажите версию ядра");
-      return;
-    }
     if (mockMode) {
       toast.warn("Mock-режим — генерация не отправляется на backend.");
       onClose();
@@ -880,10 +861,6 @@ function StpGenerateModal({
     try {
       const body: StpGenerateRequest = {
         os_version_id: version.id,
-        mode,
-        kernel: kernel.trim(),
-        final,
-        department_id: departmentId,
       };
       const res = await generateStp(body);
       setResult({ createdCount: res.test_runs.length, errors: res.errors });
@@ -914,23 +891,7 @@ function StpGenerateModal({
       <div className="grid gap-3">
         {!result && (
           <>
-            <label className="grid gap-1 text-xs text-dim">
-              <span>Отдел (чей каталог тестов генерируется)</span>
-              <Dropdown mode="single" options={departmentOptions} value={departmentId} onChange={setDepartmentId} searchable placeholder="Выберите отдел" />
-            </label>
-            <label className="grid gap-1 text-xs text-dim">
-              <span>Режим безопасности</span>
-              <Dropdown mode="single" options={STP_MODES.map((m) => ({ value: m, label: m }))} value={mode} onChange={setMode} />
-            </label>
-            <label className="grid gap-1 text-xs text-dim">
-              <span>Ядро</span>
-              <input className="input mono" value={kernel} onChange={(e) => setKernel(e.target.value)} placeholder={version.kernels[0] ?? "6.12.24-1.el11"} />
-            </label>
-            <Checkbox
-              checked={final}
-              onChange={(e) => setFinal(e.target.checked)}
-              label="Официальный/финальный прогон (снимает changelog-фильтр)"
-            />
+            <p className="text-sm">Ядра будут найдены в репозиториях {version.name} и сохранены в каталоге ОС. СТП создаётся для всех найденных ядер и режимов безопасности вашего отдела.</p>
             {err && <div className="alert-danger text-xs">{err}</div>}
             <div className="flex gap-2 justify-end">
               <Button type="button" onClick={onClose} disabled={busy}>

@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/Checkbox";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
-import { listOsVersions } from "@/api/server/osVersions";
+import { listOsVersions, resolveOsKernels } from "@/api/server/osVersions";
 import { listTestDefinitions } from "@/api/testing/testDefinitions";
 import { listTestStands, getTestStand } from "@/api/testing/testStands";
 import { launchQueueItem } from "@/api/testing/queueItems";
@@ -20,6 +20,7 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
   const [testId, setTestId] = useState("");
   const [standId, setStandId] = useState("");
   const [rc, setRc] = useState("");
+  const [detected, setDetected] = useState<Record<string, string[]>>({});
   const [kernel, setKernel] = useState("");
   const [mode, setMode] = useState<"orel" | "smolensk">("orel");
   const [debug, setDebug] = useState(false);
@@ -28,6 +29,18 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
   const request = useRef({ fingerprint: "", id: "" });
   const test = testsQ.data?.items.find((item) => item.id === testId);
   const resolvedStand = debug ? standId : test?.pinned_stand_id ?? "";
+  async function selectVersion(value: string) {
+    setRc(value); setKernel(""); setError("");
+    const known = versionsQ.data?.items.find((item) => item.id === value)?.kernels ?? [];
+    if (known.length) { setKernel(known[0]); return; }
+    setBusy(true);
+    try {
+      const version = await resolveOsKernels(value);
+      setDetected((previous) => ({ ...previous, [value]: version.kernels }));
+      setKernel(version.kernels[0] ?? "");
+    } catch (error) { setError(apiErrMsg(error, "Не удалось обнаружить ядра ОС")); }
+    finally { setBusy(false); }
+  }
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (busy) return;
@@ -53,8 +66,8 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
           return { value: item.id, label: server?.display_name ?? server?.hostname ?? item.server_id };
         })} />
       </label>
-      <label className="grid gap-1 text-sm">РЦ<Dropdown mode="single" placeholder="Выберите РЦ" value={rc} onChange={(value) => { setRc(value); setKernel(versionsQ.data?.items.find((item) => item.id === value)?.kernels[0] ?? ""); }} options={(versionsQ.data?.items ?? []).map((item) => ({ value: item.id, label: item.name }))} /></label>
-      <label className="grid gap-1 text-sm">Ядро<Dropdown mode="single" placeholder="Выберите ядро" value={kernel} onChange={setKernel} options={(versionsQ.data?.items.find((item) => item.id === rc)?.kernels ?? []).map((value) => ({ value, label: value }))} /></label>
+      <label className="grid gap-1 text-sm">РЦ<Dropdown mode="single" placeholder="Выберите РЦ" value={rc} onChange={selectVersion} disabled={busy} options={(versionsQ.data?.items ?? []).map((item) => ({ value: item.id, label: item.name }))} /></label>
+      <label className="grid gap-1 text-sm">Ядро<Dropdown mode="single" placeholder="Выберите ядро" value={kernel} onChange={setKernel} options={(detected[rc] ?? versionsQ.data?.items.find((item) => item.id === rc)?.kernels ?? []).map((value) => ({ value, label: value }))} /></label>
       <label className="grid gap-1 text-sm">Режим<Dropdown mode="single" value={mode} onChange={(value) => setMode(value as "orel" | "smolensk")} options={[{ value: "orel", label: "Орёл" }, { value: "smolensk", label: "Смоленск" }]} /></label>
       <div className="text-xs text-dim">{debug ? "Отладка вне прогона: результат не записывается в СТП и Zephyr." : "Запуск вне прогона: результат записывается в СТП выбранного РЦ, ядра и режима. Тест должен входить в эту СТП."}</div>
       {unavailable && <div className="text-xs text-warn">Статус теста допускает только debug.</div>}

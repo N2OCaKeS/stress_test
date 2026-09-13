@@ -27,6 +27,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import update
+from src.models import QueueItem
 
 from src.repositories import test_log as test_log_repo
 from src.services import audit_service
@@ -52,6 +54,10 @@ async def enforce_monthly_retention(db: AsyncSession, retention_days: int) -> in
             status="success", allowed=True,
             details={"reason": "monthly_retention", "created_at": log.created_at.isoformat()},
         )
+        if log.queue_item_id:
+            await db.execute(update(QueueItem).where(QueueItem.id == log.queue_item_id).values(
+                log_rotated_at=datetime.now(timezone.utc)
+            ))
         await test_log_repo.delete(db, log)
     if stale:
         await db.commit()

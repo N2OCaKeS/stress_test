@@ -29,8 +29,8 @@ class TestRunCreate(BaseModel):
         ..., min_length=1, max_length=16,
         description="Режим безопасности Astra (`orel`/`smolensk`) — тот же домен, что у launch_context.MODE.",
     )
-    kernel: str = Field(
-        ..., min_length=1, max_length=64,
+    kernel: str | None = Field(
+        None, min_length=1, max_length=64,
         description="Версия ядра, кладётся в launch_context.KERNEL.",
     )
     test_run_stands: list[str] = Field(
@@ -61,6 +61,7 @@ class TestRunResponse(BaseModel):
     os_version_id: str
     mode: str
     kernel: str
+    kernels: list[str] = Field(default_factory=list)
     department_id: str = Field(description="Отдел-инициатор кампании.")
     test_run_stands: list[str] = Field(description="Пул стендов, выбранный при создании.")
     status: str = Field(description="Агрегатный статус: queued/running/succeeded/failed/partially_failed.")
@@ -87,6 +88,8 @@ class TestRunCreateResponse(TestRunResponse):
 class TestRunQueueItemResponse(BaseModel):
     """Один дочерний queue_item в детальной карточке кампании (GET /test-runs/{id})."""
 
+    log_status: str = "missing"
+    kernel: str | None = None
     queue_item_id: str
     stand_id: str
     test_id: str
@@ -109,6 +112,7 @@ class TestRunEntryResponse(BaseModel):
     test_id: str
     test_code: str
     test_name: str
+    kernel: str | None = None
     enqueue_error_code: str | None = None
     enqueue_error: str | None = None
 

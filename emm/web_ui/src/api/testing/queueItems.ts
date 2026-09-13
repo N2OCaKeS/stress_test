@@ -3,6 +3,7 @@ import type { TestingPaginatedResponse } from "./types";
 export { getCurrentQueueItem, findActiveQueueItemForServer } from "@/api/testing/testStands";
 
 export interface PublicQueueItem {
+  log_status?: "available" | "rotated" | "pending" | "missing";
   test_code?: string | null; test_name?: string | null; is_current?: boolean;
   id: string; test_id: string; stand_id: string; test_run_id: string | null;
   retry_of_id: string | null; debug_mode: boolean; state: string;
@@ -15,6 +16,7 @@ export interface QueueLaunchRequest {
 }
 export interface QueueItemsQuery {
   kind?: "standalone" | "campaign" | "all";
+  os_version_id?: string; kernel?: string;
   test_run_id?: string; stand_id?: string; test_id?: string;
   attempt_id?: string; retry_of_id?: string;
   created_from?: string; created_until?: string;

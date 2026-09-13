@@ -45,7 +45,7 @@ async def create_test_run(
     *,
     os_version_id: str,
     mode: str,
-    kernel: str,
+    kernel: str | None,
     test_run_stands: list[str],
     final: bool = False,
 ) -> tuple[TestRun, list[str], list[TestRunPartialError]]:
@@ -73,12 +73,22 @@ async def create_test_run(
             message="Caller has no department_id to attribute this test run to",
         )
 
+    from src.services import server_client
+    if kernel:
+        kernels = [kernel]
+    else:
+        version = await server_client.get_os_version(os_version_id)
+        kernels = list(dict.fromkeys(version.get("kernels") or []))
+        if not kernels:
+            kernels = await server_client.resolve_os_kernels(os_version_id)
+    kernel = kernels[0]
     test_run_stands = list(dict.fromkeys(test_run_stands))
     run = await repo.create(db, {
         "id": new_id(),
         "os_version_id": os_version_id,
         "mode": mode,
         "kernel": kernel,
+        "kernels": kernels,
         "department_id": department_id,
         "test_run_stands": list(test_run_stands),
         "status": TestRunStatus.QUEUED,
@@ -89,20 +99,19 @@ async def create_test_run(
     tests = await test_definition_repo.list_by_pinned_stands(db, test_run_stands)
     entries = [TestRunEntry(
         id=f"entry_{uuid4().hex}", test_run_id=run.id, stand_id=test.pinned_stand_id,
-        test_id=test.id, test_code=test.code, test_name=test.full_name,
-    ) for test in tests]
+        test_id=test.id, test_code=test.code, test_name=test.full_name, kernel=selected_kernel,
+    ) for selected_kernel in kernels for test in tests]
     db.add_all(entries)
     await db.commit()
     await db.refresh(run)
 
-    launch_context = {"RC": os_version_id, "KERNEL": kernel, "MODE": mode}
     populated_stands = {entry.stand_id for entry in entries}
     stands_without_tests = [stand_id for stand_id in test_run_stands if stand_id not in populated_stands]
     enqueue_errors: list[TestRunPartialError] = []
     for entry in entries:
         try:
             await queue_svc.enqueue(
-                db, identity, entry.test_id, launch_context=launch_context,
+                db, identity, entry.test_id, launch_context={"RC": os_version_id, "KERNEL": entry.kernel, "MODE": mode},
                 debug_mode=False, test_run_id=run.id, test_run_entry_id=entry.id,
             )
         except AppException as exc:

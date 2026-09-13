@@ -149,6 +149,7 @@ class Settings(BaseSettings):
         alias="SERVER_REQUEST_TIMEOUT_SECONDS",
         description="Таймаут одного исходящего вызова в server_service.",
     )
+    os_kernel_discovery_timeout_seconds: float = Field(default=120.0, gt=0, alias="OS_KERNEL_DISCOVERY_TIMEOUT_SECONDS")
     server_service_internal_api_key: str = Field(
         default="",
         alias="SERVER_SERVICE_INTERNAL_API_KEY",

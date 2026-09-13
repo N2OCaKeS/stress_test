@@ -14,7 +14,7 @@ from src.schemas.public_queue import (
     QueueRetryRequest,
 )
 from src.repositories import queue_item as repo
-from src.services import public_queue as svc
+from src.services import public_queue as svc, log_availability
 
 router = APIRouter(prefix="/queue-items")
 
@@ -25,7 +25,9 @@ async def launch(
     identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ):
-    return svc.response(await svc.launch(db, identity, body))
+    item = await svc.launch(db, identity, body)
+    logs = await log_availability.for_items(db, [item])
+    return svc.response(item).model_copy(update={"log_status": logs[item.id]})
 
 
 @router.post("/{item_id}/retry", response_model=PublicQueueItem, status_code=201)
@@ -35,7 +37,9 @@ async def retry(
     identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ):
-    return svc.response(await svc.retry(db, identity, item_id, body))
+    item = await svc.retry(db, identity, item_id, body)
+    logs = await log_availability.for_items(db, [item])
+    return svc.response(item).model_copy(update={"log_status": logs[item.id]})
 
 
 @router.get("", response_model=PaginatedResponse[PublicQueueItem])
@@ -44,6 +48,8 @@ async def list_items(
     db: AsyncSession = Depends(get_db),
     kind: Literal["standalone", "campaign", "all"] = "standalone",
     test_run_id: str | None = None,
+    os_version_id: str | None = None,
+    kernel: str | None = None,
     stand_id: str | None = None,
     test_id: str | None = None,
     attempt_id: str | None = None,
@@ -68,13 +74,14 @@ async def list_items(
         test_run_id=test_run_id,
         limit=limit,
         offset=offset,
-        stand_id=stand_id, test_id=test_id, attempt_id=attempt_id,
+        os_version_id=os_version_id, kernel=kernel, stand_id=stand_id, test_id=test_id, attempt_id=attempt_id,
         retry_of_id=retry_of_id, created_from=created_from, created_until=created_until,
         states=states, debug_mode=debug_mode, q=q, order=order,
     )
+    logs = await log_availability.for_items(db, [row[0] for row in items])
     return PaginatedResponse(
         items=[svc.response(item).model_copy(update={
-            "test_code": code, "test_name": name, "is_current": current,
+            "test_code": code, "test_name": name, "is_current": current, "log_status": logs[item.id],
         }) for item, code, name, current in items],
         total=total,
         limit=limit,

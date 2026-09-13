@@ -1043,3 +1043,9 @@ Errors: `ACCESS_TOKEN_MISSING` / `ACCESS_TOKEN_INVALID` / `USER_BANNED` (401), `
 - **POST CREATE без Idempotency-Key.** `POST /servers`, `POST /server-accounts`, `POST /servers/{id}/ipmi`, `POST /os-versions` не читают header. Повтор полагается на UNIQUE — `409 *_DUPLICATE`. Owner-decision; внесение header'а здесь — отдельная задача.
 - **`subject_type` для `/internal/*` не enforce'ится** — гейтит только матрица прав; user с расширенным grant'ом теоретически проходит. Owner-decision 2026-05-30.
 - **Список envelope union (cursor vs offset) в OpenAPI не виден** — list-эндпоинты декларированы как `response_model=None`, чтобы FastAPI не строил дискриминированную схему. Trade-off: OpenAPI не описывает тип возврата напрямую; SDK-клиенты выбирают envelope по флагу `cursor`.
+
+## Обнаружение ядер ОС
+
+`POST /api/server/v1/os-versions/{id}/resolve-kernels` обновляет производный каталог `kernels` из настроенных репозиториев ОС. Доступен аутентифицированным читателям глобального каталога (включая сервисного бота testing_service); URL не принимаются от вызывающего. При отсутствии repo-строк используется существующий резолвер репозиториев по имени версии.
+
+Читаются индексы `Packages.gz` с fallback на `Packages`, для строк sources.list — по компонентам в `binary-amd64`. Извлекаются версии пакетов `linux-image-…-generic` и `linux-image-…-lowlatency`, как в allta_app; meta/debug/headers пакеты исключены. Ядра дедуплицируются и сортируются по числовым компонентам. До трёх загрузок одновременно, общий срок 90 секунд, предел индекса 64 MiB. Сетевой сбой/битый индекс/отсутствие ядер не затирают сохранённые данные; изменение repo-строк во время запроса возвращает конфликт.

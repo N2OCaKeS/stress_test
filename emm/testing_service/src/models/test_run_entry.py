@@ -17,5 +17,6 @@ class TestRunEntry(Base):
     test_id: Mapped[str] = mapped_column(String(64))
     test_code: Mapped[str] = mapped_column(String(64))
     test_name: Mapped[str] = mapped_column(String(256))
+    kernel: Mapped[str | None] = mapped_column(String(64))
     enqueue_error_code: Mapped[str | None] = mapped_column(String(64))
     enqueue_error: Mapped[str | None] = mapped_column(String(2048))

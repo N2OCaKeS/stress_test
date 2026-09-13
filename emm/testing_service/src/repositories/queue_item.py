@@ -143,6 +143,7 @@ async def has_successor(db: AsyncSession, item_id: str) -> bool:
 async def list_for_department(
     db: AsyncSession, department_id: str, *, kind: str,
     test_run_id: str | None, limit: int, offset: int,
+    os_version_id: str | None = None, kernel: str | None = None,
     stand_id: str | None = None, test_id: str | None = None,
     attempt_id: str | None = None, retry_of_id: str | None = None,
     created_from: datetime | None = None, created_until: datetime | None = None,
@@ -168,6 +169,10 @@ async def list_for_department(
     ):
         if value is not None:
             stmt = stmt.where(column == value)
+    if os_version_id is not None:
+        stmt = stmt.where(QueueItem.launch_context["RC"].astext == os_version_id)
+    if kernel is not None:
+        stmt = stmt.where(QueueItem.launch_context["KERNEL"].astext == kernel)
     if created_from is not None:
         stmt = stmt.where(QueueItem.created_at >= created_from)
     if created_until is not None:

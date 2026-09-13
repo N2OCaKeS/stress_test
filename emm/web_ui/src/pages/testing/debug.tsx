@@ -9,7 +9,7 @@ import { listQueueItems, retryQueueItem } from "@/api/testing/queueItems";
 import { listOsVersions } from "@/api/server/osVersions";
 import { listTestDefinitions } from "@/api/testing/testDefinitions";
 import { listTestStands, getTestStand } from "@/api/testing/testStands";
-import { AttemptLogViewer } from "./AttemptLogViewer";
+import { AttemptLogWorkzone } from "./AttemptLogWorkzone";
 import { StandaloneLaunchModal } from "./StandaloneLaunchModal";
 import { type BadgeKind } from "./_shared";
 import { Badge } from "@/components/ui/Badge";
@@ -29,6 +29,8 @@ export interface AdhocRun {
   kernel: string;
   error: string | null;
   canRetry: boolean;
+  logStatus?: string;
+  finishedAt: string | null;
   mode: AdhocMode;
   status: AdhocStatus;
   startedAt: string;
@@ -38,7 +40,7 @@ export interface AdhocRun {
 const ADHOC_STATUS_META: Record<AdhocStatus, { label: string; badge: BadgeKind }> = {
   queued: { label: "В очереди", badge: "warn" },
   running: { label: "Выполняется", badge: "accent" },
-  done: { label: "Завершён", badge: "ok" },
+  done: { label: "Успешно", badge: "ok" },
   failed: { label: "Провален", badge: "danger" },
 };
 
@@ -106,6 +108,7 @@ export function useAdhocState(enabled = true): AdhocState {
         status: item.state === "succeeded" ? "done" : item.state === "failed" ? "failed" : item.state === "running" ? "running" : "queued",
         startedAt: item.started_at ?? item.created_at, createdAt: item.created_at, debugMode: item.debug_mode,
         rc: versionsQ.data?.items.find((version) => version.id === item.rc)?.name ?? item.rc ?? "—", kernel: item.kernel ?? "—", error: item.error,
+        logStatus: item.log_status, finishedAt: item.finished_at,
         canRetry: ["succeeded", "failed"].includes(item.state) && item.is_current !== false,
       };
     });
@@ -233,6 +236,8 @@ function AdhocListRow({ run, active, onSelect }: { run: AdhocRun; active: boolea
 // ── рабочая зона: заголовок запуска + живой/завершённый лог ────────────────
 
 export function AdhocWorkzone({ state }: { state: AdhocState }) {
+  const [logOpen, setLogOpen] = useState(false);
+  useEffect(() => setLogOpen(false), [state.selectedRun?.id]);
   const toast = useToast();
   const [retrying, setRetrying] = useState(false);
   const retryKeys = useRef<Record<string, string>>({});
@@ -252,11 +257,14 @@ export function AdhocWorkzone({ state }: { state: AdhocState }) {
     return <div className="surface border border-token rounded p-8 text-center text-dim">Нет выбранного запуска</div>;
   }
 
+  if (logOpen) return <AttemptLogWorkzone id={run.id} state={run.status} logStatus={run.logStatus}
+    title={`Лог · ${run.testCode}`} subtitle={`${run.standName} · ${run.rc} · ${run.kernel}`}
+    canRetry={run.canRetry} onClose={() => setLogOpen(false)} onRetried={state.refresh} />;
   const meta = ADHOC_STATUS_META[run.status];
   const startedMs = new Date(run.startedAt).getTime();
 
   return (
-    <div className="grid gap-4">
+    <div className="flex-1 min-h-0 overflow-auto grid gap-4 content-start">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -280,10 +288,20 @@ export function AdhocWorkzone({ state }: { state: AdhocState }) {
         </span>
       </div>
 
+      <div className="surface border border-token rounded p-4 grid gap-2">
+        <h2 className="font-semibold">Результат одиночного теста</h2>
+        <div>Результат: <Badge kind={meta.badge}>{meta.label}</Badge></div>
+        <div className="text-sm">Начат: {formatMsk(run.startedAt)}</div>
+        <div className="text-sm">Завершён: {formatMsk(run.finishedAt)}</div>
+        <div className="text-sm">Длительность: {run.finishedAt ? formatElapsedHMS(new Date(run.finishedAt).getTime() - startedMs) : run.status === "running" ? formatElapsedHMS(now - startedMs) : "—"}</div>
+      </div>
       {run.error && <div role="alert" className="text-xs text-danger">{run.error}</div>}
+      <div className="flex items-center gap-2">
       {run.canRetry && <Button disabled={retrying} onClick={() => retry(run.id)}>Повторить тест</Button>}
+      <Button disabled={run.logStatus === "rotated" || run.logStatus === "missing"} onClick={() => setLogOpen(true)}>Лог</Button>
+      </div>
       <a className="text-accent text-sm" href={`/testing/logs?kind=standalone&attempt_id=${encodeURIComponent(run.id)}`}>Открыть в истории логов</a>
-      <AttemptLogViewer queueItemId={run.id} state={run.status} />
+      {run.logStatus === "rotated" && <p className="text-xs text-dim">Лог ротирован. Результат сохранён.</p>}
     </div>
   );
 }

@@ -117,6 +117,7 @@ const TESTING_CHIP: ServiceChip = {
   subItems: [
     { to: "/testing/tests", icon: FileText, label: "Тесты" },
     { to: "/testing/runs", icon: ListChecks, label: "Прогоны" },
+    { to: "/testing/logs", icon: FileText, label: "Логи" },
     { to: "/testing/stp", icon: Cog, label: "СТП" },
   ],
 };

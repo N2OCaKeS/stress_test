@@ -10,6 +10,8 @@ import type {
   TestStand,
 } from "@/api/testing/types";
 
+vi.mock("@/api/server/osVersions", () => ({ listOsVersions: async () => ({ items: [{ id: "osv_real", name: "1.7.1.44", kernels: ["6.1.1-1-generic", "6.1.1-1-lowlatency"] }] }) }));
+
 const createTestRunMock = vi.fn();
 const listTestRunsMock = vi.fn();
 const getTestRunMock = vi.fn();
@@ -34,11 +36,12 @@ vi.mock("@/api/testing/testDefinitions", () => ({
 }));
 
 const retryQueueItemMock = vi.fn();
-vi.mock("@/api/testing/queueItems", () => ({ retryQueueItem: (...args: unknown[]) => retryQueueItemMock(...args) }));
+vi.mock("@/api/testing/queueItems", () => ({ listQueueItems: async () => ({ items: [], total: 0 }), retryQueueItem: (...args: unknown[]) => retryQueueItemMock(...args) }));
 
 const getTestLogTextMock = vi.fn();
 const downloadTestLogMock = vi.fn();
 vi.mock("@/api/testing/testLogs", () => ({
+  listLogSegments: async () => ({ items: [], total: 0 }),
   getTestLogText: (...args: unknown[]) => getTestLogTextMock(...args),
   downloadTestLog: (...args: unknown[]) => downloadTestLogMock(...args),
 }));
@@ -224,9 +227,10 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     await screen.findByText("run_1");
 
     fireEvent.click(screen.getByRole("button", { name: "Запустить прогон" }));
-    await screen.findByText("Все привязанные тесты выбранных стендов для одного РЦ/ядра/режима");
+    await screen.findByText("Все привязанные тесты выбранных стендов на всех доступных ядрах ОС");
 
-    // Пул стендов и РЦ/ядро/режим — дефолтные значения формы (все активные стенды).
+    fireEvent.click(screen.getByRole("button", { name: "Выберите РЦ" }));
+    fireEvent.click(await screen.findByRole("option", { name: "1.7.1.44" }));
     await waitFor(() => expect(listTestStandsMock).toHaveBeenCalledWith({ is_active: true, queue_enabled: true, limit: 500 }));
 
     const submitButtons = screen.getAllByRole("button", { name: /Запустить прогон/ });
@@ -289,12 +293,23 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     await waitFor(() => expect(getTestRunMock.mock.calls.length).toBeGreaterThan(1));
   });
 
-  it("клик «Лог» открывает модалку и подгружает реальный текст лога", async () => {
+  it("клик «Лог» заменяет рабочую зону и крестик возвращает результаты", async () => {
     renderHarness();
     await screen.findByText("stand-A");
 
-    fireEvent.click(screen.getAllByRole("button", { name: /Лог/ })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "Лог" })[1]);
     expect(await screen.findByText("log body")).toBeInTheDocument();
-    expect(getTestLogTextMock).toHaveBeenCalledWith("qi_1");
+    expect(getTestLogTextMock).toHaveBeenCalledWith("qi_2");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Закрыть лог" }));
+    expect(await screen.findByText("stand-A")).toBeInTheDocument();
   });
+  it("для ротированного лога отключает просмотр, сохраняя повтор и результат", async () => {
+    getTestRunMock.mockResolvedValue({ ...DETAIL, queue_items: [{ ...DETAIL.queue_items[1], log_status: "rotated" }] });
+    renderHarness();
+    expect(await screen.findByTitle("Лог ротирован")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Повторить тест" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Обновить результаты" })).not.toBeInTheDocument();
+  });
+
 });

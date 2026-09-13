@@ -3,7 +3,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { TestingLogs } from "../logs";
 const list = vi.hoisted(() => vi.fn());
-vi.mock("@/api/testing/queueItems", () => ({ listQueueItems: list }));
+const retry = vi.hoisted(() => vi.fn());
+vi.mock("@/api/testing/queueItems", () => ({ listQueueItems: list, retryQueueItem: retry }));
 vi.mock("@/api/testing/testStands", () => ({ listTestStands: async () => ({ items: [] }) }));
 vi.mock("../AttemptLogViewer", () => ({ AttemptLogViewer: ({ queueItemId, state }: { queueItemId: string; state: string }) => <div>viewer:{queueItemId}:{state}</div> }));
 const item = { id: "qi_1", test_id: "t1", test_code: "FS-CHECK", stand_id: "s1", test_run_id: "run1", state: "running", debug_mode: false, created_at: "2026-09-13T00:00:00Z", retry_of_id: "qi_old", is_current: true };
@@ -29,7 +30,8 @@ describe("История логов", () => {
   it("при переходе к одиночным сбрасывает кампанию и страницу", async () => {
     renderPage("/testing/logs?kind=campaign&test_run_id=run1&offset=50");
     await screen.findByText("viewer:qi_1:running");
-    fireEvent.click(screen.getByRole("button", { name: "Логи одиночных запусков" }));
+    fireEvent.change(screen.getByLabelText("Вид запуска"), { target: { value: "standalone" } });
+    fireEvent.click(screen.getByRole("button", { name: "Применить фильтры" }));
     await waitFor(() => expect(list).toHaveBeenLastCalledWith({ kind: "standalone", offset: 0, limit: 50 }));
     expect(screen.queryByLabelText("ID прогона")).not.toBeInTheDocument();
   });
@@ -51,8 +53,20 @@ describe("История логов", () => {
     renderPage();
     await screen.findByText("viewer:qi_1:running");
     list.mockRejectedValueOnce(new Error("History unavailable"));
-    fireEvent.click(screen.getByRole("button", { name: "Логи одиночных запусков" }));
+    fireEvent.change(screen.getByLabelText("Вид запуска"), { target: { value: "standalone" } });
+    fireEvent.click(screen.getByRole("button", { name: "Применить фильтры" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("History unavailable");
     expect(screen.queryByText("viewer:qi_1:running")).not.toBeInTheDocument();
   });
+  it("общий список сохраняет ротированный лог и предлагает повтор", async () => {
+    list.mockResolvedValue({ items: [{ ...item, state: "failed", log_status: "rotated" }], total: 1 });
+    retry.mockResolvedValue({ id: "qi_new" });
+    renderPage("/testing/logs");
+    expect(await screen.findByText(/Лог удалён по сроку хранения/)).toBeInTheDocument();
+    expect(screen.queryByText("viewer:qi_1:failed")).not.toBeInTheDocument();
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ kind: "all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Перезапустить тест" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith("qi_1", expect.any(String)));
+  });
+
 });

@@ -370,7 +370,7 @@ export type TestRunStatus =
 export interface TestRunCreateRequest {
   os_version_id: string;
   mode: string;
-  kernel: string;
+  kernel?: string;
   test_run_stands: string[];
   final?: boolean;
 }
@@ -385,6 +385,7 @@ export interface TestRunPartialError {
 
 /** Карточка кампании. */
 export interface TestRun {
+  kernels?: string[];
   id: string;
   os_version_id: string;
   mode: string;
@@ -406,6 +407,8 @@ export interface TestRunCreateResponse extends TestRun {
 
 /** Один дочерний queue_item в детальной карточке кампании. */
 export interface TestRunQueueItem {
+  kernel?: string | null;
+  log_status?: "available" | "rotated" | "pending" | "missing";
   retry_of_id?: string | null;
   test_run_entry_id?: string | null;
   is_current?: boolean;
@@ -498,10 +501,10 @@ export interface StpTestCaseUpdateRequest {
 /** Тело `POST /stp/generate`. */
 export interface StpGenerateRequest {
   os_version_id: string;
-  mode: string;
-  kernel: string;
+  mode?: string;
+  kernel?: string;
   final?: boolean;
-  department_id: string;
+  department_id?: string;
 }
 
 /** Один частичный провал генерации СТП для одного стенда. */

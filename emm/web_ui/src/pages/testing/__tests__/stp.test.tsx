@@ -218,17 +218,15 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     renderPage();
 
     await screen.findAllByText("1.8.7.46");
-    fireEvent.click(await screen.findByRole("button", { name: /Сгенерировать СТП/ }));
+    const generateButton = await screen.findByRole("button", { name: /Сгенерировать СТП/ });
+    await waitFor(() => expect(generateButton).toBeEnabled());
+    fireEvent.click(generateButton);
 
     fireEvent.click(await screen.findByRole("button", { name: "Сгенерировать" }));
 
     await waitFor(() => expect(generateStpMock).toHaveBeenCalledTimes(1));
     expect(generateStpMock).toHaveBeenCalledWith({
       os_version_id: "osv_1",
-      mode: "orel",
-      kernel: "6.12.24-1.el11",
-      final: false,
-      department_id: "dep_1",
     });
     await waitFor(() =>
       expect(

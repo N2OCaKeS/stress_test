@@ -31,6 +31,7 @@ import {
   Search,
   Server,
 } from "lucide-react";
+import { listOsVersions } from "@/api/server/osVersions";
 import { naturalCompare } from "@/lib/naturalSort";
 import { formatMsk, formatMskShort, formatElapsedHMS } from "@/lib/datetime";
 import { useToast } from "@/contexts/ToastContext";
@@ -39,7 +40,8 @@ import { useQuery } from "@/api/auth/useQuery";
 import { createTestRun, getRunSummaryComment, getTestRun, listTestRuns } from "@/api/testing/testRuns";
 import { getTestStand, listTestStands } from "@/api/testing/testStands";
 import { getTestDefinition } from "@/api/testing/testDefinitions";
-import { downloadTestLog, getTestLogText } from "@/api/testing/testLogs";
+import { retryQueueItem } from "@/api/testing/queueItems";
+import { AttemptLogWorkzone } from "./AttemptLogWorkzone";
 import type {
   RunSummaryCommentStatus,
   TestDefinition,
@@ -49,10 +51,10 @@ import type {
   TestRunStatus,
   TestStand,
 } from "@/api/testing/types";
-import { OS_VERSION_IDS as RC_IDS, OS_VERSIONS, SortableTh, Stat, useSortableRows, type BadgeKind } from "./_shared";
+import { SortableTh, Stat, useSortableRows, type BadgeKind } from "./_shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { retryQueueItem } from "@/api/testing/queueItems";
+
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Modal } from "@/components/ui/Modal";
@@ -315,6 +317,8 @@ function RunListRow({ run, active, onSelect }: { run: TestRun; active: boolean; 
 // ── детальная таблица прогона: строка = один queue_item кампании ───────────
 
 export function RunsWorkzone({ state }: { state: RunsState }) {
+  const [logTarget, setLogTarget] = useState<RunQueueRow | null>(null);
+  useEffect(() => setLogTarget(null), [state.selectedRun?.id]);
   const totals = useMemo(
     () => ({
       active: state.runs.filter((r) => r.status === "running").length,
@@ -327,11 +331,14 @@ export function RunsWorkzone({ state }: { state: RunsState }) {
     [state.runs],
   );
 
+  if (logTarget) return <AttemptLogWorkzone track id={logTarget.queue_item_id} state={logTarget.state}
+    logStatus={logTarget.log_status} title={`Лог · ${logTarget.testLabel}`} subtitle={logTarget.standLabel}
+    canRetry={logTarget.is_current !== false} onClose={() => setLogTarget(null)} onRetried={state.refetch} />;
   return (
-    <div className="grid gap-4">
-      <div>
+    <div className="flex flex-1 min-h-0 flex-col gap-4">
+      <div className="shrink-0">
         <h2 className="text-lg font-semibold">Прогоны — fleet-wide кампании</h2>
-        <div className="text-sm text-dim mt-1">Каждый прогон — один тест на стенд для всего пула, для одного РЦ/ядра/режима</div>
+        <div className="text-sm text-dim mt-1">Все привязанные тесты выбранных стендов на всех ядрах выбранной ОС</div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
@@ -342,7 +349,7 @@ export function RunsWorkzone({ state }: { state: RunsState }) {
       </div>
 
       {state.selectedRun ? (
-        <RunDetailPanel run={state.selectedRun} onChanged={state.refetch} />
+        <RunDetailPanel run={state.selectedRun} onOpenLog={setLogTarget} onChanged={state.refetch} />
       ) : (
         <div className="surface border border-token rounded p-8 text-center text-dim">
           {state.loading ? "Загружаем…" : "Нет выбранного прогона"}
@@ -372,7 +379,7 @@ function runQueueValue(row: RunQueueRow, column: RunQueueColumn): string | numbe
  * `GET /test-runs`/`GET /test-stands` намеренно не отдают такое обогащение
  * списком, чтобы не бить по `server_service` на каждую строку списка кампаний.
  */
-function RunDetailPanel({ run, onChanged }: { run: TestRun; onChanged: () => void }) {
+function RunDetailPanel({ run, onOpenLog, onChanged }: { run: TestRun; onOpenLog: (row: RunQueueRow) => void; onChanged: () => void }) {
   const toast = useToast();
   const [retrying, setRetrying] = useState<string | null>(null);
   const retryKeys = useRef<Record<string, string>>({});
@@ -409,17 +416,20 @@ function RunDetailPanel({ run, onChanged }: { run: TestRun; onChanged: () => voi
     column: "standLabel",
     dir: "asc",
   });
-  const [logTarget, setLogTarget] = useState<RunQueueRow | null>(null);
+  useEffect(() => {
+    const timer = setInterval(detailQ.refetch, 5000);
+    return () => clearInterval(timer);
+  }, [detailQ.refetch]);
 
   const summary = summaryQ.data;
 
   return (
-    <div className="surface border border-token rounded overflow-hidden">
-      <div className="border-b border-token p-3 flex items-center justify-between gap-3 flex-wrap">
+    <div className="surface border border-token rounded overflow-hidden flex flex-1 min-h-0 flex-col">
+      <div className="border-b border-token p-3 shrink-0 flex items-center justify-between gap-3 flex-wrap">
         <div>
           <div className="text-sm font-medium">Тесты прогона {run.id}</div>
           <div className="text-xs text-dim">
-            {run.os_version_id} · {detailQ.data?.progress?.total ?? items.length} тестов · {items.length} попыток · создан {formatMsk(run.created_at)}
+            {run.os_version_id} · ядра: {(run.kernels?.length ? run.kernels : [run.kernel]).join(", ")} · {detailQ.data?.progress?.total ?? items.length} тестов · {items.length} попыток · создан {formatMsk(run.created_at)}
           </div>
         </div>
         <div className="text-xs text-dim flex items-center gap-2">
@@ -439,7 +449,6 @@ function RunDetailPanel({ run, onChanged }: { run: TestRun; onChanged: () => voi
           <Checkbox checked={showHistory} onChange={(event) => setShowHistory(event.target.checked)} />
           Показать предыдущие попытки
         </label>
-        <Button size="sm" onClick={() => { detailQ.refetch(); summaryQ.refetch(); }}>Обновить результаты</Button>
         <a className="text-accent" href={`/testing/logs?kind=campaign&test_run_id=${encodeURIComponent(run.id)}`}>Логи прогона</a>
         {detailQ.data?.progress && <span>
           Успешно: {detailQ.data.progress.succeeded ?? 0} · С ошибкой: {detailQ.data.progress.failed ?? 0} · Выполняются: {detailQ.data.progress.running ?? 0}
@@ -460,7 +469,7 @@ function RunDetailPanel({ run, onChanged }: { run: TestRun; onChanged: () => voi
       )}
 
       {!detailQ.loading && !detailQ.error && (
-        <div className="overflow-auto max-h-[520px]">
+        <div className="overflow-auto flex-1 min-h-0">
           <table className="mini">
             <thead>
               <tr>
@@ -486,7 +495,7 @@ function RunDetailPanel({ run, onChanged }: { run: TestRun; onChanged: () => voi
                       : "—";
                 return (
                   <tr key={row.queue_item_id}>
-                    <td>{row.testLabel}</td>
+                    <td>{row.testLabel}<div className="text-xs text-dim">{row.kernel}</div></td>
                     <td className="mono text-xs" title={row.stand_id}>{row.standLabel}</td>
                     <td>
                       <Badge kind={meta.badge}>{meta.label}</Badge>
@@ -496,17 +505,20 @@ function RunDetailPanel({ run, onChanged }: { run: TestRun; onChanged: () => voi
                     <td className="mono text-xs">{formatMskShort(row.started_at)}</td>
                     <td className="mono text-xs">{elapsed}</td>
                     <td>
+                      <div className="flex items-center gap-2 whitespace-nowrap">
                       <Button
                         size="sm"
                         type="button"
                         className="inline-flex items-center gap-1"
-                        disabled={row.state === "queued"}
-                        onClick={() => setLogTarget(row)}
+                        disabled={row.log_status === "rotated" || row.log_status === "missing" || row.state === "queued"}
+                        title={row.log_status === "rotated" ? "Лог ротирован" : undefined}
+                        onClick={() => onOpenLog(row)}
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         Лог
                       </Button>
                       {row.is_current !== false && ["succeeded", "failed"].includes(row.state) && <Button size="sm" disabled={retrying !== null} onClick={() => retry(row.queue_item_id)}>Повторить тест</Button>}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -521,80 +533,17 @@ function RunDetailPanel({ run, onChanged }: { run: TestRun; onChanged: () => voi
         </div>
       )}
 
-      {logTarget && (
-        <RunQueueItemLogModal
-          queueItemId={logTarget.queue_item_id}
-          title={logTarget.testLabel}
-          campaignId={run.id}
-          subtitle={`${logTarget.standLabel} · ${queueItemStateMeta(logTarget.state).label}`}
-          onClose={() => setLogTarget(null)}
-        />
-      )}
+
     </div>
-  );
-}
-
-/** Просмотр полного текста реального лога `queue_item` + скачивание — без навигации по чекпоинтам (та есть в «Отладке»). */
-function RunQueueItemLogModal({
-  queueItemId,
-  title,
-  subtitle,
-  campaignId,
-  onClose,
-}: {
-  queueItemId: string;
-  title: string;
-  subtitle: string;
-  campaignId: string;
-  onClose: () => void;
-}) {
-  const toast = useToast();
-  const logQ = useQuery(() => getTestLogText(queueItemId), [queueItemId]);
-  const [downloading, setDownloading] = useState(false);
-
-  async function handleDownload() {
-    setDownloading(true);
-    try {
-      await downloadTestLog(queueItemId);
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось скачать лог"));
-    } finally {
-      setDownloading(false);
-    }
-  }
-
-  return (
-    <Modal
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-      title={`Журнал · ${title}`}
-      subtitle={subtitle}
-      width="md"
-      footer={
-        <>
-          <Button type="button" onClick={onClose}>Закрыть</Button>
-          <Button variant="primary" type="button" onClick={handleDownload} disabled={downloading || logQ.loading || !!logQ.error}>
-            {downloading ? "Скачиваем…" : "Скачать"}
-          </Button>
-        </>
-      }
-    >
-      <a className="text-accent text-sm" href={`/testing/logs?kind=campaign&test_run_id=${encodeURIComponent(campaignId)}&attempt_id=${encodeURIComponent(queueItemId)}`}>Открыть в истории логов (live и чекпоинты)</a>
-      {logQ.loading && <div className="text-xs text-dim p-2">Загружаем лог…</div>}
-      {!!logQ.error && <div className="alert-danger text-xs p-2">{apiErrMsg(logQ.error, "Лог не загрузился")}</div>}
-      {logQ.data && <pre className="log-tail max-h-[60vh]">{logQ.data.text || "Лог пока пуст"}</pre>}
-    </Modal>
   );
 }
 
 export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: () => void }) {
   const toast = useToast();
-  const [rc, setRc] = useState(RC_IDS[0] ?? "");
+  const versionsQ = useQuery(() => listOsVersions({ limit: 500 }), []);
+  const [rc, setRc] = useState("");
   const [mode, setMode] = useState<RunMode>("orel");
-  const kernelChoices = useMemo(() => OS_VERSIONS.find((v) => v.id === rc)?.kernels ?? [], [rc]);
-  const [kernel, setKernel] = useState(kernelChoices[0] ?? "");
+  const kernelChoices = versionsQ.data?.items.find((v) => v.id === rc)?.kernels ?? [];
   const [final, setFinal] = useState(false);
   const [allStands, setAllStands] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -603,16 +552,11 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
   const standsQ = useQuery(() => listTestStands({ is_active: true, queue_enabled: true, limit: 500 }), []);
   const stands = useMemo(() => standsQ.data?.items ?? [], [standsQ.data]);
 
-  // При смене РЦ ядро, если оно больше не входит в новый список, сбрасывается на первое доступное.
-  useEffect(() => {
-    if (!kernelChoices.includes(kernel)) setKernel(kernelChoices[0] ?? "");
-  }, [kernelChoices, kernel]);
-
   const poolIds = allStands ? stands.map((s) => s.id) : Array.from(selected);
 
   async function handleSubmit() {
-    if (!rc || !kernel || poolIds.length === 0) return;
-    const body: TestRunCreateRequest = { os_version_id: rc, mode, kernel, test_run_stands: poolIds, final };
+    if (!rc || poolIds.length === 0) return;
+    const body: TestRunCreateRequest = { os_version_id: rc, mode, test_run_stands: poolIds, final };
     setSubmitting(true);
     try {
       const res = await createTestRun(body);
@@ -640,7 +584,7 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
         if (!open) onClose();
       }}
       title="Запустить прогон"
-      subtitle="Все привязанные тесты выбранных стендов для одного РЦ/ядра/режима"
+      subtitle="Все привязанные тесты выбранных стендов на всех доступных ядрах ОС"
       width="md"
       footer={
         <>
@@ -649,7 +593,7 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
             variant="primary"
             type="button"
             onClick={handleSubmit}
-            disabled={submitting || !rc || !kernel || poolIds.length === 0}
+            disabled={submitting || !rc || poolIds.length === 0}
           >
             {submitting ? "Запускаем…" : `Запустить прогон${final ? " (финальный)" : ""}`}
           </Button>
@@ -662,7 +606,8 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
             <Dropdown
               mode="single"
               searchable
-              options={RC_IDS.map((id) => ({ value: id, label: id }))}
+              placeholder="Выберите РЦ"
+              options={(versionsQ.data?.items ?? []).map((version) => ({ value: version.id, label: version.name }))}
               value={rc}
               onChange={setRc}
             />
@@ -678,17 +623,7 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
                 onChange={(v) => setMode(v as RunMode)}
               />
             </label>
-            <label className="grid gap-1">
-              <span className="text-xs text-dim">Ядро</span>
-              <Dropdown
-                mode="single"
-                options={kernelChoices.map((k) => ({ value: k, label: k }))}
-                value={kernel}
-                onChange={setKernel}
-                placeholder={kernelChoices.length ? "Все" : "нет ядер для этого РЦ"}
-                disabled={kernelChoices.length === 0}
-              />
-            </label>
+            <div className="text-xs text-dim">Ядра: {kernelChoices.join(", ") || "Будут обнаружены в репозиториях ОС"}. Прогон включает все доступные ядра.</div>
           </div>
 
           <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">

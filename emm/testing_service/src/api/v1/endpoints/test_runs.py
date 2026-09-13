@@ -23,6 +23,7 @@ from src.schemas.test_run import (
     TestRunQueueItemResponse,
     TestRunResponse,
 )
+from src.services import log_availability
 from src.services import run_summary as run_summary_svc
 from src.services import test_run as svc
 from src.services.test_run_status import latest_attempts, result_states
@@ -38,9 +39,9 @@ router = APIRouter(prefix="/test-runs")
     status_code=201,
     summary="Запустить кампанию на пуле стендов",
     description=(
-        "Один РЦ+ядро+режим, поставленный в очередь сразу на весь явно "
-        "выбранный пул стендов (по одному тесту, закреплённому за каждым "
-        "стендом через `pinned_stand_id`). Стенд без закреплённых тестов не "
+        "Один РЦ и режим, все доступные ядра ОС и все тесты выбранного пула "
+        "стендов, закреплённые через `pinned_stand_id`. Явный `kernel` "
+        "сохраняет совместимость с запуском на одном ядре. Стенд без тестов не "
         "рушит кампанию — попадает в `stands_without_tests`. Провал "
         "постановки одного теста одного стенда — в `enqueue_errors`, "
         "остальные стенды кампании стартуют независимо."
@@ -119,9 +120,12 @@ async def get_test_run(
     states = result_states(items, entries)
     response.progress = {"total": len(states), "attempts": len(items), **dict(Counter(states))}
     current_ids = {item.id for item in latest_attempts(items)}
+    logs = await log_availability.for_items(db, items)
     response.queue_items = [
         TestRunQueueItemResponse(
             queue_item_id=item.id,
+            log_status=logs[item.id],
+            kernel=(item.launch_context or {}).get("KERNEL"),
             stand_id=item.stand_id,
             test_id=item.test_id,
             state=item.state,

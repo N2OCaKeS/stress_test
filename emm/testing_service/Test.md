@@ -39,3 +39,7 @@ Unit/integration-сьюты для каждой волны из `obsidian/ALLTA 
 - Схема поднимается один раз на сессию: `DROP SCHEMA public CASCADE` + `alembic upgrade head` (сиды миграций должны быть на месте). После каждого теста удаляются строки `global_variables` с непустым `created_by` — то есть созданные через API, сиды остаются.
 - `_patch_introspect` подменяет `src.dependencies.auth._introspect`; фабрика `make_token` + фикстуры `admin_token` / `guest_token` / `no_role_token` выдают токены с нужным набором сервисных ролей.
 - Исходящие вызовы в `server_service` мокаются подменой `server_client.build_client` на `httpx.AsyncClient(transport=MockTransport(...))` — реальный `server_service` в тестах не поднимается.
+
+## Ядра кампаний и ротация
+
+`tests/test_kernel_campaign_and_log_rotation.py`: 3 сценария — все ядра в составе кампании, сохранение результата и маркера после ротации, генерация СТП по одной ОС на всех ядрах/режимах.

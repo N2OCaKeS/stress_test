@@ -24,7 +24,7 @@ import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Bug, Cog, FileText, ListChecks, type LucideIcon } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
-import { TestingLogs } from "./logs";
+import { LogsMiddlePanel, LogsWorkzone, useLogsState } from "./logs";
 import { TestingOverview } from "./overview";
 import { TestsWorkzone } from "./tests";
 import { RunsMiddlePanel, RunsWorkzone, useRunsState } from "./runs";
@@ -58,6 +58,7 @@ export function Testing() {
   // Хуки всегда вызываются, чтобы не нарушать порядок хуков при переключении
   // подраздела — конкретное состояние нужно только своей вкладке, но само
   // по себе оно дешёвое.
+  const logsState = useLogsState(activeId === "logs");
   const runsState = useRunsState();
   const adhocState = useAdhocState(activeId === "debug");
   const stpState = useStpVersionState();
@@ -67,13 +68,15 @@ export function Testing() {
       <RunsMiddlePanel state={runsState} />
     ) : activeId === "debug" ? (
       <AdhocMiddlePanel state={adhocState} />
+    ) : activeId === "logs" ? (
+      <LogsMiddlePanel state={logsState} />
     ) : activeId === "stp" ? (
       <StpMiddlePanel state={stpState} />
     ) : undefined;
 
   return (
     <Shell breadcrumb={`testing_service / ${active.label}`} middle={middle}>
-      <main className={activeId === "tests" ? "flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden" : "flex-1 min-w-0 overflow-auto"}>
+      <main className={["tests", "runs", "debug", "logs"].includes(activeId) ? "flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden" : "flex-1 min-w-0 overflow-auto"}>
         <div className="border-b border-token px-5 py-4 flex items-center justify-between gap-4 flex-wrap shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="h-10 w-10 rounded surface-2 border border-token flex items-center justify-center shrink-0">
@@ -105,12 +108,12 @@ export function Testing() {
           </div>
         </div>
 
-        <div className={activeId === "tests" ? "p-5 flex flex-1 min-h-0 flex-col" : "p-5"}>
+        <div className={["tests", "runs", "debug", "logs"].includes(activeId) ? "p-5 flex flex-1 min-h-0 flex-col" : "p-5"}>
           {activeId === "overview" && <TestingOverview runsState={runsState} />}
           {activeId === "tests" && <TestsWorkzone />}
           {activeId === "runs" && <RunsWorkzone state={runsState} />}
           {activeId === "debug" && <AdhocWorkzone state={adhocState} />}
-          {activeId === "logs" && <TestingLogs />}
+          {activeId === "logs" && <LogsWorkzone state={logsState} />}
           {activeId === "stp" && <StpWorkzone state={stpState} />}
         </div>
       </main>

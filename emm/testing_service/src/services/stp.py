@@ -111,8 +111,8 @@ async def generate_stp_runs(
     identity: Identity,
     *,
     os_version_id: str,
-    mode: str,
-    kernel: str,
+    mode: str | None,
+    kernel: str | None,
     final: bool,
     department_id: str,
 ) -> tuple[list[StpTestRun], list[dict]]:
@@ -133,6 +133,19 @@ async def generate_stp_runs(
             details={"reason": "permission_denied"},
         )
         raise
+
+    if kernel is None or mode is None:
+        from src.services import server_client
+        kernels = [kernel] if kernel else await server_client.resolve_os_kernels(os_version_id)
+        modes = [mode] if mode else ["orel", "smolensk"]
+        all_runs, all_errors = [], []
+        for selected_kernel in kernels:
+            for selected_mode in modes:
+                runs, errors = await generate_stp_runs(db, identity, os_version_id=os_version_id,
+                    kernel=selected_kernel, mode=selected_mode, final=final, department_id=department_id)
+                all_runs.extend(runs)
+                all_errors.extend(errors)
+        return all_runs, all_errors
 
     tests = await test_definition_repo.list_by_department_pinned(db, department_id)
     filtered = await _filter_by_changelog(db, tests, os_version_id, final)

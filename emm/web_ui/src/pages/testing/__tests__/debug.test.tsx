@@ -183,6 +183,7 @@ describe("AdhocWorkzone — живой лог во время исполнени
     // adhoc-2026090701 — running, выбран по умолчанию (первый в списке)
     await screen.findAllByText("adhoc-2026090701");
 
+    fireEvent.click(await screen.findByRole("button", { name: "Лог" }));
     await waitFor(() => expect(sockets).toHaveLength(1));
     expect(sockets[0].url).toBe("ws://test/testing-log");
     expect(testLogStreamUrlMock).toHaveBeenCalledWith("adhoc-2026090701");
@@ -220,6 +221,7 @@ describe("AdhocWorkzone — завершённый лог (реальные се
     renderHarness();
     // adhoc-2026090612 — done, DB-PG-TPCC на vm-stand1
     fireEvent.click(await screen.findByText("adhoc-2026090612"));
+    fireEvent.click(await screen.findByRole("button", { name: "Лог" }));
 
     await waitFor(() => expect(getTestLogTextMock).toHaveBeenCalledWith("adhoc-2026090612"));
     // "prepare-stand"/"run-test" — метки сегментов, встречаются и в навигации, и в содержимом
@@ -234,6 +236,7 @@ describe("AdhocWorkzone — завершённый лог (реальные се
     listLogSegmentsMock.mockResolvedValue({ items: [], total: 0 });
     renderHarness();
     fireEvent.click(await screen.findByText("adhoc-2026090612"));
+    fireEvent.click(await screen.findByRole("button", { name: "Лог" }));
     expect(await screen.findByText(/ЧЕКПОИНТ ОДИН.*OK.*КОМАНДА ДВА/s)).toBeInTheDocument();
   });
 
@@ -242,6 +245,7 @@ describe("AdhocWorkzone — завершённый лог (реальные се
       .mockResolvedValueOnce({ items: [makeSegment({ id: "last", position: 1, label: "last page" })], total: 2 });
     renderHarness();
     fireEvent.click(await screen.findByText("adhoc-2026090612"));
+    fireEvent.click(await screen.findByRole("button", { name: "Лог" }));
     expect((await screen.findAllByText("last page")).length).toBeGreaterThan(0);
     expect(listLogSegmentsMock).toHaveBeenCalledWith("adhoc-2026090612", { limit: 500, offset: 1 });
   });
@@ -249,6 +253,7 @@ describe("AdhocWorkzone — завершённый лог (реальные се
   it("скачивание лога вызывает downloadTestLog с queue_item_id запуска", async () => {
     renderHarness();
     fireEvent.click(await screen.findByText("adhoc-2026090612"));
+    fireEvent.click(await screen.findByRole("button", { name: "Лог" }));
     const downloadBtn = await screen.findByRole("button", { name: /Скачать лог/ });
     fireEvent.click(downloadBtn);
     await waitFor(() => expect(downloadTestLogMock).toHaveBeenCalledWith("adhoc-2026090612"));
@@ -257,6 +262,7 @@ describe("AdhocWorkzone — завершённый лог (реальные се
   it("фильтр «только не-OK» убирает OK-сегмент из навигации, но не из содержимого", async () => {
     renderHarness();
     fireEvent.click(await screen.findByText("adhoc-2026090612"));
+    fireEvent.click(await screen.findByRole("button", { name: "Лог" }));
     await screen.findAllByText("prepare-stand");
     // до фильтра "prepare-stand" встречается дважды: кнопка навигации + блок содержимого
     expect(screen.getAllByText("prepare-stand")).toHaveLength(2);

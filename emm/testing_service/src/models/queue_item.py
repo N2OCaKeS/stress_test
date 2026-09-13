@@ -41,6 +41,8 @@ class QueueItem(Base):
     __tablename__ = "queue_items"
     __table_args__ = (UniqueConstraint("created_by", "client_request_id", name="uq_queue_items_client_request"),)
 
+    log_rotated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     client_request_id: Mapped[str | None] = mapped_column(String(128))
     request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     stp_test_run_id: Mapped[str | None] = mapped_column(String(64))

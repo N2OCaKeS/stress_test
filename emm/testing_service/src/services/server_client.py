@@ -103,7 +103,7 @@ async def _send_get(path: str, params: dict | None, headers: dict[str, str]) -> 
             ) from exc
 
 
-async def _send_post(path: str, json_body: dict, headers: dict[str, str]) -> httpx.Response:
+async def _send_post(path: str, json_body: dict, headers: dict[str, str], *, timeout: float | None = None) -> httpx.Response:
     """Сырой POST к server_service. Сетевые сбои → 503, статус-код разбирает caller."""
     settings = get_settings()
     base = (settings.server_service_url or "").rstrip("/")
@@ -112,7 +112,7 @@ async def _send_post(path: str, json_body: dict, headers: dict[str, str]) -> htt
             error_code="SERVER_SERVICE_NOT_CONFIGURED",
             message="SERVER_SERVICE_URL is not configured",
         )
-    async with build_client(settings.server_request_timeout_seconds) as client:
+    async with build_client(timeout or settings.server_request_timeout_seconds) as client:
         try:
             return await client.post(f"{base}{path}", json=json_body, headers=headers)
         except httpx.TimeoutException as exc:
@@ -145,7 +145,7 @@ def _parse_json(response: httpx.Response) -> dict:
         ) from exc
 
 
-async def _get(path: str, params: dict | None = None) -> dict:
+async def _get(path: str, params: dict | None = None, *, refresh: bool = False) -> dict:
     """GET к server_service с s2s bot-токеном сервиса. Под department-agnostic каталоги."""
     settings = get_settings()
     api_key = settings.server_service_api_key
@@ -155,7 +155,7 @@ async def _get(path: str, params: dict | None = None) -> dict:
             message="SERVER_SERVICE_API_KEY is not configured",
         )
     headers = {**bearer_header(api_key), "X-Service-Identity": SERVICE_NAME}
-    response = await _send_get(path, params, headers)
+    response = await _send_post(path, {}, headers, timeout=settings.os_kernel_discovery_timeout_seconds) if refresh else await _send_get(path, params, headers)
 
     if response.status_code == 404:
         raise NotFoundError(
@@ -401,3 +401,13 @@ async def get_server(bearer_token: str, server_id: str) -> dict:
     к server_service.
     """
     return await _get_passthrough(f"{_SERVERS_PATH}/{server_id}", bearer_token)
+
+
+async def resolve_os_kernels(os_version_id: str) -> list[str]:
+    from urllib.parse import quote
+    from src.core.exceptions import DomainValidationError
+    body = await _get(f"{_OS_VERSIONS_PATH}/{quote(os_version_id, safe='')}/resolve-kernels", refresh=True)
+    kernels = list(dict.fromkeys(body.get("kernels") or []))
+    if not kernels:
+        raise DomainValidationError(error_code="OS_KERNELS_NOT_FOUND", message="Для выбранной ОС не найдены ядра")
+    return kernels

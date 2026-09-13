@@ -21,7 +21,6 @@ from src.schemas.os_version import (
     OsVersionResponse,
     OsVersionUpdate,
 )
-from src.services import os_version_bootstrap_password as bootstrap_password_svc
 from src.services import os_version_service as svc
 
 router = APIRouter(prefix="/os-versions")
@@ -269,3 +268,12 @@ async def delete_os_version(
     """Delete OS-версии. Доступ: `(os_version, *, delete)`."""
     await svc.delete_os_version(db, identity, os_version_id)
     return OkResponse()
+
+
+@router.post("/{os_version_id}/resolve-kernels", response_model=OsVersionResponse,
+    summary="Обнаружить и сохранить ядра из репозиториев выбранной ОС")
+async def resolve_kernels(
+    os_version_id: str, identity: AuthenticatedIdentity, db: AsyncSession = Depends(get_db),
+) -> OsVersionResponse:
+    """Обновление производных метаданных общего каталога; URL берутся из настроек ОС."""
+    return OsVersionResponse.model_validate(await svc.resolve_kernels(db, os_version_id))

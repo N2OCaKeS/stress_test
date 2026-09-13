@@ -465,3 +465,23 @@ async def update_os_version_bootstrap_password(
         details={"ssh_username": ssh_username},
     )
     return await bootstrap_password_svc.get_bootstrap_password_status(db, os_version_id)
+
+
+async def resolve_kernels(db: AsyncSession, os_version_id: str) -> OsVersion:
+    """Обновить производный каталог ядер из настроенных репозиториев версии."""
+    from src.services import os_kernel_resolver
+    obj = await get_os_version(db, os_version_id)
+    initial_repositories = list(obj.repositories or [])
+    repositories = list(initial_repositories)
+    if not repositories:
+        repositories = await os_version_repo_resolver.resolve_repository_urls(obj.name)
+    kernels = await os_kernel_resolver.resolve_kernels(repositories)
+    await db.refresh(obj)
+    if list(obj.repositories or []) != initial_repositories:
+        raise ConflictError(error_code="OS_REPOSITORIES_CHANGED", message="Репозитории ОС изменились во время поиска ядер. Повторите поиск.")
+    await repo.update(db, obj, {"kernels": kernels, "repositories": repositories})
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit("os_version.update", target_id=obj.id, target_type="os_version",
+        status="success", allowed=True, details={"changed_fields": ["kernels"], "source": "package_indexes", "kernels_count": len(kernels)})
+    return obj

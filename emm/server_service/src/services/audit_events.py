@@ -45,6 +45,8 @@ SERVICE_EVENTS = [
     # Бутстрап управления (prepare): dispatch и callback воркера.
     {"action": "server.prepare", "description": "Server management bootstrap dispatched to worker (server.prepare; useradd management user + authorized_keys)", "default_severity": "CRITICAL"},
     {"action": "server.prepared", "description": "Worker confirmed server management bootstrap completed (callback marks is_managed)", "default_severity": "CRITICAL"},
+    {"action": "server.node_exporter_installed", "description": "Node exporter installation dispatched to server worker", "default_severity": "WARNING"},
+    {"action": "vm.node_exporter_installed", "description": "Node exporter installation dispatched to VM worker", "default_severity": "WARNING"},
     # Обновление ОС Astra (astra_update): dispatch, callback воркера, блокировка операций.
     {"action": "server.astra_update", "description": "OS update dispatched to worker (server.astra_update; rewrite sources.list from OsVersion.repositories + apt update && astra-update). Sets busy_state=updating", "default_severity": "WARNING"},
     {"action": "server.astra_updated", "description": "Worker reported OS update outcome (callback clears updating-lock; on success binds os_version and triggers inventory)", "default_severity": "WARNING"},

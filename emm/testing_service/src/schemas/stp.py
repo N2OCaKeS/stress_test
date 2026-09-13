@@ -42,10 +42,10 @@ class StpGenerateRequest(BaseModel):
     """Тело POST /stp/generate — админский запуск генерации СТП-прогонов (§5)."""
 
     os_version_id: str = Field(..., min_length=1, max_length=64, description="РЦ (тот же id, что и test_runs.os_version_id).")
-    mode: str = Field(..., min_length=1, max_length=16, description="Режим безопасности Astra.")
-    kernel: str = Field(..., min_length=1, max_length=64, description="Версия ядра.")
+    mode: str | None = Field(None, min_length=1, max_length=16, description="Без значения — все режимы.")
+    kernel: str | None = Field(None, min_length=1, max_length=64, description="Без значения — все ядра из репозиториев ОС.")
     final: bool = Field(default=False, description="Официальный/финальный прогон — снимает changelog-фильтр.")
-    department_id: str = Field(..., description="Отдел, чей каталог тестов генерируется.")
+    department_id: str | None = Field(None, description="По умолчанию — отдел пользователя.")
 
 
 class StpGeneratePartialError(BaseModel):

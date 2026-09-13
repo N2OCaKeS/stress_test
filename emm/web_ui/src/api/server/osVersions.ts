@@ -159,3 +159,7 @@ export function osSync(
 ): Promise<Server> {
   return apiPost<Server>(`/server/v1/servers/${serverId}/os-sync`, body);
 }
+
+export function resolveOsKernels(id: string) {
+  return apiPost<OsVersion>(`/server/v1/os-versions/${encodeURIComponent(id)}/resolve-kernels`, {});
+}

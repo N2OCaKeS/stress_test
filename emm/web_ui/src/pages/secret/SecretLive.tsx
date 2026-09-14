@@ -9,7 +9,7 @@
  * SecretDepAdmin — диспетчеризация в Secret.tsx.
  */
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import {
   Search,
   Key,
@@ -70,7 +70,10 @@ const SCOPE_LABEL: Record<CredentialScope, string> = {
   personal: "personal",
   department: "department",
   cross_department: "cross-dept",
+  service: "Сервисные учётные данные",
 };
+
+const SERVICE_SCOPE_HELP = "Владелец — ваш отдел. Значение доступно сервисным ботам платформы для работы интеграций. Правами сотрудников управляет администратор сервиса секретов.";
 
 const STATUS_KIND: Record<string, "ok" | "danger"> = {
   active: "ok",
@@ -102,6 +105,7 @@ export function SecretLive() {
   const toast = useToast();
   const { prompt } = useConfirm();
   const [params, setParams] = useSearchParams();
+  const serviceSection = useLocation().pathname === "/secret/service";
 
   const selectedId = params.get("id");
   const action = params.get("action"); // "new" | null
@@ -112,7 +116,7 @@ export function SecretLive() {
   const zoneBlocked = isSecretZoneBlocked(persona);
 
   const [search, setSearch] = useState("");
-  const [filterScope, setFilterScope] = useState<string>("");
+  const [filterScope, setFilterScope] = useState<string>(serviceSection ? "service" : "");
   const [filterStatus, setFilterStatus] = useState<string>("");
 
   const PAGE_SIZE = 50;
@@ -154,7 +158,8 @@ export function SecretLive() {
   // департамента сюда не доходят (zoneBlocked отбивает страницу выше), так что
   // любой, кто видит этот экран, вправе завести себе хотя бы personal-креду.
   // dep/cross-scope в форме остаётся за canManage.
-  const canCreate = !zoneBlocked;
+  const canCreateShared = persona.platform_role === "dep_admin" || persona.service_roles.secret === "admin";
+  const canCreate = !zoneBlocked && (!serviceSection || canCreateShared);
 
   // Список может прийти как полный (CredentialList) или guest-урезанный
   // (CredentialGuestList). Поля name/id/service/scope есть в обоих shape'ах —
@@ -260,6 +265,7 @@ export function SecretLive() {
   const aside = (
     <aside className="border-r border-token surface flex flex-col min-h-0">
       <div className="border-b border-token px-3 py-2 shrink-0">
+        {serviceSection && <h2 className="font-semibold text-sm mb-3">Сервисные учётные данные</h2>}
         <div className="flex items-center gap-2">
           <Search className="w-4 h-4 text-dim" />
           <input
@@ -270,17 +276,18 @@ export function SecretLive() {
           />
         </div>
         <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-dim">
-          <Dropdown
+          {!serviceSection && <Dropdown
             mode="single"
             options={[
               { value: "personal", label: "personal" },
               { value: "department", label: "department" },
               { value: "cross_department", label: "cross_department" },
+              { value: "service", label: SCOPE_LABEL.service },
             ]}
             value={filterScope}
             onChange={setFilterScope}
             placeholder="все области"
-          />
+          />}
           <Dropdown
             mode="single"
             options={[
@@ -362,11 +369,12 @@ export function SecretLive() {
   }
 
   return (
-    <Shell breadcrumb="secret_service / credentials" middle={aside}>
+    <Shell breadcrumb={serviceSection ? "secret_service / Сервисные учётные данные" : "secret_service / credentials"} middle={aside}>
       {action === "new" && canCreate ? (
         <CreatePane
+          serviceOnly={serviceSection}
           defaultDeptId={persona.dept_id}
-          canManage={canManage}
+          canManage={canCreateShared}
           onCancel={closeAction}
           onSubmit={handleCreate}
         />
@@ -757,6 +765,7 @@ function DetailPane({
               сервис: <b>{cred.service}</b>
             </span>
           </div>
+          {cred.scope === "service" && <p className="text-xs text-dim mt-2">{SERVICE_SCOPE_HELP}</p>}
         </div>
         {canManage && (
           <div className="flex items-center gap-2 shrink-0">
@@ -1096,11 +1105,13 @@ function MetaRow({
 // ───────────────────────────────────────────────────────────────────────────
 
 function CreatePane({
+  serviceOnly = false,
   defaultDeptId,
   canManage,
   onCancel,
   onSubmit,
 }: {
+  serviceOnly?: boolean;
   defaultDeptId: string | null;
   canManage: boolean;
   onCancel: () => void;
@@ -1109,7 +1120,7 @@ function CreatePane({
   const { depts } = useLabelMaps();
   const [name, setName] = useState("");
   const [service, setService] = useState("");
-  const [scope, setScope] = useState<CredentialScope>("personal");
+  const [scope, setScope] = useState<CredentialScope>(serviceOnly ? "service" : "personal");
   const [login, setLogin] = useState("");
   const [secret, setSecret] = useState("");
   const [visibleToDept, setVisibleToDept] = useState(false);
@@ -1121,7 +1132,7 @@ function CreatePane({
   const [validTo, setValidTo] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const needsDept = scope === "department" || scope === "cross_department";
+  const needsDept = scope !== "personal";
   // Владелец dept/cross-кред'ы — собственный отдел создателя; backend всё равно
   // приклеит owner к dept'у актора, поэтому позволять вписывать произвольный id
   // нет смысла. Поле залочено: показываем имя отдела (fallback на id), а в
@@ -1182,7 +1193,7 @@ function CreatePane({
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">name *</span>
+            <span className="text-dim text-xs">Название *</span>
             <input
               className="surface-2 border border-token rounded px-2 py-1"
               value={name}
@@ -1193,7 +1204,7 @@ function CreatePane({
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">service *</span>
+            <span className="text-dim text-xs">Система *</span>
             <input
               className="surface-2 border border-token rounded px-2 py-1"
               value={service}
@@ -1204,15 +1215,16 @@ function CreatePane({
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">scope *</span>
+            <span className="text-dim text-xs">Область хранения *</span>
             <Dropdown
               mode="single"
-              options={[
+              options={serviceOnly ? [{ value: "service", label: SCOPE_LABEL.service }] : [
                 { value: "personal", label: "personal" },
                 ...(canManage
                   ? [
                       { value: "department", label: "department" },
                       { value: "cross_department", label: "cross_department" },
+                      { value: "service", label: SCOPE_LABEL.service },
                     ]
                   : []),
               ]}
@@ -1221,11 +1233,11 @@ function CreatePane({
             />
             {!canManage && (
               <span className="text-[11px] text-dim">
-                department / cross_department доступны dep_admin и
-                secret.operator/admin.
+                Общие и сервисные учётные данные создаёт администратор отдела или сервиса секретов.
               </span>
             )}
           </label>
+          {scope === "service" && <p className="text-xs text-dim">{SERVICE_SCOPE_HELP}</p>}
           {needsDept && (
             <label className="flex flex-col gap-1 text-sm">
               <span className="text-dim text-xs">owner dept</span>
@@ -1242,7 +1254,7 @@ function CreatePane({
             </label>
           )}
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">login</span>
+            <span className="text-dim text-xs">Логин</span>
             <input
               className="surface-2 border border-token rounded px-2 py-1"
               value={login}
@@ -1252,7 +1264,7 @@ function CreatePane({
             />
           </label>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-dim text-xs">secret *</span>
+            <span className="text-dim text-xs">Пароль или токен *</span>
             <input
               className="surface-2 border border-token rounded px-2 py-1 mono"
               type="password"

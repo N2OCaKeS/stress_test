@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { HomeShell } from "./HomeShell";
+import { ServiceCredentialFields } from "./ServiceCredentialFields";
 import { usePersona } from "@/contexts/PersonaContext";
 import {
   hasAuditLogAccess,
@@ -795,8 +796,8 @@ function DepartmentIntegrationSettingsCard({ departmentId }: { departmentId: str
       </div>
       <div className="text-xs text-dim mb-3">
         Нужны для генерации СТП (Zephyr) и HR-отчёта отдела. Сами токены/пароли
-        заводятся в <Link to="/secret" className="text-accent">секретах</Link> —
-        здесь только их id.
+        заводятся в <Link to="/secret/service" className="text-accent">сервисных учётных данных</Link>.
+        Выберите нужные записи вашего отдела ниже.
       </div>
 
       {settingsQ.loading && !loaded && <div className="text-xs text-dim py-2">Загрузка…</div>}
@@ -815,7 +816,7 @@ function DepartmentIntegrationSettingsCard({ departmentId }: { departmentId: str
       {loaded && (
         <>
           <div className="grid gap-3 sm:grid-cols-2">
-            {INTEGRATION_FIELDS.map((f) => (
+            {INTEGRATION_FIELDS.filter((f) => !["credential_id", "bitbucket_credential_id"].includes(f.key)).map((f) => (
               <label key={f.key} className="flex flex-col gap-1 text-sm">
                 <span className="field-label">{f.label}</span>
                 <input
@@ -826,6 +827,8 @@ function DepartmentIntegrationSettingsCard({ departmentId }: { departmentId: str
                 />
               </label>
             ))}
+            <ServiceCredentialFields departmentId={departmentId} values={form} disabled={pending}
+              onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))} />
           </div>
           <div className="flex items-center gap-3 mt-3">
             <Button variant="primary" type="button" onClick={handleSave} disabled={pending || !dirty}>

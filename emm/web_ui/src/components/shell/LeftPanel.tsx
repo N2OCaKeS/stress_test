@@ -6,6 +6,7 @@ import {
   Users,
   Server,
   LockKeyhole,
+  KeyRound,
   Cog,
   ListChecks,
   Package,
@@ -75,7 +76,10 @@ const SERVICE_CATALOG: Record<ServiceName, ServiceChip> = {
       { to: "/server/tasks", icon: ListChecks, label: "Задачи" },
     ],
   },
-  secret: { service: "secret", to: "/secret", icon: LockKeyhole, label: "Секреты" },
+  secret: {
+    service: "secret", to: "/secret", icon: LockKeyhole, label: "Секреты",
+    subItems: [{ to: "/secret/service", icon: KeyRound, label: "Сервисные учётные данные" }],
+  },
   // server_worker — часть server-зоны; задачи живут под «Серверами»
   // (/server/tasks), отдельного чипа нет. Запись остаётся ради полноты
   // ServiceName-каталога, в nav не рендерится.

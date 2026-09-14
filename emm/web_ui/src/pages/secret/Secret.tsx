@@ -1,4 +1,5 @@
 import { usePersona } from "@/contexts/PersonaContext";
+import { useLocation } from "react-router-dom";
 import { useMockMode } from "@/api/auth/useQuery";
 import { SecretAccountAdmin } from "./SecretAccountAdmin";
 import { SecretDepAdmin } from "./SecretDepAdmin";
@@ -14,7 +15,8 @@ import { SecretLive } from "./SecretLive";
 export function Secret() {
   const { persona } = usePersona();
   const mockMode = useMockMode();
-  if (!mockMode) return <SecretLive />;
+  const location = useLocation();
+  if (!mockMode) return <SecretLive key={location.pathname} />;
   if (persona.platform_role === "account_admin") return <SecretAccountAdmin />;
   return <SecretDepAdmin />;
 }

@@ -159,7 +159,7 @@ export function App() {
               }
             />
             <Route
-              path="/secret"
+              path="/secret/*"
               element={
                 <RouteGuard service="secret">
                   <Secret />

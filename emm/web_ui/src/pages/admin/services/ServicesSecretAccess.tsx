@@ -53,6 +53,7 @@ const SCOPE_LABEL: Record<CredentialScope, string> = {
   personal: "personal",
   department: "department",
   cross_department: "cross-dept",
+  service: "Сервисные учётные данные",
 };
 
 /**
@@ -173,7 +174,7 @@ function ServicesSecretAccessLive() {
           настраивается только для <b>personal</b>-кред: матрица ролей (столбцы —
           роли отдела, строки — права <b>read</b> / <b>write</b>) и <b>UserACL</b>{" "}
           — доступ конкретному пользователю. Доступ к department /
-          cross_department кред'ам определяется сервис-ролями отдела.
+          cross_department и сервисным учётным данным определяется сервис-ролями отдела.
         </p>
       </div>
 
@@ -197,6 +198,7 @@ function ServicesSecretAccessLive() {
                 { value: "personal", label: "personal" },
                 { value: "department", label: "department" },
                 { value: "cross_department", label: "cross_department" },
+                { value: "service", label: SCOPE_LABEL.service },
               ]}
               value={filterScope}
               onChange={setFilterScope}

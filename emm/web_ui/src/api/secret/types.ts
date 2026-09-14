@@ -13,7 +13,7 @@
 
 // ── общие ────────────────────────────────────────────────────────────────────
 
-export type CredentialScope = "personal" | "department" | "cross_department";
+export type CredentialScope = "personal" | "department" | "cross_department" | "service";
 export type CredentialStatus = "active" | "blocked";
 
 /** `{ ok: true }` от mutation-эндпоинтов без тела (delete/revoke). */
@@ -66,7 +66,7 @@ export interface CredentialCreateRequest {
   /** plaintext секрет — шифруется at-rest, наружу не возвращается. */
   secret: string;
   login?: string | null;
-  /** обязателен для scope `department` / `cross_department`, пустой для `personal`. */
+  /** обязателен для общих и сервисных учётных данных, пустой для `personal`. */
   owner_dept_id?: string | null;
   visible_to_dept?: boolean;
   valid_from?: string | null;

@@ -38,6 +38,8 @@ vi.mock("@/api/testing/departmentActivityReports", () => ({
 }));
 
 const getDepartmentIntegrationSettingsMock = vi.fn();
+const listCredentialsMock = vi.fn();
+vi.mock("@/api/secret/credentials", () => ({ listCredentials: (...a: unknown[]) => listCredentialsMock(...a) }));
 const upsertDepartmentIntegrationSettingsMock = vi.fn();
 vi.mock("@/api/testing/departmentIntegrationSettings", () => ({
   getDepartmentIntegrationSettings: (...a: unknown[]) => getDepartmentIntegrationSettingsMock(...a),
@@ -105,6 +107,7 @@ describe("HomeDepAdmin — настройки интеграции отдела 
     import.meta.env.VITE_USE_MOCK_AUTH = "false";
     getDepartmentIntegrationSettingsMock.mockReset().mockResolvedValue(emptySettings());
     upsertDepartmentIntegrationSettingsMock.mockReset();
+    listCredentialsMock.mockReset().mockResolvedValue({ items: [], next_cursor: null });
   });
 
   afterEach(() => {
@@ -157,5 +160,33 @@ describe("HomeDepAdmin — настройки интеграции отдела 
     await screen.findByText("Интеграции отдела (Jira / Confluence / Bitbucket)");
     const saveButtons = screen.getAllByRole("button", { name: "Сохранить" });
     expect(saveButtons[0]).toBeDisabled();
+  });
+
+  it("выбирает сервисные записи по именам, учитывает пагинацию и срок действия", async () => {
+    const cred = { id: "cred_jira", name: "Jira испытаний", service: "jira", scope: "service", owner_dept_id: "dep_1", status: "active", valid_from: null, valid_to: null };
+    listCredentialsMock.mockResolvedValueOnce({ items: [cred, { ...cred, id: "old", name: "Истёкший", valid_to: "2000-01-01T00:00:00Z" }], next_cursor: "page2" })
+      .mockResolvedValueOnce({ items: [{ ...cred, id: "cred_git", name: "Git испытаний" }, { ...cred, id: "foreign", name: "Другой отдел", owner_dept_id: "dep_other" }], next_cursor: null });
+    upsertDepartmentIntegrationSettingsMock.mockResolvedValue(emptySettings());
+    renderHome();
+    await waitFor(() => expect(screen.getAllByRole("option", { name: "Git испытаний · jira" })).toHaveLength(2));
+    expect(listCredentialsMock).toHaveBeenLastCalledWith({ scope: "service", limit: 100, cursor: "page2" });
+    expect(screen.queryByRole("option", { name: /Другой отдел/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("option", { name: /Истёкший/ })[0]).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Учётные данные Jira / Zephyr / Confluence / Tempo"), { target: { value: "cred_jira" } });
+    fireEvent.change(screen.getByLabelText("Учётные данные Git / Bitbucket"), { target: { value: "cred_git" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Сохранить" })[0]);
+    await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith("dep_1", expect.objectContaining({ credential_id: "cred_jira", bitbucket_credential_id: "cred_git" })));
+  });
+
+  it("ошибка списка секретов не стирает сохранённую привязку", async () => {
+    getDepartmentIntegrationSettingsMock.mockResolvedValue({ ...emptySettings(), credential_id: "cred_existing" });
+    listCredentialsMock.mockRejectedValue(new Error("Сервис секретов недоступен"));
+    upsertDepartmentIntegrationSettingsMock.mockResolvedValue(emptySettings());
+    renderHome();
+    await screen.findByText("Сервис секретов недоступен");
+    await waitFor(() => expect(screen.getByLabelText("Учётные данные Jira / Zephyr / Confluence / Tempo")).toHaveValue("cred_existing"));
+    fireEvent.change(screen.getByPlaceholderText("PROJ"), { target: { value: "TST" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Сохранить" })[0]);
+    await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith("dep_1", expect.objectContaining({ credential_id: "cred_existing" })));
   });
 });

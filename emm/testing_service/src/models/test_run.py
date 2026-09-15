@@ -29,7 +29,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -40,6 +40,7 @@ class TestRun(Base):
     """Одна кампания — прогон каталога тестов на пуле стендов."""
 
     __tablename__ = "test_runs"
+    __table_args__ = (UniqueConstraint("created_by", "client_request_id", name="uq_test_runs_client_request"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     os_version_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -53,6 +54,8 @@ class TestRun(Base):
     final: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Soft-FK на auth_service identity (`usr_<hex>`/`bot_<hex>`).
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    client_request_id: Mapped[str | None] = mapped_column(String(128))
+    request_fingerprint: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

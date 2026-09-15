@@ -41,6 +41,10 @@ class TestRunCreate(BaseModel):
         default=False,
         description="Официальный/финальный прогон релиза — просто сохраняется, влияние на СТП появится в волне 8.",
     )
+    request_id: str | None = Field(
+        None, min_length=8, max_length=128,
+        description="Ключ идемпотентности: повтор с тем же значением и тем же телом вернёт уже созданную кампанию, с другим телом — 409.",
+    )
 
 
 class TestRunPartialError(BaseModel):

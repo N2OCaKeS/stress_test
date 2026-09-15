@@ -20,23 +20,40 @@ cycle`), то есть RC и os_version_id в этой кодовой базе �
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import Action, EntityType, TestRunStatus
-from src.core.exceptions import AppException, AuthorizationError, DomainValidationError, NotFoundError
+from src.core.exceptions import AppException, AuthorizationError, ConflictError, DomainValidationError, NotFoundError
 from src.dependencies.auth import Identity
 from src.models import TestRun, TestRunEntry
 from src.repositories import queue_item as queue_item_repo
 from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_run as repo
+from src.repositories import test_run_entry as test_run_entry_repo
 from src.schemas.test_run import TestRunPartialError
 from src.services import audit_service, permissions, queue as queue_svc, test_run_status
 from src.utils.ids import test_run_id as new_id
 
 logger = logging.getLogger(__name__)
+
+
+def _replay_result(run: TestRun, entries: list[TestRunEntry]) -> tuple[TestRun, list[str], list[TestRunPartialError]]:
+    populated_stands = {entry.stand_id for entry in entries}
+    stands_without_tests = [stand_id for stand_id in run.test_run_stands if stand_id not in populated_stands]
+    enqueue_errors = [
+        TestRunPartialError(
+            stand_id=entry.stand_id, test_id=entry.test_id,
+            error_code=entry.enqueue_error_code, message=entry.enqueue_error,
+        )
+        for entry in entries
+        if entry.enqueue_error_code
+    ]
+    return run, stands_without_tests, enqueue_errors
 
 
 async def create_test_run(
@@ -48,12 +65,17 @@ async def create_test_run(
     kernel: str | None,
     test_run_stands: list[str],
     final: bool = False,
+    request_id: str | None = None,
 ) -> tuple[TestRun, list[str], list[TestRunPartialError]]:
     """Завести кампанию + поставить в очередь все закреплённые тесты каждого стенда пула.
 
     Возвращает `(test_run, stands_without_tests, enqueue_errors)` — оба
     списка могут быть непустыми одновременно с успешно созданной кампанией:
     частичные провалы не откатывают уже поставленные в очередь стенды.
+
+    `request_id` — повтор с тем же значением и тем же телом возвращает уже
+    созданную кампанию без повторной постановки в очередь; с другим телом —
+    `ConflictError`, как у `public_queue.py::request()`.
     """
     try:
         await permissions.require_action(db, identity, EntityType.TEST_RUN, Action.CREATE)
@@ -72,6 +94,24 @@ async def create_test_run(
             error_code="TEST_RUN_DEPARTMENT_REQUIRED",
             message="Caller has no department_id to attribute this test run to",
         )
+
+    fingerprint = None
+    if request_id:
+        payload = {
+            "os_version_id": os_version_id, "mode": mode, "kernel": kernel,
+            "test_run_stands": sorted(dict.fromkeys(test_run_stands)), "final": final,
+        }
+        fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+        await repo.lock_request(db, identity.user_id, request_id)
+        existing = await repo.find_request(db, identity.user_id, request_id)
+        if existing:
+            if existing.request_fingerprint != fingerprint:
+                raise ConflictError(
+                    error_code="REQUEST_ID_CONFLICT",
+                    message="Этот идентификатор запроса уже использован с другими параметрами",
+                )
+            entries = await test_run_entry_repo.list_for_run(db, existing.id)
+            return _replay_result(existing, entries)
 
     from src.services import server_client
     if kernel:
@@ -95,6 +135,8 @@ async def create_test_run(
         "final": final,
         "composition_source": "pinned_catalog",
         "created_by": identity.user_id,
+        "client_request_id": request_id,
+        "request_fingerprint": fingerprint,
     })
     tests = await test_definition_repo.list_by_pinned_stands(db, test_run_stands)
     entries = [TestRunEntry(

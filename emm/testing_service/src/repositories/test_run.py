@@ -1,6 +1,6 @@
 """TestRun-репозиторий — сырой CRUD против таблицы `test_runs`."""
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import TestRun
@@ -9,6 +9,15 @@ from src.models import TestRun
 async def get_by_id(db: AsyncSession, run_id: str) -> TestRun | None:
     """SELECT по PK."""
     stmt = select(TestRun).where(TestRun.id == run_id)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def lock_request(db: AsyncSession, actor: str, request_id: str) -> None:
+    await db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"test_run:{actor}:{request_id}"})
+
+
+async def find_request(db: AsyncSession, actor: str, request_id: str) -> TestRun | None:
+    stmt = select(TestRun).where(TestRun.created_by == actor, TestRun.client_request_id == request_id)
     return (await db.execute(stmt)).scalar_one_or_none()
 
 

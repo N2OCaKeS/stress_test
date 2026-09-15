@@ -49,6 +49,7 @@ router = APIRouter(prefix="/test-runs")
     responses={
         201: {"description": "Кампания создана (возможно, частично — см. stands_without_tests/enqueue_errors)."},
         403: {"description": "Нет роли с `create` на `test_run`."},
+        409: {"description": "`request_id` уже использован с другими параметрами (REQUEST_ID_CONFLICT)."},
         422: {"description": "У вызывающего нет department_id, либо тело запроса невалидно."},
     },
 )
@@ -62,6 +63,7 @@ async def create_test_run(
         db, identity,
         os_version_id=body.os_version_id, mode=body.mode, kernel=body.kernel,
         test_run_stands=body.test_run_stands, final=body.final,
+        request_id=body.request_id,
     )
     response = TestRunCreateResponse.model_validate(run)
     response.stands_without_tests = stands_without_tests

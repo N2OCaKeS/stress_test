@@ -14,7 +14,10 @@
   - досевает системную роль `admin` в каталоге `service_role_definitions`
     для отдела НТ по всем сервисам,
   - заводит три credential'а в secret_service (dev_jira_token,
-    dev_postgres_password, dev_loadgen_secret).
+    dev_postgres_password, dev_loadgen_secret),
+  - импортирует каталог тестов+стенд из allta_app в testing_service
+    (`testing_service/scripts/import_catalog.py`, живой логин dep_admin1,
+    server_id стенда подставляется реально засеянным).
 
 Bot воркера (`server_worker`) в dev НЕ создаётся этим скриптом: его заводит
 auth_service на старте из `WORKER_BOT_TOKEN` в системном отделе `DBOS System`
@@ -29,10 +32,13 @@ secret_service (ему нужен мастер-ключ из ENV). Пароль 
 поверх уже наполненной БД не падал на UNIQUE.
 """
 
+import json
 import os
 import secrets
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 
 import psycopg
 
@@ -42,6 +48,8 @@ PG_USER = os.environ.get("PG_USER", "app_user")
 PG_PASS = os.environ.get("PG_PASS", "app_password")
 SECRET_PG_HOST = os.environ.get("SECRET_PG_HOST", "localhost")
 SECRET_PG_PORT = int(os.environ.get("SECRET_PG_PORT", "5435"))
+TESTING_PG_HOST = os.environ.get("TESTING_PG_HOST", "localhost")
+TESTING_PG_PORT = int(os.environ.get("TESTING_PG_PORT", "5436"))
 
 AUTH_CONTAINER = os.environ.get("AUTH_CONTAINER", "emm-auth_service-1")
 SECRET_CONTAINER = os.environ.get(
@@ -50,6 +58,18 @@ SECRET_CONTAINER = os.environ.get(
 SERVER_CONTAINER = os.environ.get(
     "SERVER_CONTAINER", "emm-server_service-1"
 )
+TESTING_CONTAINER = os.environ.get(
+    "TESTING_CONTAINER", "emm-testing_service-1"
+)
+AUTH_BASE_URL = os.environ.get("AUTH_BASE_URL", "http://localhost:8000")
+
+# Реальный каталог тестов+стенд, портированный из legacy allta_app — держится
+# отдельным yaml, а не инлайн-данными в этом файле (см. docstring
+# testing_service/scripts/import_catalog.py). server_id стенда в этом файле —
+# плейсхолдер: реальный сервер каждый прогон seed'а получает новый id
+# (`seed_server` ниже), поэтому import_catalog.py подменяет его аргументом
+# `--override-stand-server-id` перед импортом.
+IMPORT_CATALOG_YAML = "scripts/import_catalog.allta.yaml"
 
 DEV_PASSWORD = "1"
 
@@ -148,6 +168,28 @@ def encrypt_account_password(account_id: str, plaintext: str) -> str:
         f"aad=aad_for_server_account_password({account_id!r})))"
     )
     return _docker_exec(SERVER_CONTAINER, code)
+
+
+def login(username: str, password: str) -> str:
+    """Живой логин через auth_service — нужен import_catalog.py для стендов.
+
+    `create_test_stand` резолвит department_id пасс-through вызовом к
+    server_service тем же bearer'ом, которым видит сервер вызывающий —
+    подделать значение из yaml нельзя, нужен настоящий токен.
+    """
+    body = json.dumps({"username": username, "password": password}).encode()
+    req = urllib.request.Request(
+        f"{AUTH_BASE_URL}/api/auth/v1/login",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())["access_token"]
+    except urllib.error.URLError as exc:
+        fail(f"login {username} → {AUTH_BASE_URL} не удался: {exc}")
+        sys.exit(1)
 
 
 def conn(host: str, port: int, dbname: str) -> psycopg.Connection:
@@ -516,6 +558,44 @@ def seed_secrets(dept_id: str, user_ids: dict[str, str]) -> None:
             ok(f"credential {name} ({scope}, {owner}) → {cred_id}")
 
 
+# ── testing_service ──────────────────────────────────────────────────────────
+
+
+def seed_test_catalog(server_id: str) -> None:
+    """Каталог тестов+стенд из allta_app через scripts/import_catalog.py.
+
+    Запускается внутри testing_service-контейнера (`scripts/` смонтирована
+    в docker-compose.dev.yml) — тот же use case, что дёргает HTTP-API, не
+    параллельный путь записи. `--override-stand-server-id` подменяет
+    захардкоженный в yaml server_id на реально засеянный `seed_server`'ом
+    (он новый на каждый прогон).
+    """
+    section("testing_service: каталог тестов allta_app")
+    # server_id/department_id пересоздаются заново на каждый прогон seed'а
+    # (seed_server/seed_auth генерируют новый id, не переиспользуют старый) —
+    # test_stands.server_id не FK на другую БД, старая строка от прошлого
+    # прогона осиротеет молча (сервер/отдел, на которые она ссылалась, уже
+    # удалены), а не будет переиспользована/задедуплена импортом. Сносим её
+    # явно перед реимпортом, как и остальные тестовые записи в этом файле.
+    with conn(TESTING_PG_HOST, TESTING_PG_PORT, "dev_testing") as c, c.cursor() as cur:
+        cur.execute("DELETE FROM test_stands")
+    token = login("dep_admin1", DEV_PASSWORD)
+    res = subprocess.run(
+        [
+            "docker", "exec", "-w", "/app", TESTING_CONTAINER,
+            "python", "scripts/import_catalog.py",
+            IMPORT_CATALOG_YAML,
+            "--bearer-token", token,
+            "--override-stand-server-id", server_id,
+        ],
+        check=False,
+    )
+    if res.returncode != 0:
+        fail(f"import_catalog.py вернул {res.returncode}")
+        sys.exit(1)
+    ok("каталог тестов allta_app импортирован")
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 
@@ -538,6 +618,7 @@ def main() -> None:
     )
     seed_server_account(server_id, dept_id, created_by=user_ids["admin"])
     seed_secrets(dept_id, user_ids)
+    seed_test_catalog(server_id)
 
     print()
     print("=" * WIDTH)
@@ -558,6 +639,7 @@ def main() -> None:
               auth_service'ом на старте из WORKER_BOT_TOKEN, не этим seed'ом.
   Credentials: dev_jira_token, dev_postgres_password (dept НТ),
                dev_loadgen_secret (personal user1)
+  Testing:    каталог тестов+стенд allta_app импортированы в testing_service
 """)
 
 

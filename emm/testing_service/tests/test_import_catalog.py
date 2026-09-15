@@ -233,3 +233,33 @@ class TestImportStands:
         async with AsyncSessionLocal() as db:
             obj = await test_stand_repo.get_by_server_id(db, server_id)
             assert obj is not None
+
+
+class TestOverrideStandServerId:
+    """Dev-сид пересоздаёт server_id заново на каждый прогон (`scripts/seed_dev.py`)
+    — `--override-stand-server-id` подменяет захардкоженный в yaml/json id
+    перед импортом, а не полагается на то, что caller сам его подставит."""
+
+    async def test_overrides_single_stand(self, tmp_path, mock_server_service):
+        real_server_id = f"srv_{uuid.uuid4().hex[:8]}"
+        mock_server_service(_server_found())
+        path = _write(tmp_path, {"stands": [{"server_id": "srv_placeholder"}]})
+
+        exit_code = await run(
+            path, bearer_token="dbos_pat_fake_admin_token", dry_run=False,
+            override_stand_server_id=real_server_id,
+        )
+        assert exit_code == 0
+
+        async with AsyncSessionLocal() as db:
+            assert await test_stand_repo.get_by_server_id(db, "srv_placeholder") is None
+            assert await test_stand_repo.get_by_server_id(db, real_server_id) is not None
+
+    async def test_multiple_stands_reject_override(self, tmp_path):
+        path = _write(tmp_path, {"stands": [{"server_id": "srv_a"}, {"server_id": "srv_b"}]})
+
+        with pytest.raises(SystemExit):
+            await run(
+                path, bearer_token="dbos_pat_fake_admin_token", dry_run=False,
+                override_stand_server_id="srv_real",
+            )

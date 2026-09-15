@@ -452,6 +452,9 @@ services:
     volumes:
       - ./testing_service/src:/app/src
       - ./testing_service/alembic.ini:/app/alembic.ini:ro
+      # scripts/import_catalog.py — нужен dev-сиду (scripts/seed_dev.py), чтобы
+      # накатывать каталог тестов через docker exec без ручного docker cp.
+      - ./testing_service/scripts:/app/scripts:ro
     ports:
       - "8004:8004"
     depends_on:

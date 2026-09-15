@@ -275,10 +275,25 @@ async def _drain_pending_audit_tasks() -> None:
         )
 
 
-async def run(path: Path, *, bearer_token: str | None, dry_run: bool) -> int:
+async def run(
+    path: Path, *, bearer_token: str | None, dry_run: bool, override_stand_server_id: str | None = None,
+) -> int:
     data = _load(path)
     stands = data.get("stands") or []
     tests = data.get("tests") or []
+
+    if override_stand_server_id:
+        # dev-стек генерирует server_id заново на каждом `make seed` — фиксированный
+        # server_id в yaml-файле не переживает пересев. Раздел `stands` в
+        # реальных наборах данных сейчас содержит ровно одну запись (единственный
+        # инвентаризированный сервер в dev), поэтому переопределяем её без
+        # угадывания, какую именно строку имел в виду caller.
+        if len(stands) != 1:
+            raise SystemExit(
+                f"--override-stand-server-id требует ровно одну запись в `stands`, "
+                f"найдено {len(stands)}"
+            )
+        stands[0]["server_id"] = override_stand_server_id
 
     audit_context.update_context(
         actor_id=_SYSTEM_IDENTITY.user_id,
@@ -311,6 +326,14 @@ def main() -> int:
         help="Только резолв и проверка идемпотентности, без записи в БД и без "
              "живых вызовов к server_service.",
     )
+    parser.add_argument(
+        "--override-stand-server-id",
+        default=os.environ.get("IMPORT_OVERRIDE_STAND_SERVER_ID"),
+        help="Подменить server_id единственной записи `stands` перед импортом — "
+             "нужен dev-сиду, где server_id генерируется заново на каждый прогон. "
+             "Требует ровно одну запись в `stands`. Можно задать через "
+             "IMPORT_OVERRIDE_STAND_SERVER_ID.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -318,7 +341,10 @@ def main() -> int:
     if not args.path.exists():
         parser.error(f"файл не найден: {args.path}")
 
-    return asyncio.run(run(args.path, bearer_token=args.bearer_token, dry_run=args.dry_run))
+    return asyncio.run(run(
+        args.path, bearer_token=args.bearer_token, dry_run=args.dry_run,
+        override_stand_server_id=args.override_stand_server_id,
+    ))
 
 
 if __name__ == "__main__":

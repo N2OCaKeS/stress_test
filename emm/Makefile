@@ -9,6 +9,7 @@
 #   make up                # поднять стек (данные сохраняются)
 #   make up-build          # пересобрать образы и поднять
 #   make seed              # ЧИСТАЯ БД + наполнить dev-данными (down -v + up + seed_dev.py)
+#   make seed-refresh      # без сброса: обновить каталог тестов+демо-логи, не трогая отдел/секреты/реальные токены
 #   make logs              # tail логи auth + logging + server + worker
 #   make ps                # статус контейнеров
 #   make sh-auth           # shell в контейнере auth_service
@@ -105,7 +106,7 @@ _DEV_ADMIN_EMAIL = admin@example.com
 _DEV_WORKER_BOT_TOKEN = dbos_bot_dev_worker_local_token_do_not_use_in_prod
 
 .PHONY: help \
-        up up-build seed down down-v logs ps sh-auth sh-logging sh-server sh-worker sh-secret sh-testing logs-secret logs-testing \
+        up up-build seed seed-refresh down down-v logs ps sh-auth sh-logging sh-server sh-worker sh-secret sh-testing logs-secret logs-testing \
         dev dev-stop dev-logs \
         run-auth run-logging run-server run-secret run-testing run-testing-worker \
         test-dev test-dev-auth test-dev-logging test-dev-server test-dev-worker test-dev-secret test-dev-testing test-dev-testing-worker test-dev-integration test-dev-all \
@@ -155,8 +156,11 @@ up-keep: ## Поднять dev-стек БЕЗ сброса (данные в т�
 up-build: ## Пересобрать образы и поднять dev-стек
 	$(DEV) up -d --wait --build postgres secret_postgres testing_postgres redis loging_service auth_service server_service server_worker secret_service testing_service testing_worker test_server
 
-seed: ## Наполнить уже поднятый dev-стек данными напрямую через SQL (admin/loging_admin1/dep_admin1/loging_reader1/user1, пароль 1)
+seed: ## ПОЛНЫЙ сброс данных: новый отдел/юзеры/секреты/каталог каждый прогон (admin/loging_admin1/dep_admin1/loging_reader1/user1, пароль 1). Затирает реальные Jira/Git/Confluence токены — после используйте seed-refresh
 	@cd scripts && python3 seed_dev.py
+
+seed-refresh: ## Недеструктивно обновить каталог тестов+демо-логи для уже существующего отдела; не трогает отдел/юзеров/секреты/реальные credential-ссылки, введённые на /home/integration-onboarding
+	@cd scripts && python3 seed_dev.py --refresh
 
 down: ## Остановить dev-стек (данные в томе postgres сохраняются)
 	$(DEV) down

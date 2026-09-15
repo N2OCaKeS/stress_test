@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Dev seed: патчит postgres напрямую (без REST API).
 
-Стек должен быть уже поднят (`make up`). Скрипт:
+Стек должен быть уже поднят (`make up`). Полный прогон (`make seed`, без
+аргументов) заново создаёт отдел и все dev-данные:
   - обновляет bootstrap-админа (must_change_password=false, пароль 1),
   - заводит 4 новых юзера: loging_admin1 / dep_admin1 / loging_reader1 / user1,
   - создаёт отдел «Нагрузочное тестирование»,
@@ -15,11 +16,22 @@
     для отдела НТ по всем сервисам,
   - заводит три credential'а в secret_service (dev_jira_token,
     dev_postgres_password, dev_loadgen_secret),
+  - заполняет `department_integration_settings` dev-дефолтами несекретных
+    полей (base URL'ы, project key, space'ы) — ссылки на реальные
+    Jira/Git/Confluence credential'ы остаются NULL, их вводит владелец через
+    `/home/integration-onboarding` (см. `seed_integration_settings_defaults`),
   - импортирует каталог тестов+стенд из allta_app в testing_service
     (`testing_service/scripts/import_catalog.py`, живой логин dep_admin1,
     server_id стенда подставляется реально засеянным),
   - добавляет 126 демо-попыток с логами (`scripts/seed_test_logs.py`) —
     только чтобы было что показать в интерфейсе, не результаты испытаний.
+
+`python3 seed_dev.py --refresh` (`make seed-refresh`) — НЕДЕструктивный
+повтор поверх уже наполненного стека: НЕ трогает отдел/юзеров/секреты/ссылки
+на реальные credential'ы, только переимпортирует каталог тестов и демо-логи
+для уже существующего отдела (см. `refresh_seed`). Нужен для обновления
+каталога тестов без потери токенов Jira/Git/Confluence, которые владелец уже
+ввёл через onboarding-страницу.
 
 Bot воркера (`server_worker`) в dev НЕ создаётся этим скриптом: его заводит
 auth_service на старте из `WORKER_BOT_TOKEN` в системном отделе `DBOS System`
@@ -563,6 +575,61 @@ def seed_secrets(dept_id: str, user_ids: dict[str, str]) -> None:
 # ── testing_service ──────────────────────────────────────────────────────────
 
 
+# Dev-дефолты несекретных полей `department_integration_settings` (G3).
+# `stp_matrix_confluence_space`/`stp_matrix_confluence_root_page_title` и
+# `jira_board_id`/`tempo_team_id` воспроизводят прежние платформенные
+# хардкоды легаси allta_app (см. docstring
+# `testing_service/src/models/department_integration_settings.py`) — до
+# перевода этих полей в per-department настройку они были глобальными
+# константами `DEVQA`/`'Состав тестового прогона'`/`340`/`["7"]`, так что для
+# dev-окружения это не выдумка, а тот же исходный дефолт. Остальные адреса и
+# space'ы нигде в репозитории не описаны как реальный dev-инстанс — это
+# заведомо фиктивные, но валидные по формату placeholder'ы под `.dev.internal`,
+# чтобы их нельзя было спутать с прод-доменом `astralinux.ru`.
+_INTEGRATION_DEFAULTS: dict[str, str] = {
+    "jira_base_url": "https://jira.dev.internal",
+    "confluence_base_url": "https://confluence.dev.internal",
+    "bitbucket_base_url": "https://bitbucket.dev.internal",
+    "bitbucket_project_key": "NTDEV",
+    "bitbucket_repo_slug": "allta-app",
+    "jira_board_id": "340",
+    "tempo_team_id": "7",
+    "confluence_report_page_space": "NTDEV",
+    "confluence_report_parent_page_title": "Отчёты по активности (dev)",
+    "stp_matrix_confluence_space": "DEVQA",
+    "stp_matrix_confluence_root_page_title": "Состав тестового прогона",
+}
+
+
+def seed_integration_settings_defaults(dept_id: str) -> None:
+    """Завести `department_integration_settings` со всеми несекретными dev-полями.
+
+    `credential_id`/`confluence_credential_id`/`bitbucket_credential_id`
+    намеренно НЕ заполняются: это ссылки на реальные secret_service-записи
+    Jira/Git/Confluence, угадать которые нельзя — их вводит владелец через
+    `/home/integration-onboarding` (G3) уже после seed'а. `seed_auth` создаёт
+    новый `dept_id` на каждый прогон, поэтому строка тут всегда свежая
+    (никогда не конфликтует с предыдущим прогоном) — `ON CONFLICT` оставлен
+    ради `seed-refresh`/повторных ручных вызовов, но трогает только
+    перечисленные несекретные колонки, credential-ссылки не задевает.
+    """
+    section("testing_service: dev-дефолты интеграций (Jira/Confluence/Bitbucket)")
+    row_id = gen_id("dis")
+    cols = list(_INTEGRATION_DEFAULTS.keys())
+    assignments = ", ".join(f"{col} = EXCLUDED.{col}" for col in cols)
+    with conn(TESTING_PG_HOST, TESTING_PG_PORT, "dev_testing") as c, c.cursor() as cur:
+        cur.execute(
+            f"INSERT INTO department_integration_settings (id, department_id, {', '.join(cols)}) "
+            f"VALUES (%s, %s, {', '.join(['%s'] * len(cols))}) "
+            f"ON CONFLICT (department_id) DO UPDATE SET {assignments}",
+            (row_id, dept_id, *_INTEGRATION_DEFAULTS.values()),
+        )
+    ok(
+        f"department_integration_settings ({dept_id}) → dev URL/space/board/team заполнены; "
+        "credential_id/confluence_credential_id/bitbucket_credential_id оставлены NULL"
+    )
+
+
 def seed_test_catalog(server_id: str) -> None:
     """Каталог тестов+стенд из allta_app через scripts/import_catalog.py.
 
@@ -633,10 +700,77 @@ def seed_demo_logs() -> None:
     ok("демо-попытки с логами добавлены")
 
 
+# ── refresh (idempotent, поверх уже наполненного стека) ─────────────────────
+
+
+def find_existing_department() -> tuple[str, str]:
+    """Отдел + admin_id уже наполненного отдела НТ (по `dep_admin1`).
+
+    Не создаёт ничего нового — `seed-refresh` не должен заводить свой отдел,
+    он переиспользует то, что оставил предыдущий полный `make seed`.
+    """
+    with conn(PG_HOST, PG_PORT, "dev_auth") as c, c.cursor() as cur:
+        cur.execute(
+            "SELECT id, department_id FROM users WHERE username = 'dep_admin1'"
+        )
+        row = cur.fetchone()
+    if not row or not row[1]:
+        fail(
+            "dep_admin1 не найден — сначала выполните полный `make seed`, "
+            "`make seed-refresh` умеет только обновлять уже наполненный стек"
+        )
+        sys.exit(1)
+    return row[1], row[0]
+
+
+def find_existing_test_server(dept_id: str) -> str:
+    """id `test-server-01` уже заведённого отдела (по hostname+department_id)."""
+    with conn(PG_HOST, PG_PORT, "dev_server") as c, c.cursor() as cur:
+        cur.execute(
+            "SELECT id FROM servers WHERE hostname = %s AND department_id = %s",
+            (TEST_SERVER_HOSTNAME, dept_id),
+        )
+        row = cur.fetchone()
+    if not row:
+        fail(
+            f"сервер {TEST_SERVER_HOSTNAME} для отдела {dept_id} не найден — "
+            "сначала выполните полный `make seed`"
+        )
+        sys.exit(1)
+    return row[0]
+
+
+def refresh_seed() -> None:
+    """Недеструктивный повтор: только каталог тестов + демо-логи (G4).
+
+    НЕ трогает отдел/юзеров (`seed_auth`), НЕ трогает `seed_secrets` и НЕ
+    трогает `seed_integration_settings_defaults` — реальные Jira/Git/Confluence
+    credential'ы, которые владелец уже ввёл через `/home/integration-onboarding`,
+    остаются как есть. Годится для обновления каталога после правок
+    `import_catalog.allta.yaml` без необходимости заново вводить токены.
+    """
+    print()
+    print("=" * WIDTH)
+    print("  DBOS dev seed refresh (без пересоздания отдела/кред)")
+    print("=" * WIDTH)
+
+    dept_id, _admin_id = find_existing_department()
+    server_id = find_existing_test_server(dept_id)
+    seed_test_catalog(server_id)
+    seed_demo_logs()
+
+    print()
+    print("=" * WIDTH)
+    print("  Готово. Каталог тестов и демо-логи обновлены для существующего отдела.")
+    print("  Отдел, пользователи, секреты и ссылки на реальные credential'ы не тронуты.")
+    print("=" * WIDTH)
+    print()
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 
-def main() -> None:
+def full_seed() -> None:
     print()
     print("=" * WIDTH)
     print("  DBOS dev seed (direct SQL)")
@@ -655,6 +789,7 @@ def main() -> None:
     )
     seed_server_account(server_id, dept_id, created_by=user_ids["admin"])
     seed_secrets(dept_id, user_ids)
+    seed_integration_settings_defaults(dept_id)
     seed_test_catalog(server_id)
     seed_demo_logs()
 
@@ -679,7 +814,17 @@ def main() -> None:
                dev_loadgen_secret (personal user1)
   Testing:    каталог тестов+стенд allta_app импортированы в testing_service
               + 126 демо-попыток с логами (см. вывод seed_test_logs.py выше)
+  Интеграции: department_integration_settings заполнены dev-дефолтами URL/space;
+              реальные токены Jira/Git/Confluence — на /home/integration-onboarding
+              (страница dep_admin1, ссылки на credential'ы намеренно не заведены)
 """)
+
+
+def main() -> None:
+    if "--refresh" in sys.argv[1:]:
+        refresh_seed()
+    else:
+        full_seed()
 
 
 if __name__ == "__main__":

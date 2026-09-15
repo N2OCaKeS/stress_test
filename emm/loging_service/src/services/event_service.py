@@ -449,3 +449,7 @@ def _emit_query_timeout_audit(
         logger.warning(
             "self-audit for events_queried timeout failed: %s", audit_exc
         )
+
+
+def list_filter_options(db: Session, **kwargs) -> dict:
+    return event_repo.list_filter_options(db, **kwargs)

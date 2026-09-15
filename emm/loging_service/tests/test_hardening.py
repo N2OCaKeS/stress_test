@@ -125,6 +125,13 @@ class TestEventCreateActionCharset:
 
 
 class TestEventCreateUsernameCharset:
+    """`username` — человекочитаемое имя actor'а (ФИО, логин), не opaque-id.
+
+    Charset-whitelist здесь неуместен (отсёк бы кириллицу/ФИО), поэтому
+    валидатор вырезает только control-байты (CR/LF/NUL) — ровно та же
+    угроза и то же решение, что у `department_name`.
+    """
+
     @pytest.mark.parametrize(
         "uname",
         [
@@ -134,6 +141,11 @@ class TestEventCreateUsernameCharset:
             "first.last",
             "abc-123",
             "x" * 128,
+            "Анна",
+            "Иванов Иван Иванович",
+            "юзер",
+            "user;DROP TABLE",
+            "user<script>",
         ],
     )
     def test_valid_username_accepted(self, uname: str):
@@ -145,20 +157,23 @@ class TestEventCreateUsernameCharset:
         assert m.username is None
 
     @pytest.mark.parametrize(
-        "bad",
+        "raw, expected",
         [
-            "evil\r\n[ALERT] hijacked",
-            "user with spaces",
-            "юзер",
-            "user\x00name",
-            "user;DROP TABLE",
-            "user<script>",
-            "x" * 129,
+            ("evil\r\n[ALERT] hijacked", "evil[ALERT] hijacked"),
+            ("user\x00name", "username"),
         ],
     )
-    def test_dangerous_username_rejected(self, bad: str):
+    def test_control_chars_scrubbed(self, raw: str, expected: str):
+        m = EventCreate(**_BASE_EVENT, username=raw)
+        assert m.username == expected
+
+    def test_control_only_username_becomes_none(self):
+        m = EventCreate(**_BASE_EVENT, username="\r\n\x00")
+        assert m.username is None
+
+    def test_too_long_username_rejected(self):
         with pytest.raises(ValidationError):
-            EventCreate(**_BASE_EVENT, username=bad)
+            EventCreate(**_BASE_EVENT, username="x" * 129)
 
 
 # ── status accepts "warning" ────────────────────────────────────────────────

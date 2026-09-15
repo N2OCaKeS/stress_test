@@ -57,10 +57,8 @@ _REQUEST_ID_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
 #     uppercase сюда не доходит.
 #   * action — dot-namespace `user.login.success` → разрешаем точку.
 #     Цифры разрешены для версионирования (`provision_v2`, `http.4xx_error`).
-#   * username — email-like, разрешаем `-_@.`.
 _SERVICE_PATTERN: re.Pattern[str] = re.compile(r"^[a-z_]{1,64}$")
 _ACTION_PATTERN: re.Pattern[str] = re.compile(r"^[a-z0-9_.]{1,128}$")
-_USERNAME_PATTERN: re.Pattern[str] = re.compile(r"^[A-Za-z0-9_\-@.]{1,128}$")
 # ID-поля идентификаторов (`actor_id`, `target_id`, `department_id`) — это
 # opaque-токены формата `usr_…` / `srv_…` / `dept_…` (см. `utils/ids.py`
 # auth/server сервисов). Charset: латиница, цифры, `_` и `-`. Любой CRLF
@@ -254,22 +252,20 @@ class EventCreate(BaseModel):
 
     @field_validator("username")
     @classmethod
-    def _username_charset(cls, v: str | None) -> str | None:
-        """`username` рефлектится в audit-export'ы (CSV/JSON/SIEM).
+    def _username_scrub(cls, v: str | None) -> str | None:
+        """`username` — человекочитаемое имя actor'а, не login-идентификатор.
 
-        Без charset'а держатель `SERVICE_API_KEY` мог бы прислать
-        `username="evil\\r\\n[ALERT] hijacked"` → запись в csv-отчёте
-        раскалывается на две строки. Email-like чары разрешены потому,
-        что auth_service пишет `username` как login-логин (включая email-форму).
+        ФИО/отображаемое имя пользователя (кириллица, пробелы, дефисы) —
+        тот же случай, что `department_name`. Charset-whitelist тут отсёк бы
+        реальные имена, поэтому вместо него вырезаем CR/LF/NUL и прочие
+        control-символы, которые расщепили бы строку в CSV/SIEM-экспорте.
+        Пустую строку приводим к None.
         """
         if v is None:
             return v
-        if not _USERNAME_PATTERN.match(v):
-            raise ValueError(
-                "username must match [A-Za-z0-9_\\-@.]{1,128} "
-                "(no CR/LF, no whitespace, no Unicode)"
-            )
-        return v
+        v = "".join(ch for ch in v if ch == "\t" or ord(ch) >= 0x20)
+        v = v.strip()
+        return v or None
 
     @field_validator("actor_id", "target_id", "department_id")
     @classmethod

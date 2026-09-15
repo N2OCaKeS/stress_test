@@ -293,6 +293,21 @@ def create_event(
     return EventResponse.model_validate(event)
 
 
+@router.get("/filter-options")
+@limiter.limit(lambda: get_settings().audit_query_rate_limit, key_func=reader_rate_limit_key)
+def list_filter_options(
+    request: Request,
+    identity: ReaderIdentity,
+    kind: Literal["department", "actor", "target"],
+    department_id: str | None = Query(None, max_length=48),
+    limit: int = Query(500, ge=1, le=1000),
+    offset: int = Query(0, ge=0, le=MAX_QUERY_OFFSET),
+    db: Session = Depends(get_db),
+):
+    return event_service.list_filter_options(db, kind=kind,
+        department_id=_scoped_department_id(identity, department_id), limit=limit, offset=offset)
+
+
 @router.get(
     "",
     response_model=EventListResponse,

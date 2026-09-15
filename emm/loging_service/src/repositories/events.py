@@ -728,3 +728,24 @@ def list_services(db: Session, *, department_id: str | None = None) -> list:
     if department_id is not None:
         stmt = stmt.where(AuditEvent.department_id == department_id)
     return db.execute(stmt).all()
+
+
+def list_filter_options(db: Session, *, kind: str, department_id: str | None, limit: int, offset: int) -> dict:
+    """Имена из журнала доступны его читателям, включая удалённые сущности."""
+    columns = {
+        "department": (AuditEvent.department_id, AuditEvent.department_name),
+        "actor": (AuditEvent.actor_id, AuditEvent.username),
+        "target": (AuditEvent.target_id, func.coalesce(
+            AuditEvent.details["target_name"].astext,
+            AuditEvent.details["display_name"].astext,
+            AuditEvent.details["hostname"].astext,
+            AuditEvent.details["name"].astext,
+        )),
+    }
+    identifier, name = columns[kind]
+    stmt = select(identifier.label("value"), name.label("label")).where(identifier.is_not(None), name.is_not(None), name != "")
+    if department_id is not None:
+        stmt = stmt.where(AuditEvent.department_id == department_id)
+    latest = stmt.distinct(identifier).order_by(identifier, AuditEvent.timestamp.desc(), AuditEvent.id.desc()).subquery()
+    rows = db.execute(select(latest).order_by(func.lower(latest.c.label), latest.c.value).offset(offset).limit(limit + 1)).mappings().all()
+    return {"items": [dict(row) for row in rows[:limit]], "has_more": len(rows) > limit}

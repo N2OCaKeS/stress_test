@@ -40,7 +40,11 @@ async def find_membership(
     cell = await cells.get_by_case_and_run(
         db, stp_test_case_id=case.id, stp_test_run_id=run.id
     )
-    return run if cell else None
+    # `is_active=false` — ячейка исключена текущим составом СТП (сужение до
+    # changelog, §D4/D5); ячейка и её история сохраняются, но это больше не
+    # активный состав, поэтому обычный запуск должен видеть её как отсутствие
+    # членства, как если бы ячейки не было вовсе.
+    return run if cell and cell.is_active else None
 
 
 async def require_membership(

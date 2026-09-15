@@ -1554,7 +1554,10 @@ export interface HostServiceControlResult {
 
 /**
  * Настройки SSH-доступа к хосту ALLTA своего отдела. `private_key_is_set` —
- * задан ли ключ; само значение write-only, не отдаётся.
+ * задан ли ключ (ссылкой или старым хранением); само значение write-only, не
+ * отдаётся. `credential_id` — ссылка на сервисную запись host_ssh своего
+ * отдела; пока она есть, `legacy_private_key_is_set` показывает, остался ли
+ * ещё старый шифротекст (до подтверждения переноса).
  */
 export interface HostServicesSettings {
   configured: boolean;
@@ -1562,6 +1565,8 @@ export interface HostServicesSettings {
   ssh_port: number;
   ssh_user: string | null;
   private_key_is_set: boolean;
+  credential_id: string | null;
+  legacy_private_key_is_set: boolean;
 }
 
 /** Тело PUT /settings/host-services — частичное обновление. */
@@ -1573,6 +1578,17 @@ export interface HostServicesSettingsUpdate {
   ssh_private_key?: string;
   /** Явно стереть сохранённый ключ (игнорируется вместе с ssh_private_key). */
   clear_private_key?: boolean;
+  /** Ссылка на сервисную запись host_ssh своего отдела. null отвязывает запись. */
+  credential_id?: string | null;
+}
+
+/** Одна сервисная запись host_ssh своего отдела (GET /settings/host-services/credentials). */
+export interface HostSshCredentialOption {
+  id: string;
+  name: string;
+  owner_dept_id: string;
+  valid_from: Iso8601 | null;
+  valid_to: Iso8601 | null;
 }
 
 /**

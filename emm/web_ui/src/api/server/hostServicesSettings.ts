@@ -11,6 +11,7 @@
  *
  * Источник истины — `server_service`:
  *   GET/PUT /api/server/v1/settings/host-services
+ *   GET     /api/server/v1/settings/host-services/credentials
  *   GET/POST /api/server/v1/settings/host-services/units
  *   PATCH/DELETE /api/server/v1/settings/host-services/units/{unit_id}
  * Гейтится department_admin или носителем роли `server_service.admin` своего
@@ -26,6 +27,7 @@ import type {
   HostServiceUnitCreate,
   HostServiceUnitListResponse,
   HostServiceUnitUpdate,
+  HostSshCredentialOption,
 } from "@/api/server/types";
 
 const BASE = "/server/v1";
@@ -68,4 +70,9 @@ export function renameHostServiceUnit(
 /** Удалить юнит из списка отдела. */
 export function deleteHostServiceUnit(unitId: string): Promise<void> {
   return apiDelete<void>(`${BASE}/settings/host-services/units/${unitId}`);
+}
+
+/** Сервисные записи host_ssh, принадлежащие своему отделу (для выпадашки ключа). */
+export function listHostSshCredentials(): Promise<HostSshCredentialOption[]> {
+  return apiGet(`${BASE}/settings/host-services/credentials`);
 }

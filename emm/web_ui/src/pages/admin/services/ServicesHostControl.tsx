@@ -5,12 +5,15 @@
  * Per-department: свой SSH-хост/порт/пользователь/ключ плюс произвольный
  * список systemd-юнитов (unit_name + label), которые страница «Здоровье
  * служб» (`@/pages/health/ServicesHealth`) показывает и умеет
- * start/stop/restart через SSH. Приватный ключ write-only — GET отдаёт
- * только факт `private_key_is_set`, значение никогда не возвращается.
+ * start/stop/restart через SSH. Ключ — ссылка на сервисную запись host_ssh
+ * своего отдела (та же выпадашка, что и у пароля ACS); значение никогда не
+ * возвращается, только факт `private_key_is_set` и, пока старое хранение ещё
+ * не убрано, `legacy_private_key_is_set` для предупреждающего баннера.
  *
  * Источник истины — `server_service`, всегда СВОЙ отдел caller'а (без
  * department_id в запросе, резолвится backend'ом из identity):
  *   GET/PUT   /api/server/v1/settings/host-services
+ *   GET       /api/server/v1/settings/host-services/credentials
  *   GET/POST  /api/server/v1/settings/host-services/units
  *   PATCH/DELETE /api/server/v1/settings/host-services/units/{unit_id}
  * Гейтится `canManageHostServices` (department_admin своего отдела или
@@ -22,7 +25,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Terminal, AlertCircle, AlertTriangle, Plus, Trash2, Pencil, Check, X } from "lucide-react";
 
-import { Checkbox } from "@/components/ui/Checkbox";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { usePersona } from "@/contexts/PersonaContext";
@@ -33,6 +36,7 @@ import { formatMskShort } from "@/lib/datetime";
 import {
   getHostServicesSettings,
   updateHostServicesSettings,
+  listHostSshCredentials,
   listHostServiceUnits,
   createHostServiceUnit,
   renameHostServiceUnit,
@@ -45,6 +49,8 @@ function saveError(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.status === 403)
       return "Недостаточно прав (нужен department_admin или server_service.admin своего отдела).";
+    if (e.errorCode === "HOST_SSH_KEY_MANAGED_EXTERNALLY")
+      return "Ключ управляется сервисом секретов — измените его там.";
     if (e.status === 422) return "Backend отклонил значения (проверьте поля).";
   }
   return apiErrMsg(e, "Не удалось сохранить настройки");
@@ -120,12 +126,12 @@ function HostControlSettingsForm() {
   const toast = useToast();
   const cfgQ = useQuery<HostServicesSettings>(() => getHostServicesSettings(), []);
   const loaded = cfgQ.data;
+  const credentialsQ = useQuery(listHostSshCredentials, []);
 
   const [sshHost, setSshHost] = useState("");
   const [sshPort, setSshPort] = useState(22);
   const [sshUser, setSshUser] = useState("");
-  const [privateKey, setPrivateKey] = useState("");
-  const [clearPrivateKey, setClearPrivateKey] = useState(false);
+  const [credentialId, setCredentialId] = useState("");
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
@@ -133,8 +139,7 @@ function HostControlSettingsForm() {
     setSshHost(loaded.ssh_host ?? "");
     setSshPort(loaded.ssh_port || 22);
     setSshUser(loaded.ssh_user ?? "");
-    setPrivateKey("");
-    setClearPrivateKey(false);
+    setCredentialId(loaded.credential_id ?? "");
   }, [loaded]);
 
   const dirty = useMemo(() => {
@@ -143,15 +148,9 @@ function HostControlSettingsForm() {
       sshHost.trim() !== (loaded.ssh_host ?? "") ||
       sshPort !== (loaded.ssh_port || 22) ||
       sshUser.trim() !== (loaded.ssh_user ?? "") ||
-      privateKey.trim() !== "" ||
-      clearPrivateKey
+      credentialId.trim() !== (loaded.credential_id ?? "")
     );
-  }, [loaded, sshHost, sshPort, sshUser, privateKey, clearPrivateKey]);
-
-  function onPrivateKeyChange(v: string) {
-    setPrivateKey(v);
-    if (v) setClearPrivateKey(false);
-  }
+  }, [loaded, sshHost, sshPort, sshUser, credentialId]);
 
   async function handleSave() {
     if (pending || !loaded) return;
@@ -162,11 +161,7 @@ function HostControlSettingsForm() {
         ssh_port: sshPort,
         ssh_user: sshUser.trim(),
       };
-      if (privateKey) {
-        body.ssh_private_key = privateKey;
-      } else if (clearPrivateKey) {
-        body.clear_private_key = true;
-      }
+      if (credentialId.trim() !== (loaded.credential_id ?? "")) body.credential_id = credentialId.trim() || null;
       await updateHostServicesSettings(body);
       toast.success("Настройки сохранены");
       cfgQ.refetch();
@@ -240,36 +235,19 @@ function HostControlSettingsForm() {
             />
           </label>
 
-          <div className="flex flex-col gap-1">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="field-label">
-                Приватный ключ
-                <span className="text-dim text-xs ml-1">
-                  ({loaded.private_key_is_set ? "задан" : "не задан"}, write-only)
-                </span>
-              </span>
-              <textarea
-                className="field-input mono"
-                rows={8}
-                autoComplete="off"
-                spellCheck={false}
-                value={privateKey}
-                onChange={(e) => onPrivateKeyChange(e.target.value)}
-                placeholder={
-                  loaded.private_key_is_set
-                    ? "оставьте пустым — не менять"
-                    : "-----BEGIN OPENSSH PRIVATE KEY-----"
-                }
-              />
-            </label>
-            <Checkbox
-              label="Стереть сохранённый ключ"
-              rowClassName="text-sm"
-              checked={clearPrivateKey}
-              disabled={!!privateKey}
-              onChange={(e) => setClearPrivateKey(e.target.checked)}
-            />
+          <div className="flex flex-col gap-1 text-sm">
+            <Dropdown mode="single" label="Приватный SSH-ключ" placeholder="Выберите запись" value={credentialId} onChange={setCredentialId}
+              disabled={credentialsQ.isFetching} options={[
+                ...(credentialId && !credentialsQ.data?.some((item) => item.id === credentialId) ? [{ value: credentialId, label: "Привязанная запись недоступна", disabled: true }] : []),
+                ...(credentialsQ.data ?? []).map((item) => ({ value: item.id, label: item.name,
+                  disabled: !!((item.valid_from && new Date(item.valid_from).getTime() > Date.now()) || (item.valid_to && new Date(item.valid_to).getTime() < Date.now())),
+                })),
+              ]} />
+            <span className="text-xs text-dim">Создать запись и изменить ключ можно в «Секреты → Сервисные учётные данные», система host_ssh.</span>
+            {!!credentialsQ.error && <span role="alert" className="text-xs text-danger">{apiErrMsg(credentialsQ.error, "Не удалось загрузить учётные данные")}</span>}
           </div>
+          <div className="text-xs text-dim">Ключ {loaded.private_key_is_set ? "задан" : "не задан"}. При сохранении ссылки проверяется доступ к записи.</div>
+          {loaded.legacy_private_key_is_set && <div className="alert-warn text-xs">Используется старое хранение ключа. После выбора проверенной сервисной записи локальная копия будет удалена. Для переноса текущего значения без повторного ввода доступна команда миграции.</div>}
 
           <div className="flex items-center gap-3">
             <Button variant="primary"

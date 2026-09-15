@@ -47,6 +47,27 @@ class TestRunCreate(BaseModel):
     )
 
 
+class TestRunPreviewEntry(BaseModel):
+    """Один тест кампании до постановки в очередь — что с ним произойдёт и почему."""
+
+    stand_id: str
+    test_id: str
+    test_code: str
+    test_name: str
+    kernel: str
+    action: str = Field(
+        description="launch — будет поставлен в очередь; skip_debug_required/skip_stand_inactive/skip_not_in_stp — будет пропущен.",
+    )
+    reason: str | None = None
+
+
+class TestRunPreviewResponse(BaseModel):
+    """Ответ POST /test-runs/preview — состав кампании без побочных эффектов."""
+
+    stands_without_tests: list[str] = Field(default_factory=list)
+    entries: list[TestRunPreviewEntry] = Field(default_factory=list)
+
+
 class TestRunPartialError(BaseModel):
     """Один частичный провал постановки в очередь одного теста одного стенда кампании."""
 

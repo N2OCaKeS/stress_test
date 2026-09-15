@@ -33,7 +33,7 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import Action, EntityType, TestRunStatus
+from src.core.constants import Action, EntityType, TestReadiness, TestRunStatus
 from src.core.exceptions import AppException, AuthorizationError, ConflictError, DomainValidationError, NotFoundError
 from src.dependencies.auth import Identity
 from src.models import TestRun, TestRunEntry
@@ -41,7 +41,8 @@ from src.repositories import queue_item as queue_item_repo
 from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_run as repo
 from src.repositories import test_run_entry as test_run_entry_repo
-from src.schemas.test_run import TestRunPartialError
+from src.repositories import test_stand as test_stand_repo
+from src.schemas.test_run import TestRunPartialError, TestRunPreviewEntry
 from src.services import audit_service, launch_stp, permissions, queue as queue_svc, test_run_status
 from src.utils.ids import test_run_id as new_id
 
@@ -196,6 +197,82 @@ async def create_test_run(
         },
     )
     return run, stands_without_tests, enqueue_errors
+
+
+async def preview_test_run(
+    db: AsyncSession,
+    identity: Identity,
+    *,
+    os_version_id: str,
+    mode: str,
+    kernel: str | None,
+    test_run_stands: list[str],
+    final: bool = False,
+) -> tuple[list[str], list[TestRunPreviewEntry]]:
+    """Состав кампании без побочных эффектов — что будет запущено/пропущено и почему (§E4).
+
+    Проверяет ровно те причины пропуска, которые `create_test_run` умеет
+    обрабатывать частично (readiness, активность стенда, СТП при `final`) —
+    без создания `test_run`/`test_run_entry` и без постановки в очередь.
+    """
+    await permissions.require_action(db, identity, EntityType.TEST_RUN, Action.CREATE)
+
+    if not identity.department_id:
+        raise DomainValidationError(
+            error_code="TEST_RUN_DEPARTMENT_REQUIRED",
+            message="Caller has no department_id to attribute this test run to",
+        )
+
+    from src.services import server_client
+    if kernel:
+        kernels = [kernel]
+    else:
+        version = await server_client.get_os_version(os_version_id)
+        kernels = list(dict.fromkeys(version.get("kernels") or []))
+        if not kernels:
+            kernels = await server_client.resolve_os_kernels(os_version_id)
+
+    test_run_stands = list(dict.fromkeys(test_run_stands))
+    tests = await test_definition_repo.list_by_pinned_stands(db, test_run_stands)
+    populated_stands = {test.pinned_stand_id for test in tests}
+    stands_without_tests = [stand_id for stand_id in test_run_stands if stand_id not in populated_stands]
+
+    stands: dict[str, object] = {}
+    entries: list[TestRunPreviewEntry] = []
+    for selected_kernel in kernels:
+        for test in tests:
+            stand = stands.get(test.pinned_stand_id)
+            if stand is None and test.pinned_stand_id not in stands:
+                stand = await test_stand_repo.get_by_id(db, test.pinned_stand_id)
+                stands[test.pinned_stand_id] = stand
+
+            common = {
+                "stand_id": test.pinned_stand_id, "test_id": test.id, "test_code": test.code,
+                "test_name": test.full_name, "kernel": selected_kernel,
+            }
+            if test.readiness != TestReadiness.READY:
+                entries.append(TestRunPreviewEntry(
+                    **common, action="skip_debug_required",
+                    reason="Тест не в статусе «Рабочий» — обычный запуск недоступен",
+                ))
+                continue
+            if stand is None or not stand.is_active:
+                entries.append(TestRunPreviewEntry(
+                    **common, action="skip_stand_inactive", reason="Стенд не активен",
+                ))
+                continue
+            if final:
+                ctx = {"RC": os_version_id, "KERNEL": selected_kernel, "MODE": mode}
+                stp = await launch_stp.find_membership(db, test.code, test.pinned_stand_id, ctx)
+                if stp is None:
+                    entries.append(TestRunPreviewEntry(
+                        **common, action="skip_not_in_stp",
+                        reason="Тест отсутствует в активном составе СТП",
+                    ))
+                    continue
+            entries.append(TestRunPreviewEntry(**common, action="launch"))
+
+    return stands_without_tests, entries
 
 
 async def get_test_run(db: AsyncSession, run_id: str) -> tuple[TestRun, list]:

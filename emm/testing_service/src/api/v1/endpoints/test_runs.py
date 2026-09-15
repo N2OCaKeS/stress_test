@@ -20,6 +20,7 @@ from src.schemas.test_run import (
     TestRunCreate,
     TestRunCreateResponse,
     TestRunDetailResponse,
+    TestRunPreviewResponse,
     TestRunQueueItemResponse,
     TestRunResponse,
 )
@@ -69,6 +70,33 @@ async def create_test_run(
     response.stands_without_tests = stands_without_tests
     response.enqueue_errors = enqueue_errors
     return response
+
+
+@router.post(
+    "/preview",
+    response_model=TestRunPreviewResponse,
+    summary="Предпросмотр состава кампании перед запуском",
+    description=(
+        "Без побочных эффектов: показывает, какие тесты будут запущены, а "
+        "какие пропущены и почему (не «Рабочий» статус, неактивный стенд, "
+        "отсутствие в активном составе СТП при `final=True`)."
+    ),
+    responses={
+        403: {"description": "Нет роли с `create` на `test_run`."},
+        422: {"description": "У вызывающего нет department_id, либо тело запроса невалидно."},
+    },
+)
+async def preview_test_run(
+    body: TestRunCreate,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> TestRunPreviewResponse:
+    stands_without_tests, entries = await svc.preview_test_run(
+        db, identity,
+        os_version_id=body.os_version_id, mode=body.mode, kernel=body.kernel,
+        test_run_stands=body.test_run_stands, final=body.final,
+    )
+    return TestRunPreviewResponse(stands_without_tests=stands_without_tests, entries=entries)
 
 
 @router.get(

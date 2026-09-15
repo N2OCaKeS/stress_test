@@ -428,3 +428,46 @@ class TestRequestIdIdempotency:
         second = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_b], request_id=request_id))
         assert second.status_code == 409, second.text
         assert second.json()["error_code"] == "REQUEST_ID_CONFLICT"
+
+
+class TestPreview:
+    async def test_preview_reports_launch_without_side_effects(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+
+        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json=_payload([stand_id]))
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["stands_without_tests"] == []
+        assert len(body["entries"]) == 1
+        assert body["entries"][0]["action"] == "launch"
+
+        listing = await client.get(BASE, headers=_hdr(admin_token), params={"department_id": "dep_a"})
+        assert listing.json()["total"] == 0
+
+    async def test_preview_reports_debug_required_for_non_ready_test(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        patch = await client.patch(
+            f"{TESTS_BASE}/{test_id}", headers=_hdr(admin_token), json={"readiness": "broken"},
+        )
+        assert patch.status_code == 200, patch.text
+
+        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json=_payload([stand_id]))
+        assert resp.status_code == 200, resp.text
+        entries = resp.json()["entries"]
+        assert len(entries) == 1
+        assert entries[0]["action"] == "skip_debug_required"
+
+    async def test_preview_reports_not_in_stp_for_final(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+
+        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json=_payload([stand_id], final=True))
+        assert resp.status_code == 200, resp.text
+        entries = resp.json()["entries"]
+        assert len(entries) == 1
+        assert entries[0]["action"] == "skip_not_in_stp"

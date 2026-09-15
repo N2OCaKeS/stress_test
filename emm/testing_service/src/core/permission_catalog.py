@@ -44,7 +44,8 @@ ENTITY_DESCRIPTIONS: dict[str, str] = {
     ),
     EntityType.STP_TEST_RUN: (
         "СТП-прогон (Zephyr test-run/execution). Заводится только через "
-        "/stp/generate; чтение открыто, под матрицей — только создание."
+        "/stp/generate; чтение открыто, под матрицей — создание и публикация "
+        "сводной таблицы статусов РЦ в Confluence (department-scoped)."
     ),
     EntityType.STP_CELL: (
         "Ячейка СТП — статус пары (stp_test_case × stp_test_run). Чтение "
@@ -68,6 +69,11 @@ ENTITY_DESCRIPTIONS: dict[str, str] = {
         "Сама матрица прав: смотреть список грантов, выдавать и отзывать "
         "действия ролям."
     ),
+    EntityType.STATISTICS_SETTINGS: (
+        "Платформенные настройки внешнего сервиса пересчёта статистики "
+        "(ветка `statistics`, один инстанс на всю платформу). Чтение открыто, "
+        "под матрицей — запись настроек и ручной триггер пересчёта."
+    ),
 }
 
 ACTION_DESCRIPTIONS: dict[str, str] = {
@@ -81,6 +87,7 @@ ACTION_DESCRIPTIONS: dict[str, str] = {
     ),
     Action.PERMISSION_GRANT: "Выдать роли действие, добавив строку матрицы.",
     Action.PERMISSION_REVOKE: "Отозвать у роли действие.",
+    Action.PUBLISH: "Опубликовать сводную страницу отчёта/матрицы в Confluence.",
 }
 
 # Чувствительные действия — раскрытие секретов. Аудит уровня CRITICAL; в

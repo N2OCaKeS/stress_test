@@ -29,6 +29,7 @@ const listStpTestRunsMock = vi.fn();
 const getStpTestRunMock = vi.fn();
 const listStpTestRunCellsMock = vi.fn();
 const overrideStpCellMock = vi.fn();
+const publishStpMatrixMock = vi.fn();
 vi.mock("@/api/testing/stp", () => ({
   listStpTestCases: (...a: unknown[]) => listStpTestCasesMock(...a),
   createStpTestCase: (...a: unknown[]) => createStpTestCaseMock(...a),
@@ -40,6 +41,7 @@ vi.mock("@/api/testing/stp", () => ({
   getStpTestRun: (...a: unknown[]) => getStpTestRunMock(...a),
   listStpTestRunCells: (...a: unknown[]) => listStpTestRunCellsMock(...a),
   overrideStpCell: (...a: unknown[]) => overrideStpCellMock(...a),
+  publishStpMatrix: (...a: unknown[]) => publishStpMatrixMock(...a),
 }));
 
 vi.mock("@/contexts/PersonaContext", () => ({
@@ -190,6 +192,7 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     getStpTestRunMock.mockReset();
     listStpTestRunCellsMock.mockReset();
     overrideStpCellMock.mockReset();
+    publishStpMatrixMock.mockReset();
 
     listOsVersionsMock.mockResolvedValue({ items: [osVersion()], total: 1, limit: 500, offset: 0 });
     listDepartmentsMock.mockResolvedValue([department()]);
@@ -250,6 +253,45 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     await waitFor(() => expect(generateStpMock).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(/Часть стендов провалилась/)).toBeInTheDocument();
     expect(screen.getByText(/SSH_TIMEOUT: не удалось подключиться/)).toBeInTheDocument();
+  });
+
+  it("публикация СТП-матрицы — успех зовёт publishStpMatrix с os_version_id", async () => {
+    publishStpMatrixMock.mockResolvedValue({
+      id: "stpmx_1", department_id: "dep_1", os_version_id: "osv_1", status: "posted",
+      confluence_page_id: "pg_1", confluence_parent_page_id: "pg_0", error: null,
+      published_at: ISO, updated_at: ISO,
+    });
+    renderPage();
+
+    await screen.findAllByText("1.8.7.46");
+    const publishButton = await screen.findByRole("button", { name: /Опубликовать в Confluence/ });
+    await waitFor(() => expect(publishButton).toBeEnabled());
+    fireEvent.click(publishButton);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Опубликовать" }));
+
+    await waitFor(() => expect(publishStpMatrixMock).toHaveBeenCalledTimes(1));
+    expect(publishStpMatrixMock).toHaveBeenCalledWith({
+      os_version_id: "osv_1",
+      department_id: "dep_1",
+    });
+    expect(await screen.findByText("Опубликовано")).toBeInTheDocument();
+  });
+
+  it("публикация СТП-матрицы — не настроено отображается как предупреждение, не ошибка", async () => {
+    publishStpMatrixMock.mockResolvedValue({
+      id: "stpmx_1", department_id: "dep_1", os_version_id: "osv_1", status: "skipped_not_configured",
+      confluence_page_id: null, confluence_parent_page_id: null, error: null,
+      published_at: null, updated_at: ISO,
+    });
+    renderPage();
+
+    await screen.findAllByText("1.8.7.46");
+    fireEvent.click(await screen.findByRole("button", { name: /Опубликовать в Confluence/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Опубликовать" }));
+
+    await waitFor(() => expect(publishStpMatrixMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.getAllByText(/Не настроено/).length).toBeGreaterThan(0));
   });
 
   it("ручной override ячейки зовёт overrideStpCell и обновляет ячейку", async () => {

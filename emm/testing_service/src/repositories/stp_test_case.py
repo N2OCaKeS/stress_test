@@ -24,6 +24,15 @@ async def list_by_codes(db: AsyncSession, codes: list[str]) -> list[StpTestCase]
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_by_ids(db: AsyncSession, ids: list[str]) -> list[StpTestCase]:
+    """Batch-выборка по id — используется публикацией СТП-матрицы, где связка
+    известна через `stp_cells.stp_test_case_id`, не через `code`."""
+    if not ids:
+        return []
+    stmt = select(StpTestCase).where(StpTestCase.id.in_(ids))
+    return list((await db.execute(stmt)).scalars())
+
+
 def _apply_filters(stmt, *, department_id: str | None):
     if department_id is not None:
         stmt = stmt.where(StpTestCase.department_id == department_id)

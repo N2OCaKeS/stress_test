@@ -94,3 +94,26 @@ class StpCellManualUpdate(BaseModel):
     """Тело PATCH /stp/cells/{id} — ручной override статуса. Не трогает Zephyr."""
 
     status: str = Field(..., description="Один из: not_run/in_progress/pass/fail.")
+
+
+class StpMatrixPublishRequest(BaseModel):
+    """Тело POST /stp/matrix/publish — ручная публикация сводной СТП-таблицы одного РЦ."""
+
+    os_version_id: str = Field(..., min_length=1, max_length=64, description="РЦ (тот же id, что и stp_test_runs.os_version_id).")
+    department_id: str | None = Field(None, description="По умолчанию — отдел пользователя.")
+
+
+class StpMatrixPublishResponse(BaseModel):
+    """Ответ POST /stp/matrix/publish — исход публикации, см. `StpMatrixPublicationStatus`."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    department_id: str
+    os_version_id: str
+    status: str
+    confluence_page_id: str | None = None
+    confluence_parent_page_id: str | None = None
+    error: str | None = None
+    published_at: datetime | None = None
+    updated_at: datetime

@@ -10,6 +10,7 @@ from src.models.global_variable import GlobalVariable
 from src.models.queue_item import QueueItem
 from src.models.run_summary_comment import RunSummaryComment
 from src.models.stp_cell import StpCell
+from src.models.stp_matrix_publication import StpMatrixPublication
 from src.models.stp_test_case import StpTestCase
 from src.models.stp_test_run import StpTestRun
 from src.models.test_command_arg import TestCommandArg
@@ -32,6 +33,7 @@ __all__ = [
     "QueueItem",
     "RunSummaryComment",
     "StpCell",
+    "StpMatrixPublication",
     "StpTestCase",
     "StpTestRun",
     "TestCommandArg",

@@ -97,6 +97,8 @@ function emptySettings() {
     tempo_team_id: null,
     confluence_report_page_space: null,
     confluence_report_parent_page_title: null,
+    stp_matrix_confluence_space: null,
+    stp_matrix_confluence_root_page_title: null,
     created_at: null,
     updated_at: null,
   };
@@ -151,6 +153,32 @@ describe("HomeDepAdmin — настройки интеграции отдела 
         jira_base_url: "https://jira.astralinux.ru",
         bitbucket_project_key: "TST",
         confluence_base_url: null,
+      }),
+    );
+  });
+
+  it("сохраняет настройки СТП-матрицы (space + корневая страница)", async () => {
+    upsertDepartmentIntegrationSettingsMock.mockResolvedValue(emptySettings());
+    renderHome();
+    await screen.findByText("Интеграции отдела (Jira / Confluence / Bitbucket)");
+    await waitFor(() => expect(screen.getByPlaceholderText("DEPTQA")).toHaveValue(""));
+
+    const spaceInput = screen.getByPlaceholderText("DEPTQA") as HTMLInputElement;
+    fireEvent.change(spaceInput, { target: { value: "DEPTQA" } });
+    await waitFor(() => expect(spaceInput.value).toBe("DEPTQA"));
+
+    const rootTitleInput = screen.getByPlaceholderText("Состав тестового прогона") as HTMLInputElement;
+    fireEvent.change(rootTitleInput, { target: { value: "Состав тестового прогона" } });
+    await waitFor(() => expect(rootTitleInput.value).toBe("Состав тестового прогона"));
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Сохранить" })[0]);
+
+    await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledTimes(1));
+    expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith(
+      "dep_1",
+      expect.objectContaining({
+        stp_matrix_confluence_space: "DEPTQA",
+        stp_matrix_confluence_root_page_title: "Состав тестового прогона",
       }),
     );
   });

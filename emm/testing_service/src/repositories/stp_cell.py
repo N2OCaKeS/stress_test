@@ -26,6 +26,16 @@ async def list_by_run(db: AsyncSession, stp_test_run_id: str) -> list[StpCell]:
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_by_runs(db: AsyncSession, stp_test_run_ids: list[str]) -> list[StpCell]:
+    """Batch-выборка ячеек сразу нескольких прогонов — используется публикацией
+    СТП-матрицы (`services/stp_matrix.py`), чтобы не гонять по одному запросу
+    на прогон."""
+    if not stp_test_run_ids:
+        return []
+    stmt = select(StpCell).where(StpCell.stp_test_run_id.in_(stp_test_run_ids))
+    return list((await db.execute(stmt)).scalars())
+
+
 async def create(db: AsyncSession, data: dict) -> StpCell:
     obj = StpCell(**data)
     db.add(obj)

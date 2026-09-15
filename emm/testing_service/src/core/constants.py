@@ -52,7 +52,8 @@ class EntityType(StrEnum):
 
     # СТП-прогон (Zephyr test-run/execution, НЕ то же самое, что `test_run`
     # выше — см. §6.1). Заводится только через `/stp/generate`, чтение —
-    # открыто любому аутентифицированному актору, под матрицей — только create.
+    # открыто любому аутентифицированному актору, под матрицей — create и
+    # publish (сводная HTML-таблица статусов в Confluence, department-scoped).
     STP_TEST_RUN = "stp_test_run"
 
     # Ячейка СТП — статус (stp_test_case × stp_test_run). Чтение открыто,
@@ -100,6 +101,9 @@ class Action(StrEnum):
     # Управление самой матрицей entity_permissions — выдать/отозвать action у роли.
     PERMISSION_GRANT = "permission_grant"
     PERMISSION_REVOKE = "permission_revoke"
+    # Публикация сводной страницы (СТП-матрица) в Confluence — department-scoped
+    # операция поверх уже существующих stp_test_runs, отдельная от create.
+    PUBLISH = "publish"
 
 
 # Какие действия вообще осмысленны для каждого типа. Пара вне этой карты —
@@ -125,7 +129,7 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.VIEW, Action.CREATE, Action.UPDATE, Action.DELETE,
     }),
     EntityType.STP_TEST_RUN: frozenset({
-        Action.CREATE,
+        Action.CREATE, Action.PUBLISH,
     }),
     EntityType.STP_CELL: frozenset({
         Action.UPDATE,
@@ -251,6 +255,23 @@ class StpCellStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     PASSED = "pass"
     FAIL = "fail"
+
+
+class StpMatrixPublicationStatus(StrEnum):
+    """Исход попытки публикации СТП-матрицы в Confluence (§D2/D3 плана миграции).
+
+    `posted` — страница создана либо обновлена (либо тело не изменилось с
+    прошлой публикации того же РЦ и Confluence не дёргали лишний раз).
+    `skipped_not_configured` — у отдела не настроено пространство/родительская
+    страница/credential для этой публикации. `skipped_no_test_runs` — для
+    этого РЦ и отдела ещё нет ни одного `stp_test_run` (нечего публиковать).
+    `failed` — reveal не прошёл либо сбой самого Confluence API.
+    """
+
+    POSTED = "posted"
+    SKIPPED_NOT_CONFIGURED = "skipped_not_configured"
+    SKIPPED_NO_TEST_RUNS = "skipped_no_test_runs"
+    FAILED = "failed"
 
 
 class PlatformRole(StrEnum):

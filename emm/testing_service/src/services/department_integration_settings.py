@@ -29,6 +29,8 @@ _NULLABLE_FIELDS = (
     "tempo_team_id",
     "confluence_report_page_space",
     "confluence_report_parent_page_title",
+    "stp_matrix_confluence_space",
+    "stp_matrix_confluence_root_page_title",
 )
 
 

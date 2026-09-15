@@ -97,3 +97,8 @@ def department_report_member_id() -> str:
 def department_activity_report_id() -> str:
     """`dar_<uuid>` — для department_activity_reports."""
     return _new_id("dar_")
+
+
+def stp_matrix_publication_id() -> str:
+    """`stpmx_<uuid>` — для stp_matrix_publications."""
+    return _new_id("stpmx_")

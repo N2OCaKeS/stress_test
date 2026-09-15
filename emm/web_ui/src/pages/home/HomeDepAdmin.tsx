@@ -734,6 +734,8 @@ const INTEGRATION_FIELDS: Array<{ key: string; label: string; placeholder?: stri
   { key: "tempo_team_id", label: "Tempo team id", placeholder: "7" },
   { key: "confluence_report_page_space", label: "Confluence space для HR-отчёта", placeholder: "DEPT" },
   { key: "confluence_report_parent_page_title", label: "Родительская страница HR-отчёта", placeholder: "Отчёты по активности" },
+  { key: "stp_matrix_confluence_space", label: "Confluence space для СТП-матрицы", placeholder: "DEPTQA" },
+  { key: "stp_matrix_confluence_root_page_title", label: "Корневая страница СТП-матрицы", placeholder: "Состав тестового прогона" },
   { key: "credential_id", label: "Credential id (Jira/Zephyr)", placeholder: "cred_...", mono: true },
   { key: "bitbucket_credential_id", label: "Credential id (Bitbucket)", placeholder: "cred_...", mono: true },
 ];
@@ -795,7 +797,7 @@ function DepartmentIntegrationSettingsCard({ departmentId }: { departmentId: str
         <span className="text-xs text-dim">testing_service</span>
       </div>
       <div className="text-xs text-dim mb-3">
-        Нужны для генерации СТП (Zephyr) и HR-отчёта отдела. Сами токены/пароли
+        Нужны для генерации СТП (Zephyr), публикации СТП-матрицы и HR-отчёта отдела в Confluence. Сами токены/пароли
         заводятся в <Link to="/secret/service" className="text-accent">сервисных учётных данных</Link>.
         Выберите нужные записи вашего отдела ниже.
       </div>

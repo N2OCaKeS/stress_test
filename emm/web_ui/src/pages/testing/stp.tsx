@@ -34,6 +34,7 @@ import {
   Plus,
   RefreshCcw,
   Search,
+  Send,
   Trash2,
 } from "lucide-react";
 import { naturalCompare } from "@/lib/naturalSort";
@@ -59,6 +60,7 @@ import {
   listStpTestRunCells,
   listStpTestRuns,
   overrideStpCell,
+  publishStpMatrix,
   updateStpTestCase,
 } from "@/api/testing/stp";
 import type {
@@ -66,6 +68,7 @@ import type {
   StpCellStatus,
   StpGeneratePartialError,
   StpGenerateRequest,
+  StpMatrixPublishResponse,
   StpTestCase,
   StpTestCaseCreateRequest,
   StpTestCaseUpdateRequest,
@@ -316,6 +319,7 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
   const [deptFilter, setDeptFilter] = useState<string>(persona.dept_id ?? "");
   const [filters, setFilters] = useState<StpFilters>(emptyFilters());
   const [generateOpen, setGenerateOpen] = useState(false);
+  const [publishOpen, setPublishOpen] = useState(false);
   const [caseFormOpen, setCaseFormOpen] = useState<"create" | StpTestCase | null>(null);
   const [cellTarget, setCellTarget] = useState<{ test: StpTestCase; run: StpTestRun; cell: StpCell } | null>(null);
   const [runTarget, setRunTarget] = useState<StpTestRun | null>(null);
@@ -476,6 +480,15 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
             <Plus className="w-3.5 h-3.5" />
             Сгенерировать СТП
           </Button>
+          <Button
+            type="button"
+            className="inline-flex items-center gap-2"
+            disabled={!version}
+            onClick={() => setPublishOpen(true)}
+          >
+            <Send className="w-3.5 h-3.5" />
+            Опубликовать в Confluence
+          </Button>
         </div>
       </div>
 
@@ -531,6 +544,15 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
           onDone={() => {
             testRunsQ.refetch();
           }}
+        />
+      )}
+
+      {publishOpen && version && (
+        <StpMatrixPublishModal
+          mockMode={mockMode}
+          version={version}
+          departmentId={deptFilter || undefined}
+          onClose={() => setPublishOpen(false)}
         />
       )}
 
@@ -924,6 +946,106 @@ function StpGenerateModal({
                 </ul>
               </div>
             )}
+            <div className="flex justify-end">
+              <Button type="button" variant="primary" onClick={onClose}>
+                Готово
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ── публикация сводной СТП-матрицы в Confluence ─────────────────────────────
+
+const MATRIX_STATUS_LABELS: Record<string, { label: string; className: string }> = {
+  posted: { label: "Опубликовано", className: "text-ok" },
+  skipped_not_configured: {
+    label: "Не настроено — заполните Confluence-пространство/родительскую страницу СТП-матрицы в интеграциях отдела",
+    className: "text-warn",
+  },
+  skipped_no_test_runs: { label: "Для этого РЦ у отдела ещё нет СТП-прогонов", className: "text-warn" },
+  failed: { label: "Ошибка публикации", className: "text-danger" },
+};
+
+function StpMatrixPublishModal({
+  mockMode,
+  version,
+  departmentId,
+  onClose,
+}: {
+  mockMode: boolean;
+  version: OsVersion;
+  departmentId?: string;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [result, setResult] = useState<StpMatrixPublishResponse | null>(null);
+
+  async function submit() {
+    if (mockMode) {
+      toast.warn("Mock-режим — публикация не отправляется на backend.");
+      onClose();
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await publishStpMatrix({ os_version_id: version.id, department_id: departmentId });
+      setResult(res);
+      if (res.status === "posted") {
+        toast.success("СТП-матрица опубликована в Confluence");
+      } else {
+        toast.warn(MATRIX_STATUS_LABELS[res.status]?.label ?? res.status);
+      }
+    } catch (e) {
+      const msg = apiErrMsg(e);
+      setErr(msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title="Опубликовать СТП-матрицу"
+      subtitle={version.name}
+    >
+      <div className="grid gap-3">
+        {!result && (
+          <>
+            <p className="text-sm">
+              Сводная таблица статусов всех прогонов этого РЦ (все режимы/ядра/стенды отдела) будет
+              опубликована страницей в Confluence — пространство и корневая страница иерархии берутся из
+              настроек интеграции отдела.
+            </p>
+            {err && <div className="alert-danger text-xs">{err}</div>}
+            <div className="flex gap-2 justify-end">
+              <Button type="button" onClick={onClose} disabled={busy}>
+                Отмена
+              </Button>
+              <Button type="button" variant="primary" onClick={submit} disabled={busy}>
+                {busy ? "..." : "Опубликовать"}
+              </Button>
+            </div>
+          </>
+        )}
+
+        {result && (
+          <>
+            <div className={`text-sm ${MATRIX_STATUS_LABELS[result.status]?.className ?? "text-dim"}`}>
+              {MATRIX_STATUS_LABELS[result.status]?.label ?? result.status}
+            </div>
+            {result.error && <div className="text-xs text-dim">{result.error}</div>}
             <div className="flex justify-end">
               <Button type="button" variant="primary" onClick={onClose}>
                 Готово

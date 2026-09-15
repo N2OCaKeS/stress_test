@@ -45,6 +45,14 @@ class DepartmentIntegrationSettingsUpdate(BaseModel):
         default=None, max_length=256,
         description="Заголовок родительской страницы, под которой заводится месячная страница отчёта.",
     )
+    stp_matrix_confluence_space: str | None = Field(
+        default=None, max_length=64,
+        description="Confluence space для публикации сводной СТП-матрицы. Пусто — публикация недоступна.",
+    )
+    stp_matrix_confluence_root_page_title: str | None = Field(
+        default=None, max_length=256,
+        description="Заголовок корневой (grandparent) страницы иерархии СТП-матрицы.",
+    )
 
 
 class DepartmentIntegrationSettingsResponse(BaseModel):
@@ -65,5 +73,7 @@ class DepartmentIntegrationSettingsResponse(BaseModel):
     tempo_team_id: str | None = Field(default=None)
     confluence_report_page_space: str | None = Field(default=None)
     confluence_report_parent_page_title: str | None = Field(default=None)
+    stp_matrix_confluence_space: str | None = Field(default=None)
+    stp_matrix_confluence_root_page_title: str | None = Field(default=None)
     created_at: datetime | None = Field(default=None)
     updated_at: datetime | None = Field(default=None)

@@ -1,10 +1,12 @@
-"""СТП: каталог тест-кейсов, генерация Zephyr test-run'ов, прогоны, ячейки (§2.5, §6 плана миграции).
+"""СТП: каталог тест-кейсов, генерация Zephyr test-run'ов, прогоны, ячейки (§2.5, §6, §D2/D3 плана миграции).
 
 Тест-кейсы — чтение открыто любому аутентифицированному актору, запись —
 матрица `(stp_test_case, *, ...)`. `/stp/generate` — админский вызов,
 матрица `(stp_test_run, *, create)`. Ячейки — ручной override под
 `(stp_cell, *, update)`, событийное обновление идёт мимо HTTP (см.
-`services/queue.py` → `services/stp_status.py`).
+`services/queue.py` → `services/stp_status.py`). `/stp/matrix/publish` —
+ручная публикация сводной таблицы РЦ в Confluence, department-scoped
+`(stp_test_run, *, publish)` (см. `services/stp_matrix.py`).
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -18,12 +20,15 @@ from src.schemas.stp import (
     StpCellResponse,
     StpGenerateRequest,
     StpGenerateResponse,
+    StpMatrixPublishRequest,
+    StpMatrixPublishResponse,
     StpTestCaseCreate,
     StpTestCaseResponse,
     StpTestCaseUpdate,
     StpTestRunResponse,
 )
 from src.services import stp as stp_svc
+from src.services import stp_matrix as stp_matrix_svc
 from src.services import stp_status
 from src.services import stp_test_case as stp_test_case_svc
 
@@ -142,6 +147,32 @@ async def generate_stp(
         test_runs=[StpTestRunResponse.model_validate(r) for r in runs],
         errors=errors,
     )
+
+
+@router.post(
+    "/matrix/publish",
+    response_model=StpMatrixPublishResponse,
+    summary="Опубликовать сводную СТП-матрицу РЦ в Confluence",
+    description=(
+        "Ручной триггер (не автоматический вебхук, как и /stp/generate). Собирает "
+        "все stp_test_runs отдела для этого РЦ в одну HTML-таблицу и публикует "
+        "её страницей в per-department Confluence-иерархии "
+        "(department_integration_settings.stp_matrix_confluence_*). "
+        "Не настроено/нет прогонов — понятный skip-статус в ответе, не 500."
+    ),
+    responses={403: {"description": "Нет роли с `publish` в этом отделе."}},
+)
+async def publish_stp_matrix(
+    body: StpMatrixPublishRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> StpMatrixPublishResponse:
+    obj = await stp_matrix_svc.publish_stp_matrix(
+        db, identity,
+        department_id=body.department_id or identity.department_id,
+        os_version_id=body.os_version_id,
+    )
+    return StpMatrixPublishResponse.model_validate(obj)
 
 
 @router.get(

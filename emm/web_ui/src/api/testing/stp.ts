@@ -16,6 +16,8 @@ import type {
   StpCellManualUpdateRequest,
   StpGenerateRequest,
   StpGenerateResponse,
+  StpMatrixPublishRequest,
+  StpMatrixPublishResponse,
   StpTestCase,
   StpTestCaseCreateRequest,
   StpTestCaseUpdateRequest,
@@ -80,6 +82,16 @@ export function deleteStpTestCase(caseId: string): Promise<TestingOkResponse> {
  */
 export function generateStp(body: StpGenerateRequest): Promise<StpGenerateResponse> {
   return apiPost<StpGenerateResponse>(`${BASE}/stp/generate`, body);
+}
+
+/**
+ * `POST /stp/matrix/publish` — опубликовать сводную СТП-таблицу одного РЦ
+ * в Confluence (department-scoped иерархия, настраивается в интеграциях
+ * отдела). Не настроено/нет прогонов — понятный skip-статус в ответе, не
+ * ошибка. Доступ: `(stp_test_run, *, publish)`.
+ */
+export function publishStpMatrix(body: StpMatrixPublishRequest): Promise<StpMatrixPublishResponse> {
+  return apiPost<StpMatrixPublishResponse>(`${BASE}/stp/matrix/publish`, body);
 }
 
 /** Параметры списка СТП-прогонов. */

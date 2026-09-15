@@ -3,7 +3,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models import StpTestRun
+from src.models import StpTestRun, TestStand
 
 
 async def get_by_id(db: AsyncSession, run_id: str) -> StpTestRun | None:
@@ -59,6 +59,28 @@ async def count_all(
         select(func.count(StpTestRun.id)), stand_id=stand_id, os_version_id=os_version_id,
     )
     return int((await db.execute(stmt)).scalar_one())
+
+
+async def list_by_department_and_os_version(
+    db: AsyncSession, department_id: str, os_version_id: str,
+) -> list[StpTestRun]:
+    """Все `stp_test_runs` этого РЦ, чей стенд принадлежит `department_id`.
+
+    `stp_test_runs` сам department не хранит (см. docstring модели) — фильтр
+    идёт через join на `test_stands.department_id`. Используется публикацией
+    СТП-матрицы (`services/stp_matrix.py`) — одна страница на РЦ на отдел
+    собирает все режимы/ядра/стенды этого отдела для этого РЦ.
+    """
+    stmt = (
+        select(StpTestRun)
+        .join(TestStand, TestStand.id == StpTestRun.stand_id)
+        .where(
+            StpTestRun.os_version_id == os_version_id,
+            TestStand.department_id == department_id,
+        )
+        .order_by(StpTestRun.mode.asc(), StpTestRun.stand_id.asc())
+    )
+    return list((await db.execute(stmt)).scalars())
 
 
 async def create(db: AsyncSession, data: dict) -> StpTestRun:

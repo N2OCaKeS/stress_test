@@ -27,6 +27,15 @@ scope=service — так бот `testing_service` (платформенный с
   задан, `services/activity_report.py` отвечает явной ошибкой "не настроено",
   не тем же `space="AL"`, что у end-of-run комментария (§9.2) — разные
   Confluence-пространства, разные механизмы.
+
+Поля §D2/D3 (публикация СТП-матрицы, `services/stp_matrix.py`):
+
+* `stp_matrix_confluence_space`/`stp_matrix_confluence_root_page_title` —
+  третье, отдельное от HR-отчёта и end-of-run комментария Confluence-
+  назначение. Легаси хардкодил пространство `DEVQA` и grandparent-заголовок
+  `'Состав тестового прогона'` платформенно на все отделы — здесь оба поля
+  per-department, тот же credential_id, что и выше (Jira/Confluence общий
+  на отдел).
 """
 
 from datetime import datetime
@@ -61,6 +70,10 @@ class DepartmentIntegrationSettings(Base):
     tempo_team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     confluence_report_page_space: Mapped[str | None] = mapped_column(String(64), nullable=True)
     confluence_report_parent_page_title: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    # ── СТП-матрица (§D2/D3) ──────────────────────────────────────────────
+    stp_matrix_confluence_space: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stp_matrix_confluence_root_page_title: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

@@ -280,6 +280,8 @@ export interface DepartmentIntegrationSettings {
   tempo_team_id: string | null;
   confluence_report_page_space: string | null;
   confluence_report_parent_page_title: string | null;
+  stp_matrix_confluence_space: string | null;
+  stp_matrix_confluence_root_page_title: string | null;
   created_at: Iso8601 | null;
   updated_at: Iso8601 | null;
 }
@@ -297,6 +299,8 @@ export interface DepartmentIntegrationSettingsUpdateRequest {
   tempo_team_id?: string | null;
   confluence_report_page_space?: string | null;
   confluence_report_parent_page_title?: string | null;
+  stp_matrix_confluence_space?: string | null;
+  stp_matrix_confluence_root_page_title?: string | null;
 }
 
 // ── department-report-members ─────────────────────────────────────────────
@@ -531,6 +535,32 @@ export interface StpTestRun {
 export interface StpGenerateResponse {
   test_runs: StpTestRun[];
   errors: StpGeneratePartialError[];
+}
+
+/** Тело `POST /stp/matrix/publish` — ручная публикация сводной СТП-таблицы одного РЦ. */
+export interface StpMatrixPublishRequest {
+  os_version_id: string;
+  department_id?: string;
+}
+
+/** Исход публикации СТП-матрицы (`StpMatrixPublicationStatus`). */
+export type StpMatrixPublicationStatus =
+  | "posted"
+  | "skipped_not_configured"
+  | "skipped_no_test_runs"
+  | "failed";
+
+/** Ответ `POST /stp/matrix/publish`. */
+export interface StpMatrixPublishResponse {
+  id: string;
+  department_id: string;
+  os_version_id: string;
+  status: StpMatrixPublicationStatus | string;
+  confluence_page_id: string | null;
+  confluence_parent_page_id: string | null;
+  error: string | null;
+  published_at: Iso8601 | null;
+  updated_at: Iso8601;
 }
 
 /** Статус ячейки СТП `(stp_test_case × stp_test_run)` (`StpCellStatus`). */

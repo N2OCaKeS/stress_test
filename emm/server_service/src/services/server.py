@@ -1436,6 +1436,16 @@ async def get_connection_info_for_service(db: AsyncSession, *, server_id: str) -
     return obj
 
 
+async def get_batch_status_for_service(db: AsyncSession, *, server_ids: list[str]) -> dict[str, Server]:
+    """Пачкой отдать ping/busy для s2s-каллера (обзор пула testing_service).
+
+    Один `WHERE id IN (...)` вместо N round-trip'ов на N стендов. Отсутствующие
+    id просто не попадают в результат — caller (`get_batch_status`) решает,
+    как трактовать пропуск, не 404 на весь батч.
+    """
+    return await repo.get_many_by_ids(db, server_ids)
+
+
 async def recover_stuck_updating(db: AsyncSession, *, limit: int = 500) -> dict:
     """Освободить серверы, застрявшие в `busy_state='updating'` дольше TTL.
 

@@ -466,3 +466,60 @@ class TestConnectionInfo:
             f"{BASE}/{srv.id}/connection-info", headers=_hdr(TESTING_SECRET),
         )
         assert resp.status_code == 200, resp.text
+
+
+class TestBatchStatus:
+    """`POST /internal/servers/batch-status` — ping/busy пачкой для обзора пула."""
+
+    async def test_returns_ping_and_busy_for_each_server(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv_a = await make_server()
+        srv_b = await make_server()
+        srv_b.ping_reachable = False
+        srv_b.busy_state = BusyState.ACS
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/batch-status",
+            headers=_hdr(TESTING_SECRET),
+            json={"server_ids": [srv_a.id, srv_b.id]},
+        )
+        assert resp.status_code == 200, resp.text
+        by_id = {row["server_id"]: row for row in resp.json()["servers"]}
+        assert by_id[srv_a.id]["found"] is True
+        assert by_id[srv_a.id]["busy_state"] == BusyState.FREE
+        assert by_id[srv_b.id]["ping_reachable"] is False
+        assert by_id[srv_b.id]["busy_state"] == BusyState.ACS
+
+    async def test_unknown_server_id_marked_not_found_not_500(
+        self, client, configure_service_keys,
+    ):
+        resp = await client.post(
+            f"{BASE}/batch-status",
+            headers=_hdr(TESTING_SECRET),
+            json={"server_ids": ["srv_does_not_exist"]},
+        )
+        assert resp.status_code == 200, resp.text
+        row = resp.json()["servers"][0]
+        assert row == {
+            "server_id": "srv_does_not_exist", "found": False,
+            "busy_state": None, "busy_service_name": None,
+            "ping_reachable": None, "ping_checked_at": None,
+        }
+
+    async def test_unknown_identity_rejected(self, client, make_server, configure_service_keys):
+        srv = await make_server()
+        resp = await client.post(
+            f"{BASE}/batch-status",
+            headers=_hdr(TESTING_SECRET, identity="rogue_service"),
+            json={"server_ids": [srv.id]},
+        )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["error_code"] == "SERVICE_IDENTITY_NOT_ALLOWED"
+
+    async def test_empty_list_rejected(self, client, configure_service_keys):
+        resp = await client.post(
+            f"{BASE}/batch-status", headers=_hdr(TESTING_SECRET), json={"server_ids": []},
+        )
+        assert resp.status_code == 422, resp.text

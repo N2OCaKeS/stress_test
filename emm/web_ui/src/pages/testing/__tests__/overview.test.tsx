@@ -28,15 +28,30 @@ vi.mock("@/api/server/osVersions", () => ({
   listOsVersions: (...a: unknown[]) => listOsVersionsMock(...a),
 }));
 
-const getHostDiskUsageMock = vi.fn();
-vi.mock("@/api/server/misc", () => ({
-  getHostDiskUsage: (...a: unknown[]) => getHostDiskUsageMock(...a),
-}));
-
 const listServersMock = vi.fn();
 vi.mock("@/api/server/servers", () => ({
   listServers: (...a: unknown[]) => listServersMock(...a),
 }));
+
+const getPoolOverviewMock = vi.fn();
+vi.mock("@/api/testing/poolOverview", () => ({
+  getPoolOverview: (...a: unknown[]) => getPoolOverviewMock(...a),
+}));
+
+function emptyPoolOverview() {
+  return {
+    context: "all" as const,
+    test_run_id: null,
+    test_run: null,
+    remaining: 0,
+    running: 0,
+    succeeded: 0,
+    failed: 0,
+    stands: [],
+    stand_status_counts: { recovering: 0, unreachable: 0, testing: 0, ready: 0, no_data: 0 },
+    generated_at: "2026-09-15T12:00:00Z",
+  };
+}
 
 import { TestingOverview } from "@/pages/testing/overview";
 
@@ -75,10 +90,12 @@ function renderOverview(runsState: RunsState = fakeRunsState()) {
 }
 
 describe("TestingOverview — mock mode (demo)", () => {
-  it("рендерит демо-стенды и общее число прогонов из runsState", () => {
+  it("рендерит демо-стенды и обзор пула на demo-данных", () => {
     renderOverview(fakeRunsState({ total: 42 }));
     expect(screen.getAllByText("stand1-201").length).toBeGreaterThan(0);
-    expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.getByText("Обзор пула")).toBeInTheDocument();
+    expect(screen.getByText("Осталось выполнить")).toBeInTheDocument();
+    expect(screen.getAllByText("Готов").length).toBeGreaterThan(0);
   });
 
   it("«Запустить тест» показывает Debug режим, а не Dev режим", () => {
@@ -111,8 +128,9 @@ describe("TestingOverview — live mode (testing_service)", () => {
     deleteTestStandMock.mockReset();
     getTestStandCredentialsMock.mockReset();
     listOsVersionsMock.mockReset();
-    getHostDiskUsageMock.mockReset();
     listServersMock.mockReset();
+    getPoolOverviewMock.mockReset();
+    getPoolOverviewMock.mockResolvedValue(emptyPoolOverview());
     listServersMock.mockResolvedValue({
       items: [{ id: "srv_2", hostname: "stand-02", display_name: "stand-02", ip_address: "10.177.103.202" }],
       total: 1,
@@ -145,9 +163,6 @@ describe("TestingOverview — live mode (testing_service)", () => {
       limit: 200,
       offset: 0,
     });
-    getHostDiskUsageMock.mockResolvedValue({
-      paths: [{ path: "/", total_gb: 100, used_gb: 40, used_percent: 40, available: true, error: null }],
-    });
   });
 
   afterEach(() => {
@@ -174,13 +189,49 @@ describe("TestingOverview — live mode (testing_service)", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("выводит РЦ из listOsVersions и хранилище хоста из getHostDiskUsage в дашборде", async () => {
+  it("показывает реальные агрегаты обзора пула из GET /pool-overview", async () => {
+    getPoolOverviewMock.mockResolvedValue({
+      context: "all",
+      test_run_id: null,
+      test_run: null,
+      remaining: 3,
+      running: 2,
+      succeeded: 5,
+      failed: 1,
+      stands: [
+        {
+          stand_id: "ts_1", server_id: "srv_1", status: "recovering",
+          busy_state: "acs", busy_service_name: "testing_service",
+          ping_reachable: false, ping_checked_at: "2026-09-15T12:00:00Z",
+        },
+      ],
+      stand_status_counts: { recovering: 1, unreachable: 0, testing: 0, ready: 0, no_data: 0 },
+      generated_at: "2026-09-15T12:00:05Z",
+    });
     renderOverview();
     await screen.findAllByText("stand-live-01");
-    await waitFor(() => expect(listOsVersionsMock).toHaveBeenCalled());
-    await waitFor(() => expect(getHostDiskUsageMock).toHaveBeenCalled());
-    // «Системный диск» — подпись реального пути "/" из getHostDiskUsage.
-    expect(await screen.findByText("Системный диск")).toBeInTheDocument();
+    await waitFor(() => expect(getPoolOverviewMock).toHaveBeenCalledWith({ context: "all", test_run_id: undefined }));
+    expect(await screen.findByText("3")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(screen.getByText("5")).toBeInTheDocument();
+    expect(screen.getAllByText("Восстанавливается").length).toBeGreaterThan(0);
+  });
+
+  it("переключение на «Выбранный прогон» запрашивает выбранный test_run_id", async () => {
+    renderOverview(fakeRunsState({
+      runs: [{
+        id: "run_abc123", os_version_id: "1.8.5.46", mode: "orel", kernel: "6.1.0",
+        department_id: "dep_1", test_run_stands: [], status: "running", final: false,
+        created_at: "2026-09-15T00:00:00Z", updated_at: "2026-09-15T00:00:00Z", created_by: null,
+      }],
+    }));
+    await screen.findAllByText("stand-live-01");
+    fireEvent.click(screen.getByRole("button", { name: "Выбранный прогон" }));
+    fireEvent.click(screen.getByRole("button", { name: /Прогон/ }));
+    fireEvent.click(screen.getByText(/run_abc123/));
+    await waitFor(() =>
+      expect(getPoolOverviewMock).toHaveBeenCalledWith({ context: "run", test_run_id: "run_abc123" }),
+    );
   });
 
   it("если сервер недоступен — стенд показывается offline", async () => {

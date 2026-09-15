@@ -15,6 +15,7 @@ from src.api.v1.endpoints.department_test_settings import router as department_t
 from src.api.v1.endpoints.global_variables import router as global_variables_router
 from src.api.v1.endpoints.health import router as health_router
 from src.api.v1.endpoints.permissions import router as permissions_router
+from src.api.v1.endpoints.pool_overview import router as pool_overview_router
 from src.api.v1.endpoints.statistics import router as statistics_router
 from src.api.v1.endpoints.stp import router as stp_router
 from src.api.v1.endpoints.test_command_args import router as test_command_args_router
@@ -41,3 +42,4 @@ router.include_router(department_report_members_router, tags=["department-report
 router.include_router(department_activity_reports_router, tags=["department-activity-reports"])
 router.include_router(permissions_router, tags=["permissions"])
 router.include_router(statistics_router, tags=["statistics"])
+router.include_router(pool_overview_router, tags=["pool-overview"])

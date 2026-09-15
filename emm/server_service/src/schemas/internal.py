@@ -737,3 +737,30 @@ class ServerConnectionInfoResponse(BaseModel):
 
     server_id: str = Field(description="ID сервера.")
     host: str = Field(description="`Server.ip_address` — подключаться по IP, не по hostname.")
+
+
+class ServerBatchStatusRequest(BaseModel):
+    """Тело POST /internal/servers/batch-status."""
+
+    server_ids: list[str] = Field(
+        min_length=1,
+        max_length=500,
+        description="ID серверов одним запросом — не устраивать N вызовов на N стендов пула.",
+    )
+
+
+class ServerStatusItem(BaseModel):
+    """Один сервер в ответе batch-status — ping + busy на текущий момент."""
+
+    server_id: str = Field(description="ID сервера, как в запросе.")
+    found: bool = Field(description="False — сервера с этим id не существует (не 404 на весь батч).")
+    busy_state: str | None = Field(default=None, description="`Server.busy_state`. None, если сервер не найден.")
+    busy_service_name: str | None = Field(default=None, description="Имя сервиса-держателя брони, если есть.")
+    ping_reachable: bool | None = Field(default=None, description="Последний живой сигнал ping. None — проб ещё не было.")
+    ping_checked_at: datetime | None = Field(default=None, description="Момент последнего ping-замера (UTC).")
+
+
+class ServerBatchStatusResponse(BaseModel):
+    """Ответ POST /internal/servers/batch-status."""
+
+    servers: list[ServerStatusItem] = Field(description="Один элемент на каждый запрошенный server_id, в любом порядке.")

@@ -168,6 +168,19 @@ class Settings(BaseSettings):
         ),
     )
 
+    pool_overview_ping_stale_seconds: int = Field(
+        default=900,
+        ge=1,
+        alias="POOL_OVERVIEW_PING_STALE_SECONDS",
+        description=(
+            "Порог свежести `ping_checked_at` для обзора пула (§F плана "
+            "2026-09-11). Server_worker пингует стенды раз в несколько минут "
+            "(дефолт частого power-sweep — 5 минут); если последний замер "
+            "старше порога либо его не было вовсе, стенд показывается "
+            "«Нет данных», а не выдуманным «недоступен»/«готов»."
+        ),
+    )
+
     # ── Secret service (reveal Jira/Zephyr/Confluence-кред department_integration_settings, §6) ─
 
     secret_service_url: str = Field(

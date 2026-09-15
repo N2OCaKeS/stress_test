@@ -1,17 +1,22 @@
 /**
- * «Рабочая зона» тестирования — список стендов пула + агрегированный
- * дашборд + панель prepare/testenv. Три визуальных концепта одного и того
- * же списка стендов (карточки/полоски/очереди) сохранены как есть — это
+ * «Рабочая зона» тестирования — обзор пула (§F плана 2026-09-11) + список
+ * стендов + панель prepare/testenv. Три визуальных концепта одного и того же
+ * списка стендов (карточки/полоски/очереди) сохранены как есть — это
  * материал для согласования с руководителем, какой вид удобнее для
  * повседневной работы; окончательный выбор владелец сделает позже.
  *
- * Источник стендов — `testing_service` (`listTestStands`/`getTestStand`,
- * живая карточка сервера приходит вложенной в ответ `getTestStand`). Пул
- * ещё не отдаёт отдельную телеметрию загрузки (CPU/RAM/температура) и
- * полную историю очереди на стенд — это будущие волны; до появления
- * реального эндпоинта нагрузка на дашборде — детерминированная заглушка
- * (см. `placeholderMetrics`), а очередь строится из единственного активного
- * элемента (`getCurrentQueueItem`), а не полной истории. В mock-режиме
+ * Обзор пула (`PoolOverviewPanel`) — реальные агрегаты `testing_service`
+ * (`GET /pool-overview`): очередь/исходы по последней попытке логического
+ * теста и статусы стендов (восстановление/недоступность/тест/готовность) из
+ * живого ping/busy server_service. Заменяет прежний синтетический
+ * `FleetDashboard` (детерминированные CPU/RAM-заглушки, `placeholderMetrics`)
+ * — тот остаётся только под список стендов ниже, у которого своя телеметрия
+ * пока не появилась.
+ *
+ * Источник стендов ниже — `testing_service` (`listTestStands`/`getTestStand`,
+ * живая карточка сервера приходит вложенной в ответ `getTestStand`); очередь
+ * стенда строится из единственного активного элемента
+ * (`getCurrentQueueItem`), а не полной истории. В mock-режиме
  * (`VITE_USE_MOCK_AUTH=true`) страница по-прежнему работает на demo-данных
  * `_shared.tsx`, как и раньше.
  */
@@ -20,26 +25,27 @@ import {
   Activity,
   AlertTriangle,
   BarChart3,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   CircleDot,
   Cpu,
   ExternalLink,
   Gauge,
-  HardDrive,
+  HelpCircle,
   LayoutGrid,
   ListChecks,
   ListTree,
-  MemoryStick,
   Play,
   RefreshCcw,
+  RotateCw,
   Server,
   Square,
   Thermometer,
   Trash2,
 } from "lucide-react";
 import { LaunchRunModal, type RunsState } from "./runs";
-import { Dropdown } from "@/components/ui/Dropdown";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
 import {
   Counter,
   EmptySearch,
@@ -49,7 +55,6 @@ import {
   LogViewerModal,
   MetaRow,
   OS_VERSION_IDS as RC_IDS,
-  Sparkline,
   Stat,
   StatusBadge,
   STANDS,
@@ -78,11 +83,16 @@ import {
 } from "@/api/testing/testStands";
 import type {
   QueueItemSummary,
+  TestRun,
   TestStand,
 } from "@/api/testing/types";
 import { listOsVersions } from "@/api/server/osVersions";
-import { getHostDiskUsage } from "@/api/server/misc";
-import type { HostDiskUsageResponse } from "@/api/server/types";
+import { getPoolOverview } from "@/api/testing/poolOverview";
+import type {
+  PoolOverviewContext,
+  PoolOverviewResponse,
+  PoolStandStatus,
+} from "@/api/testing/types";
 
 type ConceptId = "cards" | "strips" | "queue";
 type LaunchModal = "test" | "run" | null;
@@ -208,23 +218,6 @@ function mapLiveStands(data: LiveStandData[], osNameById: Map<string, string>): 
   });
 }
 
-const STORAGE_LABELS: Record<string, string> = {
-  "/": "Системный диск",
-  "/srv/ftp": "FTP-хранилище",
-  "/home/partimag": "Partimag (снимки ACS)",
-};
-
-/** Хранилище хоста платформы (`getHostDiskUsage`) в форме, ожидаемой виджетом «Хранилище пула». */
-function storageStatsFromDisk(data: HostDiskUsageResponse | null): { label: string; usedGb: number; totalGb: number }[] {
-  return (data?.paths ?? [])
-    .filter((path) => path.available && path.used_gb != null && path.total_gb != null)
-    .map((path) => ({
-      label: STORAGE_LABELS[path.path] ?? path.path,
-      usedGb: Math.round(path.used_gb as number),
-      totalGb: Math.round(path.total_gb as number),
-    }));
-}
-
 export function TestingOverview({ runsState }: { runsState: RunsState }) {
   const mockMode = useMockMode();
   const [concept, setConcept] = useState<ConceptId>("cards");
@@ -237,7 +230,6 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
 
   const liveStandsQuery = useQuery(fetchLiveStands, [], { enabled: !mockMode });
   const osVersionsQuery = useQuery(() => listOsVersions({ limit: 200 }), [], { enabled: !mockMode });
-  const hostDiskQuery = useQuery(() => getHostDiskUsage(), [], { enabled: !mockMode });
 
   const osNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -245,10 +237,6 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
     return map;
   }, [osVersionsQuery.data]);
   const rcOptions = mockMode ? RC_IDS : (osVersionsQuery.data?.items.map((v) => v.name) ?? []);
-  // Число прогонов — общее состояние с вкладкой «Прогоны» (`useRunsState`,
-  // всегда живое, без mock-ветки — см. её докстринг), переиспользуем как есть.
-  const totalRuns = runsState.total;
-  const storageStats = mockMode ? STORAGE_STATS : storageStatsFromDisk(hostDiskQuery.data ?? null);
 
   // Живые стенды подгружаются один раз при первом ответе — дальше страница
   // управляет ими локально (та же модель, что и demo-режим), чтобы не сбивать
@@ -338,10 +326,10 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
           <Button size="sm" onClick={liveStandsQuery.refetch}>Повторить</Button>
         </div>
       )}
-      <FleetDashboard
-        stands={stands}
-        totalRuns={totalRuns}
-        storageStats={storageStats}
+      <PoolOverviewPanel
+        mockMode={mockMode}
+        demoStands={mockMode ? stands : undefined}
+        runs={runsState.runs}
         open={dashboardOpen}
         onToggle={() => setDashboardOpen((v) => !v)}
       />
@@ -452,35 +440,111 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
   );
 }
 
-// ── дашборд пула ────────────────────────────────────────────────────────────
+// ── обзор пула (§F плана 2026-09-11) ────────────────────────────────────────
 
-const STORAGE_STATS = [
-  { label: "Системный диск", usedGb: 640, totalGb: 960 },
-  { label: "FTP-хранилище", usedGb: 3800, totalGb: 8000 },
-  { label: "Partimag (снимки ACS)", usedGb: 5200, totalGb: 6000 },
+const POOL_STATUS_META: Record<PoolStandStatus, { label: string; icon: typeof Activity; badge: "ok" | "warn" | "danger" | "info" | "neutral" }> = {
+  recovering: { label: "Восстанавливается", icon: RotateCw, badge: "warn" },
+  unreachable: { label: "Недоступен", icon: CircleDot, badge: "danger" },
+  testing: { label: "Тест идёт", icon: Activity, badge: "info" },
+  ready: { label: "Готов", icon: CheckCircle2, badge: "ok" },
+  no_data: { label: "Нет данных", icon: HelpCircle, badge: "neutral" },
+};
+
+const POOL_STATUS_ORDER: PoolStandStatus[] = ["recovering", "unreachable", "testing", "ready", "no_data"];
+
+/** `Stat`-совместимый (только ok/warn/danger/undefined) цвет для карточки статуса стенда. */
+const POOL_STATUS_STAT_KIND: Record<PoolStandStatus, "ok" | "warn" | "danger" | undefined> = {
+  recovering: "warn",
+  unreachable: "danger",
+  testing: undefined,
+  ready: "ok",
+  no_data: undefined,
+};
+
+/** Обзор пула из demo-стендов `_shared.tsx` — то же, что реальный ответ, для mock-режима. */
+function demoPoolOverview(stands: Stand[]): PoolOverviewResponse {
+  const toPoolStatus: Record<StandStatus, PoolStandStatus> = {
+    testing: "testing", manual: "ready", idle: "ready", offline: "unreachable",
+  };
+  const counts: Record<PoolStandStatus, number> = { recovering: 0, unreachable: 0, testing: 0, ready: 0, no_data: 0 };
+  let remaining = 0, running = 0, succeeded = 0, failed = 0;
+  const now = new Date().toISOString();
+  const standRows = stands.map((s) => {
+    const status = toPoolStatus[s.status];
+    counts[status] += 1;
+    const stats = queueStats(s.queue);
+    remaining += stats.pending;
+    running += stats.running;
+    succeeded += stats.done;
+    failed += stats.failed;
+    return {
+      stand_id: String(s.id), server_id: s.name, status,
+      busy_state: s.status, busy_service_name: s.status === "testing" ? "testing_service" : null,
+      ping_reachable: s.status !== "offline", ping_checked_at: now,
+    };
+  });
+  return {
+    context: "all", test_run_id: null, test_run: null,
+    remaining, running, succeeded, failed,
+    stands: standRows, stand_status_counts: counts, generated_at: now,
+  };
+}
+
+const POOL_CONTEXTS: { id: PoolOverviewContext; label: string }[] = [
+  { id: "all", label: "Все задания" },
+  { id: "run", label: "Выбранный прогон" },
+  { id: "standalone", label: "Одиночное тестирование" },
 ];
 
-function FleetDashboard({
-  stands,
-  totalRuns,
-  storageStats,
+/**
+ * Обзор пула с нуля (§F плана 2026-09-11) — реальные агрегаты `testing_service`
+ * (`GET /pool-overview`), не синтетические CPU/RAM-заглушки прежнего
+ * `FleetDashboard`. Три независимых блока: общая очередь (осталось/выполняется),
+ * исходы по последней попытке логического теста (успех/провал), и статусы
+ * стендов с приоритетом восстановление → недоступен → тест идёт → готов
+ * («нет данных» — когда ping не измерялся или устарел, не выдуманный offline).
+ *
+ * Поллинг раз в 15с держит числа свежими без ручного обновления после
+ * старта/завершения/отмены/retry задания; ручная кнопка «Обновить» — для
+ * немедленной проверки.
+ */
+function PoolOverviewPanel({
+  mockMode,
+  demoStands,
+  runs,
   open,
   onToggle,
 }: {
-  stands: Stand[];
-  totalRuns: number;
-  storageStats: { label: string; usedGb: number; totalGb: number }[];
+  mockMode: boolean;
+  demoStands?: Stand[];
+  runs: TestRun[];
   open: boolean;
   onToggle: () => void;
 }) {
-  const online = stands.filter((s) => s.status !== "offline");
-  const avgCpu = Math.round(
-    online.reduce((sum, s) => sum + s.metrics.cpuUser + s.metrics.cpuSystem, 0) / (online.length || 1),
+  const [context, setContext] = useState<PoolOverviewContext>("all");
+  const [testRunId, setTestRunId] = useState<string>("");
+
+  const overviewQuery = useQuery(
+    () => getPoolOverview({ context, test_run_id: context === "run" ? testRunId : undefined }),
+    [context, testRunId],
+    { enabled: !mockMode && (context !== "run" || !!testRunId), keepPreviousDataOnError: true },
   );
-  const avgRam = Math.round(online.reduce((sum, s) => sum + s.metrics.ram, 0) / (online.length || 1));
-  const failed24h = stands.reduce((sum, s) => sum + s.queue.filter((q) => q.state === "failed").length, 0);
-  const busyStands = stands.filter((s) => s.status === "testing").length;
-  const offlineStands = stands.filter((s) => s.status === "offline").length;
+
+  useEffect(() => {
+    if (mockMode || !open) return;
+    const timer = setInterval(overviewQuery.refetch, 15000);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mockMode, open, context, testRunId]);
+
+  const overview: PoolOverviewResponse | undefined = mockMode
+    ? demoPoolOverview(demoStands ?? [])
+    : overviewQuery.data;
+
+  const runOptions: DropdownOption[] = runs.map((r) => ({
+    value: r.id,
+    label: `${r.os_version_id} · ${r.kernel} · ${r.mode} · ${r.id.slice(0, 10)}`,
+  }));
 
   return (
     <div className="surface border border-token rounded overflow-hidden">
@@ -488,84 +552,141 @@ function FleetDashboard({
         <div className="flex items-center gap-2">
           <Gauge className="w-4 h-4 text-accent" />
           <span className="font-semibold">Обзор пула</span>
-          <span className="text-xs text-dim">агрегированные показатели по всем стендам</span>
+          <span className="text-xs text-dim">очередь, исходы и статусы стендов — реальные данные testing_service</span>
         </div>
         {open ? <ChevronDown className="w-4 h-4 text-dim" /> : <ChevronRight className="w-4 h-4 text-dim" />}
       </button>
       {open && (
         <div className="border-t border-token p-4 grid gap-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-            <Stat title="Средний CPU" value={`${avgCpu}%`} icon={Cpu} kind={avgCpu >= 70 ? "warn" : "ok"} />
-            <Stat title="Средний RAM" value={`${avgRam}%`} icon={MemoryStick} kind={avgRam >= 70 ? "warn" : "ok"} />
-            <Stat title="Упало за 24ч" value={String(failed24h)} icon={AlertTriangle} kind={failed24h > 0 ? "danger" : "ok"} />
-            <Stat title="Всего прогонов" value={String(totalRuns)} icon={ListChecks} />
-            <Stat title="В тесте" value={String(busyStands)} icon={Activity} />
-            <Stat title="Недоступно" value={String(offlineStands)} icon={CircleDot} kind={offlineStands > 0 ? "danger" : "ok"} />
-          </div>
-
-          <div>
-            <div className="text-xs text-dim mb-2 flex items-center gap-1">
-              <HardDrive className="w-3.5 h-3.5" /> Хранилище пула
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {storageStats.map((s) => (
-                <div key={s.label} className="surface-2 border border-token rounded p-3">
-                  <div className="text-xs text-dim mb-1.5">{s.label}</div>
-                  <div className="progress-wide mb-1.5">
-                    <span style={{ width: `${Math.round((s.usedGb / s.totalGb) * 100)}%` }} />
-                  </div>
-                  <div className="text-xs mono">{s.usedGb} / {s.totalGb} GB</div>
-                </div>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="surface-2 border border-token rounded p-1 flex items-center gap-1 flex-wrap">
+              {POOL_CONTEXTS.map((item) => (
+                <Button
+                  key={item.id}
+                  type="button"
+                  size="sm"
+                  variant={context === item.id ? "primary" : "default"}
+                  onClick={() => setContext(item.id)}
+                >
+                  {item.label}
+                </Button>
               ))}
             </div>
-          </div>
-
-          <div>
-            <div className="text-xs text-dim mb-2">CPU по стендам, последние замеры</div>
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2">
-              {online.map((s) => (
-                <div key={s.id} className="surface-2 border border-token rounded p-2">
-                  <div className="flex items-center justify-between text-xs mb-1 gap-2">
-                    <span className="truncate">{s.name}</span>
-                    <span className="mono text-dim shrink-0">{s.metrics.cpuUser + s.metrics.cpuSystem}%</span>
-                  </div>
-                  <Sparkline values={s.metrics.history} className="w-full h-5 text-accent" />
-                </div>
-              ))}
+            <div className="flex items-center gap-3 flex-wrap">
+              {context === "run" && (
+                <Dropdown
+                  mode="single"
+                  label="Прогон"
+                  options={runOptions}
+                  value={testRunId}
+                  onChange={setTestRunId}
+                  placeholder="Выберите прогон…"
+                />
+              )}
+              {!mockMode && (
+                <>
+                  {overview && (
+                    <span className="text-xs text-dim">
+                      Обновлено {new Date(overview.generated_at).toLocaleTimeString()}
+                    </span>
+                  )}
+                  <Button size="sm" type="button" className="inline-flex items-center gap-2" onClick={overviewQuery.refetch}>
+                    <RefreshCcw className="w-3.5 h-3.5" /> Обновить
+                  </Button>
+                </>
+              )}
             </div>
           </div>
 
-          <div className="surface-2 border border-token rounded overflow-hidden">
-            <table className="mini">
-              <thead>
-                <tr>
-                  <th>Стенд</th>
-                  <th>Статус</th>
-                  <th>CPU</th>
-                  <th>RAM</th>
-                  <th>Темп.</th>
-                  <th>Очередь</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stands.map((s) => {
-                  const stats = queueStats(s.queue);
-                  return (
-                    <tr key={s.id}>
-                      <td className="mono">{s.name}</td>
-                      <td><StatusBadge status={s.status} /></td>
-                      <td className="mono">{s.metrics.cpuUser + s.metrics.cpuSystem}%</td>
-                      <td className="mono">{s.metrics.ram}%</td>
-                      <td className="mono">{s.status === "offline" ? "—" : `${s.metrics.cpuTemp}°C`}</td>
-                      <td className="text-xs text-dim">
-                        ok {stats.done} · fail {stats.failed} · в очереди {stats.pending + stats.running}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {!mockMode && context === "run" && !testRunId && (
+            <div className="text-sm text-dim">Выберите прогон, чтобы увидеть его очередь и исходы.</div>
+          )}
+          {!mockMode && overviewQuery.error && (
+            <div role="alert" className="alert alert-danger flex items-center gap-3 text-sm">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span className="flex-1">{apiErrMsg(overviewQuery.error, "Не удалось загрузить обзор пула")}</span>
+              <Button size="sm" onClick={overviewQuery.refetch}>Повторить</Button>
+            </div>
+          )}
+
+          {overview && context === "run" && overview.test_run && (
+            <div className="text-xs text-dim">
+              РЦ {overview.test_run.os_version_id} · ядро {overview.test_run.kernel} · режим {overview.test_run.mode} ·
+              статус {overview.test_run.status} · id {overview.test_run.id}
+            </div>
+          )}
+
+          {overview && (
+            <>
+              <div>
+                <div className="text-xs text-dim mb-2">Общая очередь</div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <Stat title="Осталось выполнить" value={String(overview.remaining)} icon={ListChecks} kind={overview.remaining > 0 ? "warn" : "ok"} />
+                  <Stat title="Выполняются" value={String(overview.running)} icon={Activity} kind={overview.running > 0 ? "warn" : "ok"} />
+                  <Stat title="Успешно" value={String(overview.succeeded)} icon={CheckCircle2} kind="ok" />
+                  <Stat title="Упало" value={String(overview.failed)} icon={AlertTriangle} kind={overview.failed > 0 ? "danger" : "ok"} />
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs text-dim mb-2">Серверы пула</div>
+                <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
+                  {POOL_STATUS_ORDER.map((status) => {
+                    const meta = POOL_STATUS_META[status];
+                    return (
+                      <Stat
+                        key={status}
+                        title={meta.label}
+                        value={String(overview.stand_status_counts[status] ?? 0)}
+                        icon={meta.icon}
+                        kind={POOL_STATUS_STAT_KIND[status]}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              {overview.stands.length > 0 && (
+                <div className="surface-2 border border-token rounded overflow-hidden">
+                  <table className="mini">
+                    <thead>
+                      <tr>
+                        <th>Стенд</th>
+                        <th>Статус</th>
+                        <th>Ping</th>
+                        <th>Занятость</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...overview.stands]
+                        .sort((a, b) => POOL_STATUS_ORDER.indexOf(a.status) - POOL_STATUS_ORDER.indexOf(b.status))
+                        .map((s) => {
+                          const meta = POOL_STATUS_META[s.status];
+                          const Icon = meta.icon;
+                          return (
+                            <tr key={s.stand_id}>
+                              <td className="mono">{s.server_id}</td>
+                              <td>
+                                <Badge kind={meta.badge} className="inline-flex items-center gap-1">
+                                  <Icon className="w-3 h-3" />
+                                  {meta.label}
+                                </Badge>
+                              </td>
+                              <td className="text-xs text-dim">
+                                {s.ping_checked_at
+                                  ? `${s.ping_reachable ? "отвечает" : "не отвечает"} · ${new Date(s.ping_checked_at).toLocaleTimeString()}`
+                                  : "нет данных"}
+                              </td>
+                              <td className="text-xs text-dim">{s.busy_service_name ?? (s.busy_state ?? "—")}</td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>

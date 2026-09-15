@@ -330,6 +330,24 @@ async def start_prepare_for_test(
     return await _post_internal(f"{_INTERNAL_SERVERS_PATH}/{server_id}/prepare-for-test", body)
 
 
+async def get_servers_status_batch(server_ids: list[str]) -> dict[str, dict]:
+    """POST /internal/servers/batch-status — ping/busy пачкой для обзора пула.
+
+    Один вызов на весь пул стендов вместо N запросов на N стендов (§F плана
+    2026-09-11 — «Обзор пула»). Отсутствующий/удалённый на стороне
+    server_service сервер не роняет весь обзор: просто не попадает в
+    результат, `services/pool_overview.py` трактует пропуск как «нет данных».
+    """
+    if not server_ids:
+        return {}
+    body = await _post_internal(f"{_INTERNAL_SERVERS_PATH}/batch-status", {"server_ids": server_ids})
+    return {
+        row["server_id"]: row
+        for row in body.get("servers") or []
+        if row.get("found")
+    }
+
+
 async def get_connection_info(server_id: str) -> dict:
     """GET /internal/servers/{id}/connection-info — IP стенда для SSH-исполнения теста.
 

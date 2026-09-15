@@ -140,6 +140,54 @@ async def has_successor(db: AsyncSession, item_id: str) -> bool:
     return (await db.execute(stmt)).scalar_one_or_none() is not None
 
 
+async def aggregate_pool_overview(
+    db: AsyncSession, department_id: str, *, kind: str,
+    test_run_id: str | None = None,
+    created_from: datetime | None = None, created_until: datetime | None = None,
+) -> dict[str, int]:
+    """Считает очередь/исходы обзора пула (§F плана 2026-09-11) одним запросом.
+
+    `remaining`/`running` не фильтруются по "последней попытке" — только
+    терминальный item может быть перекрыт retry'ем (см. контракт §B1), значит
+    активный (`queued`/`preparing`/`ready`/`running`) всегда и есть последняя
+    попытка своей цепочки. `succeeded`/`failed` — наоборот, только по
+    последней попытке (`is_current`), иначе перезапущенный упавший тест
+    заодно посчитался бы дважды.
+    """
+    successor = aliased(QueueItem)
+    is_current = ~select(successor.id).where(successor.retry_of_id == QueueItem.id).exists()
+    stmt = (
+        select(QueueItem.state, is_current)
+        .join(TestStand, TestStand.id == QueueItem.stand_id)
+        .where(TestStand.department_id == department_id)
+    )
+    if kind == "standalone":
+        stmt = stmt.where(QueueItem.test_run_id.is_(None))
+    elif kind == "campaign":
+        stmt = stmt.where(QueueItem.test_run_id.is_not(None))
+    if test_run_id is not None:
+        stmt = stmt.where(QueueItem.test_run_id == test_run_id)
+    if created_from is not None:
+        stmt = stmt.where(QueueItem.created_at >= created_from)
+    if created_until is not None:
+        stmt = stmt.where(QueueItem.created_at < created_until)
+
+    remaining = 0
+    running = 0
+    succeeded = 0
+    failed = 0
+    for state, current in await db.execute(stmt):
+        if state in (QueueItemState.QUEUED, QueueItemState.PREPARING, QueueItemState.READY):
+            remaining += 1
+        elif state == QueueItemState.RUNNING:
+            running += 1
+        elif current and state == QueueItemState.SUCCEEDED:
+            succeeded += 1
+        elif current and state == QueueItemState.FAILED:
+            failed += 1
+    return {"remaining": remaining, "running": running, "succeeded": succeeded, "failed": failed}
+
+
 async def list_for_department(
     db: AsyncSession, department_id: str, *, kind: str,
     test_run_id: str | None, limit: int, offset: int,

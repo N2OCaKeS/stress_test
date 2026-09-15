@@ -30,7 +30,10 @@ from src.core.constants import (
 from src.dependencies.auth import require_internal_caller
 from src.dependencies.db import get_db
 from src.schemas.internal import (
+    ServerBatchStatusRequest,
+    ServerBatchStatusResponse,
     ServerConnectionInfoResponse,
+    ServerStatusItem,
     ServiceAcquireRequest,
     ServiceBusyStatusRequest,
     ServiceReservationResponse,
@@ -179,3 +182,38 @@ async def get_connection_info(
     """
     server = await server_svc.get_connection_info_for_service(db, server_id=server_id)
     return ServerConnectionInfoResponse(server_id=server.id, host=str(server.ip_address))
+
+
+@router.post(
+    "/batch-status",
+    response_model=ServerBatchStatusResponse,
+    responses={401: _COMMON_RESPONSES[401], 403: _COMMON_RESPONSES[403]},
+)
+async def batch_status(
+    body: ServerBatchStatusRequest,
+    db: AsyncSession = Depends(get_db),
+    caller: str = Depends(require_internal_caller(*_ALLOWED_IDENTITIES)),
+) -> ServerBatchStatusResponse:
+    """Ping/busy пачкой для обзора пула (`testing_service`), без per-server round-trip.
+
+    Не гейтит видимость по отделу — тот же безведомственный s2s-канал, что и
+    остальные эндпоинты этого роутера (см. module docstring); вызывающий сам
+    ограничивает список своими стендами. Отсутствующий id возвращается с
+    `found=false`, а не выбрасывает 404 на весь батч — один снесённый сервер
+    не должен ронять весь обзор пула.
+
+    Audit не эмитится — чистое чтение существующих ping/busy сигналов, ничего
+    не меняет и не раскрывает чувствительных данных.
+    """
+    found = await server_svc.get_batch_status_for_service(db, server_ids=body.server_ids)
+    return ServerBatchStatusResponse(servers=[
+        ServerStatusItem(
+            server_id=server_id,
+            found=server_id in found,
+            busy_state=found[server_id].busy_state if server_id in found else None,
+            busy_service_name=found[server_id].busy_service_name if server_id in found else None,
+            ping_reachable=found[server_id].ping_reachable if server_id in found else None,
+            ping_checked_at=found[server_id].ping_checked_at if server_id in found else None,
+        )
+        for server_id in body.server_ids
+    ])

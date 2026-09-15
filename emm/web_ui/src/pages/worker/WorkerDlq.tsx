@@ -23,9 +23,11 @@ import {
   useTaskList,
 } from "./workerLive";
 import { Button } from "@/components/ui/Button";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 
 export function WorkerDlq() {
   const { persona } = usePersona();
+  const { notImplemented } = useConfirm();
   const [params, setParams] = useSearchParams();
   const selectedId = params.get("id");
 
@@ -82,8 +84,7 @@ export function WorkerDlq() {
           <div className="absolute top-5 right-5 z-10">
             <Button
               className="flex items-center gap-1"
-              disabled
-              title="retry-from-DLQ не реализован (нет backend-поддержки)"
+              onClick={() => notImplemented({ title: "Retry из DLQ в разработке" })}
             >
               <RotateCcw className="w-4 h-4" /> Retry
             </Button>

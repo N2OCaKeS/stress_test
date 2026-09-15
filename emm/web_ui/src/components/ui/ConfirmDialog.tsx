@@ -51,6 +51,12 @@ export interface ConfirmApi {
   confirm: (opts: ConfirmOptions) => Promise<boolean>;
   prompt: (opts: PromptOptions) => Promise<{ ok: boolean; reason: string }>;
   alert: (opts: AlertOptions) => Promise<void>;
+  /**
+   * Заглушка для незаконченной функциональности — единая точка вместо
+   * ad-hoc disabled-кнопок/тултипов/тостов по всему приложению. На время
+   * разработки цепляется на любой элемент, чей backend/фича ещё не готовы.
+   */
+  notImplemented: (opts?: { title?: string; message?: string }) => Promise<void>;
 }
 
 const ConfirmContext = createContext<ConfirmApi | undefined>(undefined);
@@ -130,7 +136,19 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const api: ConfirmApi = { confirm, prompt, alert };
+  const notImplemented = useCallback(
+    (opts?: { title?: string; message?: string }) =>
+      alert({
+        title: opts?.title ?? "Функционал в разработке",
+        message:
+          opts?.message ??
+          "Эта возможность ещё не реализована и появится в одном из следующих обновлений.",
+        okLabel: "Понятно",
+      }),
+    [alert],
+  );
+
+  const api: ConfirmApi = { confirm, prompt, alert, notImplemented };
 
   const open = state !== null;
   const isAlert = state?.kind === "alert";

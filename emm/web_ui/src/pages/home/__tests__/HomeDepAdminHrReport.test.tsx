@@ -86,7 +86,7 @@ function renderHome() {
   );
 }
 
-describe("HomeDepAdmin — HR-отчёт по активности", () => {
+describe("HomeDepAdmin — отчёт по активностям сотрудников отдела", () => {
   beforeEach(() => {
     import.meta.env.VITE_USE_MOCK_AUTH = "false";
     listUsersByDepartmentMock.mockReset().mockResolvedValue({ items: [], total: 0 });
@@ -152,18 +152,21 @@ describe("HomeDepAdmin — HR-отчёт по активности", () => {
     import.meta.env.VITE_USE_MOCK_AUTH = "true";
   });
 
-  it("показывает блок «HR-отчёт по активности» с кнопкой генерации и историей", async () => {
+  it("показывает блок «Отчёт по активностям сотрудников отдела» с кнопкой генерации и историей", async () => {
     renderHome();
-    expect(await screen.findByText("HR-отчёт по активности")).toBeInTheDocument();
+    expect(await screen.findByText("Отчёт по активностям сотрудников отдела")).toBeInTheDocument();
     expect(await screen.findByText(/августа 2026/)).toBeInTheDocument();
     expect(screen.getByText("готов")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Открыть в Confluence/ })).toHaveAttribute(
       "href",
       "https://confluence.astralinux.ru/pages/viewpage.action?pageId=12345",
     );
+    // Остальные 11 месяцев из последних 12 не сгенерированы — видно явно,
+    // а не молча пропущены, как было бы при показе только истории.
+    expect(screen.getAllByText("не создан").length).toBe(11);
   });
 
-  it("клик по «Сгенерировать HR-отчёт» зовёт generateDepartmentActivityReport с department_id и периодом", async () => {
+  it("клик по «Сгенерировать отчёт» зовёт generateDepartmentActivityReport с department_id и периодом", async () => {
     generateDepartmentActivityReportMock.mockResolvedValue({
       id: "rep_2",
       department_id: "dep_1",
@@ -175,9 +178,9 @@ describe("HomeDepAdmin — HR-отчёт по активности", () => {
       error: null,
     });
     renderHome();
-    await screen.findByText("HR-отчёт по активности");
+    await screen.findByText("Отчёт по активностям сотрудников отдела");
 
-    fireEvent.click(screen.getByRole("button", { name: /Сгенерировать HR-отчёт/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Сгенерировать отчёт/ }));
 
     await waitFor(() => expect(generateDepartmentActivityReportMock).toHaveBeenCalledTimes(1));
     expect(generateDepartmentActivityReportMock).toHaveBeenCalledWith(
@@ -191,9 +194,9 @@ describe("HomeDepAdmin — HR-отчёт по активности", () => {
   it("показывает сообщение об ошибке, если генерация упала", async () => {
     generateDepartmentActivityReportMock.mockRejectedValue(new Error("boom"));
     renderHome();
-    await screen.findByText("HR-отчёт по активности");
+    await screen.findByText("Отчёт по активностям сотрудников отдела");
 
-    fireEvent.click(screen.getByRole("button", { name: /Сгенерировать HR-отчёт/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Сгенерировать отчёт/ }));
 
     expect(await screen.findByText("boom")).toBeInTheDocument();
   });

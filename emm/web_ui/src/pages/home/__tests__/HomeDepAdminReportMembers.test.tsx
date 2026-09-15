@@ -113,7 +113,7 @@ function member(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-describe("HomeDepAdmin — сотрудники отдела для HR-отчёта (department_report_members)", () => {
+describe("HomeDepAdmin — сотрудники отдела для отчёта по активностям (department_report_members)", () => {
   beforeEach(() => {
     import.meta.env.VITE_USE_MOCK_AUTH = "false";
     listDepartmentReportMembersMock.mockReset().mockResolvedValue({

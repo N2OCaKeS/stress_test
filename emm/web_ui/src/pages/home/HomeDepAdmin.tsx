@@ -604,8 +604,10 @@ function HrReportCard({ departmentId }: { departmentId: string }) {
   const [generating, setGenerating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Лимит покрывает все 12 показанных месяцев с запасом на повторные попытки
+  // (падение + повтор того же периода — новая строка, не upsert, см. модель).
   const historyQ = useQuery(
-    () => listDepartmentActivityReports(departmentId, { limit: 10 }),
+    () => listDepartmentActivityReports(departmentId, { limit: 36 }),
     [departmentId],
   );
   const integrationQ = useQuery(
@@ -628,13 +630,22 @@ function HrReportCard({ departmentId }: { departmentId: string }) {
   };
 
   const reports = historyQ.data?.items ?? [];
+  // Список отсортирован backend'ом по generated_at DESC (см. репозиторий) —
+  // первое вхождение периода при обходе сверху вниз и есть последняя попытка.
+  const latestByPeriod = useMemo(() => {
+    const map = new Map<string, DepartmentActivityReport>();
+    for (const report of reports) {
+      if (!map.has(report.period)) map.set(report.period, report);
+    }
+    return map;
+  }, [reports]);
 
   return (
     <div className="card">
       <div className="flex items-center justify-between gap-3 mb-3">
         <h3 className="font-semibold flex items-center gap-2">
           <FileBarChart className="w-4 h-4 text-accent" />
-          HR-отчёт по активности
+          Отчёт по активностям сотрудников отдела
         </h3>
         <span className="text-xs text-dim">testing_service</span>
       </div>
@@ -658,21 +669,32 @@ function HrReportCard({ departmentId }: { departmentId: string }) {
           onClick={handleGenerate}
           disabled={generating}
         >
-          {generating ? "Генерация…" : "Сгенерировать HR-отчёт"}
+          {generating ? "Генерация…" : "Сгенерировать отчёт"}
         </Button>
       </div>
       {errorMsg && <div className="text-xs text-danger mb-3">{errorMsg}</div>}
 
-      <div className="text-xs text-dim mb-2">История генераций</div>
+      <div className="text-xs text-dim mb-2">
+        Отчёты за последние 12 месяцев — какие уже есть, каких ещё нет
+      </div>
       {historyQ.loading && reports.length === 0 ? (
         <div className="text-xs text-dim">Загрузка…</div>
-      ) : reports.length === 0 ? (
-        <div className="text-xs text-dim">Отчётов ещё не было.</div>
       ) : (
         <div className="grid gap-2">
-          {reports.map((report) => (
-            <HrReportRow key={report.id} report={report} confluenceBaseUrl={confluenceBaseUrl} />
-          ))}
+          {periodOptions.map(({ value }) => {
+            const report = latestByPeriod.get(value);
+            return report ? (
+              <HrReportRow key={value} report={report} confluenceBaseUrl={confluenceBaseUrl} />
+            ) : (
+              <div
+                key={value}
+                className="surface-2 border border-token rounded p-2 flex items-center justify-between gap-3 text-sm opacity-70"
+              >
+                <span className="font-medium">{periodLabel(value)}</span>
+                <span className="text-xs text-dim">не создан</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -732,8 +754,8 @@ const INTEGRATION_FIELDS: Array<{ key: string; label: string; placeholder?: stri
   { key: "bitbucket_repo_slug", label: "Bitbucket repo slug", placeholder: "my-repo" },
   { key: "jira_board_id", label: "Jira board id", placeholder: "42" },
   { key: "tempo_team_id", label: "Tempo team id", placeholder: "7" },
-  { key: "confluence_report_page_space", label: "Confluence space для HR-отчёта", placeholder: "DEPT" },
-  { key: "confluence_report_parent_page_title", label: "Родительская страница HR-отчёта", placeholder: "Отчёты по активности" },
+  { key: "confluence_report_page_space", label: "Confluence space для отчёта по активностям", placeholder: "DEPT" },
+  { key: "confluence_report_parent_page_title", label: "Родительская страница отчёта по активностям", placeholder: "Отчёты по активности" },
   { key: "stp_matrix_confluence_space", label: "Confluence space для СТП-матрицы", placeholder: "DEPTQA" },
   { key: "stp_matrix_confluence_root_page_title", label: "Корневая страница СТП-матрицы", placeholder: "Состав тестового прогона" },
   { key: "credential_id", label: "Credential id (Jira/Zephyr)", placeholder: "cred_...", mono: true },
@@ -797,7 +819,7 @@ function DepartmentIntegrationSettingsCard({ departmentId }: { departmentId: str
         <span className="text-xs text-dim">testing_service</span>
       </div>
       <div className="text-xs text-dim mb-3">
-        Нужны для генерации СТП (Zephyr), публикации СТП-матрицы и HR-отчёта отдела в Confluence. Сами токены/пароли
+        Нужны для генерации СТП (Zephyr), публикации СТП-матрицы и отчёта по активностям отдела в Confluence. Сами токены/пароли
         заводятся в <Link to="/secret/service" className="text-accent">сервисных учётных данных</Link>.
         Выберите нужные записи вашего отдела ниже.
       </div>
@@ -926,7 +948,7 @@ function DepartmentQueueSettingsCard({ departmentId }: { departmentId: string })
         <>
           <div className="flex flex-col gap-3 max-w-md">
             <Toggle
-              label="Повторять провалившийся прогон один раз"
+              label="Повторять провалившиеся тесты в прогоне"
               checked={retryEnabled}
               onChange={(e) => setRetryEnabled(e.target.checked)}
             />
@@ -941,7 +963,7 @@ function DepartmentQueueSettingsCard({ departmentId }: { departmentId: string })
             </label>
             <label className="flex flex-col gap-1 text-sm">
               <span className="field-label">
-                Расписание HR-отчёта
+                Расписание отчёта по активностям
                 <span className="text-dim text-xs ml-1">(планировщик ещё не реализован, значение только хранится)</span>
               </span>
               <input
@@ -986,7 +1008,7 @@ function DepartmentReportMembersCard({ departmentId }: { departmentId: string })
     if (
       !(await confirm({
         title: "Удалить сотрудника",
-        message: `Удалить ${member.display_name} из списка сотрудников для HR-отчёта?`,
+        message: `Удалить ${member.display_name} из списка сотрудников для отчёта по активностям?`,
         confirmLabel: "Удалить",
         danger: true,
       }))
@@ -994,7 +1016,7 @@ function DepartmentReportMembersCard({ departmentId }: { departmentId: string })
       return;
     try {
       await deleteDepartmentReportMember(departmentId, member.id);
-      toast.success(`${member.display_name} удалён из HR-отчёта`);
+      toast.success(`${member.display_name} удалён из отчёта по активностям`);
       membersQ.refetch();
     } catch (err) {
       toast.error(apiErrMsg(err, "Не удалось удалить сотрудника"));
@@ -1006,7 +1028,7 @@ function DepartmentReportMembersCard({ departmentId }: { departmentId: string })
       <div className="flex items-center justify-between gap-3 mb-3">
         <h3 className="font-semibold flex items-center gap-2">
           <Users className="w-4 h-4 text-accent" />
-          Сотрудники отдела для HR-отчёта
+          Сотрудники отдела для отчёта по активностям
         </h3>
         <Button
           variant="primary"

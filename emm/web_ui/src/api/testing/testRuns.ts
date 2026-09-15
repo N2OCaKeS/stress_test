@@ -15,6 +15,7 @@ import type {
   TestRunCreateRequest,
   TestRunCreateResponse,
   TestRunDetail,
+  TestRunPreviewResponse,
 } from "@/api/testing/types";
 
 const BASE = "/testing/v1";
@@ -30,6 +31,17 @@ export function createTestRun(
   body: TestRunCreateRequest,
 ): Promise<TestRunCreateResponse> {
   return apiPost<TestRunCreateResponse>(`${BASE}/test-runs`, body);
+}
+
+/**
+ * `POST /test-runs/preview` — тот же вход, что и `createTestRun`, но без
+ * побочных эффектов: показывает, какие тесты будут запущены, а какие
+ * пропущены и почему. `request_id` в теле, если передан, игнорируется.
+ */
+export function previewTestRun(
+  body: TestRunCreateRequest,
+): Promise<TestRunPreviewResponse> {
+  return apiPost<TestRunPreviewResponse>(`${BASE}/test-runs/preview`, body);
 }
 
 /** Параметры списка кампаний — пагинация + фильтры. */

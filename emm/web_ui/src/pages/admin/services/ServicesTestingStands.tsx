@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, KeyRound, Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, KeyRound, Loader2, Play, Plus, Trash2 } from "lucide-react";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
@@ -20,6 +20,7 @@ import {
 import type { TestStand, TestStandTestCredentials, TestStandUpdateRequest } from "@/api/testing/types";
 import { listServers } from "@/api/server/servers";
 import type { Server as InventoryServer } from "@/api/server/types";
+import { StandGroupLaunchModal } from "@/pages/testing/StandGroupLaunchModal";
 
 function asServerCard(server: TestStand["server"]) {
   return server as { display_name?: string; hostname?: string; ip_address?: string } | null;
@@ -61,6 +62,7 @@ function StandsAdminPanel({
   const [open, setOpen] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [credentialsStandId, setCredentialsStandId] = useState<string | null>(null);
+  const [groupLaunchStand, setGroupLaunchStand] = useState<TestStand | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   async function toggleField(stand: TestStand, field: "queue_enabled" | "is_active") {
@@ -177,6 +179,15 @@ function StandsAdminPanel({
                               size="sm"
                               disabled={rowBusy}
                               className="inline-flex items-center gap-1"
+                              onClick={() => setGroupLaunchStand(stand)}
+                            >
+                              <Play className="w-3.5 h-3.5" />
+                              Запустить все тесты стенда
+                            </Button>
+                            <Button
+                              size="sm"
+                              disabled={rowBusy}
+                              className="inline-flex items-center gap-1"
                               onClick={() => setCredentialsStandId(stand.id)}
                             >
                               <KeyRound className="w-3.5 h-3.5" />
@@ -209,6 +220,17 @@ function StandsAdminPanel({
       )}
       {credentialsStandId && (
         <TestStandCredentialsModal standId={credentialsStandId} onClose={() => setCredentialsStandId(null)} />
+      )}
+      {groupLaunchStand && (
+        <StandGroupLaunchModal
+          standId={groupLaunchStand.id}
+          standLabel={asServerCard(groupLaunchStand.server)?.display_name || asServerCard(groupLaunchStand.server)?.hostname || groupLaunchStand.server_id}
+          onClose={() => setGroupLaunchStand(null)}
+          onLaunched={(id) => {
+            setGroupLaunchStand(null);
+            toast.success(`Кампания ${id} запущена`);
+          }}
+        />
       )}
     </div>
   );

@@ -373,13 +373,39 @@ export type TestRunStatus =
   | "failed"
   | "partially_failed";
 
-/** Тело `POST /test-runs`. */
+/** Тело `POST /test-runs` (и `POST /test-runs/preview`, где `request_id` игнорируется). */
 export interface TestRunCreateRequest {
   os_version_id: string;
   mode: string;
   kernel?: string;
   test_run_stands: string[];
   final?: boolean;
+  /** Ключ идемпотентности: повтор с тем же значением и тем же телом вернёт ту же кампанию, с другим телом — 409 REQUEST_ID_CONFLICT. */
+  request_id?: string;
+}
+
+/** Что произойдёт с одним тестом кампании при постановке в очередь (`TestRunPreviewEntry.action`). */
+export type TestRunPreviewAction =
+  | "launch"
+  | "skip_debug_required"
+  | "skip_stand_inactive"
+  | "skip_not_in_stp";
+
+/** Один тест кампании до постановки в очередь — ответ `POST /test-runs/preview`. */
+export interface TestRunPreviewEntry {
+  stand_id: string;
+  test_id: string;
+  test_code: string;
+  test_name: string;
+  kernel: string;
+  action: TestRunPreviewAction | string;
+  reason: string | null;
+}
+
+/** Ответ `POST /test-runs/preview` — состав кампании без побочных эффектов. */
+export interface TestRunPreviewResponse {
+  stands_without_tests: string[];
+  entries: TestRunPreviewEntry[];
 }
 
 /** Один частичный провал постановки в очередь одного теста одного стенда кампании. */

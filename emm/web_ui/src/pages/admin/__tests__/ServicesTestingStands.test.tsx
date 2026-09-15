@@ -25,6 +25,20 @@ vi.mock("@/api/server/servers", () => ({
   listServers: (...a: unknown[]) => listServersMock(...a),
 }));
 
+const listOsVersionsMock = vi.fn();
+const resolveOsKernelsMock = vi.fn();
+vi.mock("@/api/server/osVersions", () => ({
+  listOsVersions: (...a: unknown[]) => listOsVersionsMock(...a),
+  resolveOsKernels: (...a: unknown[]) => resolveOsKernelsMock(...a),
+}));
+
+const previewTestRunMock = vi.fn();
+const createTestRunMock = vi.fn();
+vi.mock("@/api/testing/testRuns", () => ({
+  previewTestRun: (...a: unknown[]) => previewTestRunMock(...a),
+  createTestRun: (...a: unknown[]) => createTestRunMock(...a),
+}));
+
 import { ServicesTestingStands } from "@/pages/admin/services/ServicesTestingStands";
 
 function renderAdminStands() {
@@ -51,6 +65,18 @@ describe("ServicesTestingStands — управление стендами пул
     deleteTestStandMock.mockReset();
     getTestStandCredentialsMock.mockReset();
     listServersMock.mockReset();
+    listOsVersionsMock.mockReset();
+    resolveOsKernelsMock.mockReset();
+    previewTestRunMock.mockReset();
+    createTestRunMock.mockReset();
+
+    listOsVersionsMock.mockResolvedValue({
+      items: [{ id: "osv_1", name: "1.8.5", kernels: ["6.1"] }],
+      total: 1,
+      limit: 500,
+      offset: 0,
+    });
+    previewTestRunMock.mockResolvedValue({ stands_without_tests: [], entries: [] });
 
     listServersMock.mockResolvedValue({
       items: [{ id: "srv_2", hostname: "stand-02", display_name: "stand-02", ip_address: "10.177.103.202" }],
@@ -172,5 +198,85 @@ describe("ServicesTestingStands — управление стендами пул
     fireEvent.click(screen.getByRole("button", { name: "Показать" }));
     await waitFor(() => expect(getTestStandCredentialsMock).toHaveBeenCalledWith("ts_1", true));
     expect(await screen.findByText("s3cr3t")).toBeInTheDocument();
+  });
+
+  it("«Запустить все тесты стенда» открывает модалку и запрашивает предпросмотр по выбранному стенду", async () => {
+    previewTestRunMock.mockResolvedValue({
+      stands_without_tests: [],
+      entries: [
+        { stand_id: "ts_1", test_id: "t_1", test_code: "T1", test_name: "Тест один", kernel: "6.1", action: "launch", reason: null },
+        { stand_id: "ts_1", test_id: "t_2", test_code: "T2", test_name: "Тест два", kernel: "6.1", action: "skip_stand_inactive", reason: "Стенд неактивен" },
+      ],
+    });
+    renderAdminStands();
+    await screen.findAllByText("stand-live-01");
+
+    fireEvent.click(screen.getByRole("button", { name: /Запустить все тесты стенда/ }));
+    await screen.findByRole("heading", { name: "Запустить все тесты стенда" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Выберите РЦ" }));
+    fireEvent.click(await screen.findByRole("option", { name: "1.8.5" }));
+
+    await waitFor(() =>
+      expect(previewTestRunMock).toHaveBeenCalledWith({
+        os_version_id: "osv_1",
+        mode: "orel",
+        kernel: "6.1",
+        test_run_stands: ["ts_1"],
+        final: false,
+      }),
+    );
+    expect(await screen.findByText("будет запущен")).toBeInTheDocument();
+    expect(await screen.findByText("Стенд неактивен")).toBeInTheDocument();
+  });
+
+  it("«Запустить группу» вызывает createTestRun с test_run_stands=[standId] и request_id, «Готово» закрывает модалку", async () => {
+    previewTestRunMock.mockResolvedValue({
+      stands_without_tests: [],
+      entries: [
+        { stand_id: "ts_1", test_id: "t_1", test_code: "T1", test_name: "Тест один", kernel: "6.1", action: "launch", reason: null },
+      ],
+    });
+    createTestRunMock.mockResolvedValue({
+      id: "run_1",
+      os_version_id: "osv_1",
+      mode: "orel",
+      kernel: "6.1",
+      department_id: "dep_1",
+      test_run_stands: ["ts_1"],
+      status: "queued",
+      final: false,
+      created_at: "2026-09-15T00:00:00Z",
+      updated_at: "2026-09-15T00:00:00Z",
+      created_by: null,
+      stands_without_tests: [],
+      enqueue_errors: [],
+    });
+    renderAdminStands();
+    await screen.findAllByText("stand-live-01");
+
+    fireEvent.click(screen.getByRole("button", { name: /Запустить все тесты стенда/ }));
+    await screen.findByRole("heading", { name: "Запустить все тесты стенда" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Выберите РЦ" }));
+    fireEvent.click(await screen.findByRole("option", { name: "1.8.5" }));
+    await screen.findByText("будет запущен");
+
+    fireEvent.click(screen.getByRole("button", { name: "Запустить группу" }));
+
+    await waitFor(() => expect(createTestRunMock).toHaveBeenCalledTimes(1));
+    const call = createTestRunMock.mock.calls[0][0];
+    expect(call).toMatchObject({
+      os_version_id: "osv_1",
+      kernel: "6.1",
+      mode: "orel",
+      test_run_stands: ["ts_1"],
+      final: false,
+    });
+    expect(typeof call.request_id).toBe("string");
+    expect(call.request_id.length).toBeGreaterThanOrEqual(8);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Готово" }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Группа запущена" })).not.toBeInTheDocument());
   });
 });

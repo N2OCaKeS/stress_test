@@ -17,7 +17,7 @@ import re
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import ConflictError, DomainValidationError, NotFoundError, ServiceUnavailableError
+from src.core.exceptions import BadRequestError, ConflictError, DomainValidationError, NotFoundError, ServiceUnavailableError
 from src.models.host_service_unit import HostServiceUnit
 from src.models.host_services_settings import HostServicesSettings
 from src.schemas.host_services_settings import (
@@ -28,7 +28,7 @@ from src.schemas.host_services_settings import (
     HostServiceUnitResponse,
     HostServiceUnitUpdate,
 )
-from src.services import audit_service, secrets_service
+from src.services import audit_service, secret_client, secrets_service
 from src.utils.ids import host_service_unit_id
 
 # Юнит-имя едет в shell-команду по SSH (`systemctl {action} {unit_name}.service`)
@@ -57,11 +57,13 @@ def _normalize_unit_name(raw: str) -> str:
 
 def _to_response(row: HostServicesSettings) -> HostServicesSettingsResponse:
     return HostServicesSettingsResponse(
-        configured=bool(row.ssh_host and row.ssh_user and row.ssh_private_key_encrypted),
+        configured=bool(row.ssh_host and row.ssh_user and (row.credential_id or row.ssh_private_key_encrypted)),
         ssh_host=row.ssh_host,
         ssh_port=row.ssh_port,
         ssh_user=row.ssh_user,
-        private_key_is_set=bool(row.ssh_private_key_encrypted),
+        private_key_is_set=bool(row.credential_id or row.ssh_private_key_encrypted),
+        credential_id=row.credential_id,
+        legacy_private_key_is_set=bool(row.ssh_private_key_encrypted),
     )
 
 
@@ -93,10 +95,19 @@ async def update_settings(
     Неприсланные поля сохраняют текущее значение. Пустой `ssh_host`/`ssh_user`
     трактуется как явная очистка. Ключ: `ssh_private_key` задан → шифруется и
     заменяет текущий; `clear_private_key=True` (и `ssh_private_key` не задан) →
-    стирает сохранённый ключ; иначе — не трогаем. Аудит `settings.host_services_updated`
-    (сам ключ никогда не логируется, только факт `private_key_set`).
+    стирает сохранённый ключ; иначе — не трогаем. `credential_id` — ссылка на
+    сервисную запись host_ssh своего отдела: перед сохранением проверяется
+    чтением через `secret_client.reveal_host_ssh_key` (та же схема, что у
+    `acs_settings.update_acs_settings`), успешная привязка стирает локальный
+    ключ; пока привязка есть, `ssh_private_key`/`clear_private_key` отклоняются
+    — редактировать значение нужно в сервисе секретов. Аудит
+    `settings.host_services_updated` (сам ключ никогда не логируется, только
+    факт `private_key_set`).
     """
-    row = await _get_row(db, department_id)
+    row = (await db.execute(
+        select(HostServicesSettings).where(HostServicesSettings.department_id == department_id)
+        .with_for_update().execution_options(populate_existing=True)
+    )).scalar_one_or_none()
     if row is None:
         row = HostServicesSettings(
             department_id=department_id, ssh_host=None, ssh_port=22, ssh_user=None, ssh_private_key_encrypted=None,
@@ -112,6 +123,17 @@ async def update_settings(
         stripped = payload.ssh_user.strip()
         row.ssh_user = stripped or None
 
+    if "credential_id" in payload.model_fields_set:
+        if payload.credential_id:
+            await secret_client.reveal_host_ssh_key(payload.credential_id, department_id)
+            row.ssh_private_key_encrypted = None
+        row.credential_id = payload.credential_id
+
+    if row.credential_id and (payload.ssh_private_key or payload.clear_private_key):
+        raise BadRequestError(
+            error_code="HOST_SSH_KEY_MANAGED_EXTERNALLY",
+            message="Меняйте SSH-ключ в сервисе секретов",
+        )
     if payload.ssh_private_key:
         row.ssh_private_key_encrypted = secrets_service.encrypt(
             payload.ssh_private_key, aad=secrets_service.aad_for_host_control_ssh_key(department_id)
@@ -133,7 +155,8 @@ async def update_settings(
             "ssh_host": row.ssh_host,
             "ssh_port": row.ssh_port,
             "ssh_user": row.ssh_user,
-            "private_key_set": bool(row.ssh_private_key_encrypted),
+            "private_key_set": bool(row.credential_id or row.ssh_private_key_encrypted),
+            "credential_id": row.credential_id,
         },
     )
 
@@ -143,16 +166,21 @@ async def update_settings(
 async def get_decrypted_private_key(db: AsyncSession, department_id: str) -> str:
     """Расшифрованный приватный SSH-ключ хоста отдела для `host_control`.
 
-    503 `HOST_SERVICES_NOT_CONFIGURED`, если строки нет или не заполнены все
-    три поля (host/user/ключ) — тот же контракт недоступности, что у
-    `acs_settings.get_acs_credentials` (`ACS_DISABLED`).
+    503 `HOST_SERVICES_NOT_CONFIGURED`, если строки нет, host/user не заданы,
+    или ни привязка, ни старый ключ не заданы — тот же контракт недоступности,
+    что у `acs_settings.get_acs_credentials` (`ACS_DISABLED`). Привязка
+    (`credential_id`) читается заново при каждом вызове, без кэша — тот же
+    принцип, что у ACS-пароля.
     """
     row = await _get_row(db, department_id)
-    if row is None or not row.ssh_host or not row.ssh_user or not row.ssh_private_key_encrypted:
+    if row is None or not row.ssh_host or not row.ssh_user or not (row.credential_id or row.ssh_private_key_encrypted):
         raise ServiceUnavailableError(
             error_code="HOST_SERVICES_NOT_CONFIGURED",
             message="Host services SSH access is not configured",
         )
+
+    if row.credential_id:
+        return await secret_client.reveal_host_ssh_key(row.credential_id, department_id)
 
     result = secrets_service.decrypt_with_meta(
         row.ssh_private_key_encrypted, aad=secrets_service.aad_for_host_control_ssh_key(department_id)

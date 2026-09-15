@@ -64,6 +64,8 @@ class TestDefaults:
             "ssh_port": 22,
             "ssh_user": None,
             "private_key_is_set": False,
+            "credential_id": None,
+            "legacy_private_key_is_set": False,
         }
 
 
@@ -156,6 +158,7 @@ class TestDepartmentIsolation:
         assert other_dept_resp.status_code == 200
         assert other_dept_resp.json() == {
             "configured": False, "ssh_host": None, "ssh_port": 22, "ssh_user": None, "private_key_is_set": False,
+            "credential_id": None, "legacy_private_key_is_set": False,
         }
 
         own_dept_resp = await client.get(URL, headers=_hdr(admin_token))

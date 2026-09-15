@@ -4,6 +4,12 @@ Per-department: `department_id` нигде не принимается от call
 всегда резолвит его из identity (см. `api/v1/endpoints/host_services_settings.py`).
 Приватный ключ никогда не возвращается в открытом виде — только факт
 "задан/не задан" (`private_key_is_set`); обновление идёт write-only полем в PUT.
+
+`credential_id` — ссылка на сервисную запись `secret_service` (scope=service,
+service=host_ssh, owner_dept_id=свой отдел), тот же переходный паттерн, что у
+`AcsSettingsResponse.credential_id`: привязка вытесняет старое хранение
+(`legacy_private_key_is_set`), см. `services/host_services_settings.py` и
+`services/host_ssh_credential_migration.py`.
 """
 
 from datetime import datetime
@@ -20,7 +26,9 @@ class HostServicesSettingsResponse(BaseModel):
     ssh_host: str | None = Field(default=None, description="Хост (IP/DNS) для SSH-подключения.")
     ssh_port: int = Field(description="Порт SSH.")
     ssh_user: str | None = Field(default=None, description="Имя учётки на хосте (например `emm-host-control`).")
-    private_key_is_set: bool = Field(description="Задан ли приватный ключ. Само значение не отдаётся.")
+    private_key_is_set: bool = Field(description="Задан ли приватный ключ (ссылкой или старым хранением). Само значение не отдаётся.")
+    credential_id: str | None = None
+    legacy_private_key_is_set: bool = False
 
 
 class HostServicesSettingsUpdate(BaseModel):
@@ -32,6 +40,8 @@ class HostServicesSettingsUpdate(BaseModel):
     `ssh_private_key` — plaintext PEM/OpenSSH-ключ на вход, шифруется на
     сервисном слое перед сохранением; пустое/отсутствующее значение не трогает
     уже сохранённый ключ. Чтобы явно стереть ключ — `clear_private_key=True`.
+    `credential_id` ссылается на сервисную запись host_ssh своего отдела;
+    проверенная привязка удаляет локальный ключ. `null` отвязывает запись.
     """
 
     ssh_host: str | None = Field(default=None, max_length=255, description="Хост (IP/DNS) для SSH-подключения.")
@@ -45,6 +55,21 @@ class HostServicesSettingsUpdate(BaseModel):
         default=False,
         description="Явно стереть сохранённый приватный ключ (игнорируется, если одновременно передан `ssh_private_key`).",
     )
+    credential_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]+$",
+        description="Ссылка на сервисную запись host_ssh своего отдела. null отвязывает запись.",
+    )
+
+
+class HostSshCredentialOption(BaseModel):
+    id: str
+    name: str
+    owner_dept_id: str
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
 
 
 class HostServiceUnitResponse(BaseModel):

@@ -33,9 +33,10 @@ from src.schemas.host_services_settings import (
     HostServiceUnitListResponse,
     HostServiceUnitResponse,
     HostServiceUnitUpdate,
+    HostSshCredentialOption,
 )
 from src.services import host_services_settings as svc
-from src.services import permissions
+from src.services import permissions, secret_client
 
 router = APIRouter(prefix="/settings", tags=["system-settings"])
 
@@ -77,6 +78,25 @@ async def get_host_services_settings(
     return await svc.get_settings(db, department_id)
 
 
+@router.get(
+    "/host-services/credentials",
+    response_model=list[HostSshCredentialOption],
+    summary="Сервисные записи host_ssh своего отдела",
+    responses={
+        401: {"description": "ACCESS_TOKEN_MISSING / ACCESS_TOKEN_INVALID / USER_BANNED."},
+        403: {"description": "SERVICE_ACCESS_DENIED / HOST_SERVICE_NO_DEPARTMENT / PERMISSION_DENIED."},
+    },
+)
+async def list_host_ssh_credentials(
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> list[HostSshCredentialOption]:
+    """Доступные сервисные записи host_ssh, принадлежащие своему отделу — названия и сроки, без значений."""
+    department_id = _require_department(identity)
+    await permissions.require_host_service_action(db, identity, department_id, Action.HOST_SERVICE_MANAGE)
+    return await secret_client.list_host_ssh_credentials(department_id)
+
+
 @router.put(
     "/host-services",
     response_model=HostServicesSettingsResponse,
@@ -84,7 +104,9 @@ async def get_host_services_settings(
     description=(
         "Частичное обновление: любое поле можно опустить — тогда текущее "
         "значение сохраняется. `ssh_private_key` — write-only, пусто = не "
-        "менять; `clear_private_key=true` — явно стереть сохранённый ключ."
+        "менять; `clear_private_key=true` — явно стереть сохранённый ключ. "
+        "`credential_id` ссылается на сервисную запись host_ssh своего отдела; "
+        "проверенная привязка удаляет локальный ключ."
     ),
     responses={
         200: {"description": "Настройки обновлены."},

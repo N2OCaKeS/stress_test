@@ -759,8 +759,11 @@ const INTEGRATION_FIELDS: Array<{ key: string; label: string; placeholder?: stri
   { key: "stp_matrix_confluence_space", label: "Confluence space для СТП-матрицы", placeholder: "DEPTQA" },
   { key: "stp_matrix_confluence_root_page_title", label: "Корневая страница СТП-матрицы", placeholder: "Состав тестового прогона" },
   { key: "credential_id", label: "Credential id (Jira/Zephyr)", placeholder: "cred_...", mono: true },
+  { key: "confluence_credential_id", label: "Credential id (Confluence)", placeholder: "cred_...", mono: true },
   { key: "bitbucket_credential_id", label: "Credential id (Bitbucket)", placeholder: "cred_...", mono: true },
 ];
+
+const _CREDENTIAL_SELECT_KEYS = ["credential_id", "confluence_credential_id", "bitbucket_credential_id"];
 
 /**
  * Настройки отдела для внешних интеграций (Jira/Zephyr/Confluence/Bitbucket) —
@@ -840,7 +843,7 @@ function DepartmentIntegrationSettingsCard({ departmentId }: { departmentId: str
       {loaded && (
         <>
           <div className="grid gap-3 sm:grid-cols-2">
-            {INTEGRATION_FIELDS.filter((f) => !["credential_id", "bitbucket_credential_id"].includes(f.key)).map((f) => (
+            {INTEGRATION_FIELDS.filter((f) => !_CREDENTIAL_SELECT_KEYS.includes(f.key)).map((f) => (
               <label key={f.key} className="flex flex-col gap-1 text-sm">
                 <span className="field-label">{f.label}</span>
                 <input

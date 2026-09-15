@@ -89,6 +89,7 @@ function emptySettings() {
     credential_id: null,
     jira_base_url: null,
     confluence_base_url: null,
+    confluence_credential_id: null,
     bitbucket_base_url: null,
     bitbucket_project_key: null,
     bitbucket_repo_slug: null,
@@ -196,8 +197,8 @@ describe("HomeDepAdmin — настройки интеграции отдела 
       .mockResolvedValueOnce({ items: [{ ...cred, id: "cred_git", name: "Git испытаний" }, { ...cred, id: "foreign", name: "Другой отдел", owner_dept_id: "dep_other" }], next_cursor: null });
     upsertDepartmentIntegrationSettingsMock.mockResolvedValue(emptySettings());
     renderHome();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Учётные данные Jira / Zephyr / Confluence / Tempo: Не выбраны" })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "Учётные данные Jira / Zephyr / Confluence / Tempo: Не выбраны" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Учётные данные Jira / Zephyr / Tempo: Не выбраны" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Учётные данные Jira / Zephyr / Tempo: Не выбраны" }));
     expect(await screen.findByRole("option", { name: "Git испытаний · jira" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /Другой отдел/ })).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: /Истёкший/ })).toBeDisabled();
@@ -208,13 +209,27 @@ describe("HomeDepAdmin — настройки интеграции отдела 
     await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith("dep_1", expect.objectContaining({ credential_id: "cred_jira", bitbucket_credential_id: "cred_git" })));
   });
 
+  it("выбирает отдельную сервисную запись для Confluence (C4)", async () => {
+    const cred = { id: "cred_jira", name: "Jira испытаний", service: "jira", scope: "service", owner_dept_id: "dep_1", status: "active", valid_from: null, valid_to: null };
+    const confluenceCred = { ...cred, id: "cred_confluence", name: "Confluence испытаний", service: "confluence" };
+    listCredentialsMock.mockResolvedValue({ items: [cred, confluenceCred], next_cursor: null });
+    upsertDepartmentIntegrationSettingsMock.mockResolvedValue(emptySettings());
+    renderHome();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Учётные данные Confluence / life: Не выбраны" })).toBeEnabled());
+    expect(screen.getByText("Не выбрано — публикация в Confluence использует запись Jira / Zephyr / Tempo.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Учётные данные Confluence / life: Не выбраны" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Confluence испытаний · confluence" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Сохранить" })[0]);
+    await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith("dep_1", expect.objectContaining({ confluence_credential_id: "cred_confluence" })));
+  });
+
   it("ошибка списка секретов не стирает сохранённую привязку", async () => {
     getDepartmentIntegrationSettingsMock.mockResolvedValue({ ...emptySettings(), credential_id: "cred_existing" });
     listCredentialsMock.mockRejectedValue(new Error("Сервис секретов недоступен"));
     upsertDepartmentIntegrationSettingsMock.mockResolvedValue(emptySettings());
     renderHome();
     await screen.findByText("Сервис секретов недоступен");
-    await waitFor(() => expect(screen.getByRole("button", { name: "Учётные данные Jira / Zephyr / Confluence / Tempo: Текущая запись недоступна в списке" })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Учётные данные Jira / Zephyr / Tempo: Текущая запись недоступна в списке" })).toBeInTheDocument());
     fireEvent.change(screen.getByPlaceholderText("PROJ"), { target: { value: "TST" } });
     fireEvent.click(screen.getAllByRole("button", { name: "Сохранить" })[0]);
     await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith("dep_1", expect.objectContaining({ credential_id: "cred_existing" })));

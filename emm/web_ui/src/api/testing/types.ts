@@ -275,6 +275,7 @@ export interface DepartmentIntegrationSettings {
   credential_id: string | null;
   jira_base_url: string | null;
   confluence_base_url: string | null;
+  confluence_credential_id: string | null;
   bitbucket_base_url: string | null;
   bitbucket_project_key: string | null;
   bitbucket_repo_slug: string | null;
@@ -294,6 +295,7 @@ export interface DepartmentIntegrationSettingsUpdateRequest {
   credential_id?: string | null;
   jira_base_url?: string | null;
   confluence_base_url?: string | null;
+  confluence_credential_id?: string | null;
   bitbucket_base_url?: string | null;
   bitbucket_project_key?: string | null;
   bitbucket_repo_slug?: string | null;

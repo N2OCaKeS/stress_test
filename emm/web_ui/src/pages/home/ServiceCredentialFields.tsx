@@ -7,7 +7,8 @@ import { Dropdown } from "@/components/ui/Dropdown";
 import { Button } from "@/components/ui/Button";
 
 const FIELDS = [
-  { key: "credential_id", label: "Учётные данные Jira / Zephyr / Confluence / Tempo" },
+  { key: "credential_id", label: "Учётные данные Jira / Zephyr / Tempo" },
+  { key: "confluence_credential_id", label: "Учётные данные Confluence / life" },
   { key: "bitbucket_credential_id", label: "Учётные данные Git / Bitbucket" },
 ];
 
@@ -61,6 +62,7 @@ export function ServiceCredentialFields({ departmentId, values, onChange, disabl
         {current && <Link to={`/secret/service?id=${encodeURIComponent(current.id)}`} target="_blank" rel="noopener noreferrer" className="text-xs text-accent">Открыть учётные данные</Link>}
         {reason && <span className="text-xs text-danger">Учётные данные {reason}. Обновите их в сервисе секретов.</span>}
         {missing && !credentialsQ.isFetching && <span className="text-xs text-dim">Проверьте доступ, владельца и область хранения записи. Сохранённая привязка остаётся до вашего изменения.</span>}
+        {key === "confluence_credential_id" && !selected && <span className="text-xs text-dim">Не выбрано — публикация в Confluence использует запись Jira / Zephyr / Tempo.</span>}
       </div>;
     })}
     <div className="sm:col-span-2 flex flex-wrap items-center gap-3 text-xs">

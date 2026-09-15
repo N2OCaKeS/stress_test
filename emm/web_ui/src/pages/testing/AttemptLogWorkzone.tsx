@@ -38,7 +38,7 @@ export function AttemptLogWorkzone({ id, state, logStatus, title, subtitle, canR
       <div className="min-w-0"><h2 className="font-semibold break-words">{title}</h2><p className="text-xs text-dim mt-1 break-words">{subtitle}</p></div>
       <Button size="sm" aria-label="Закрыть лог" onClick={onClose}><X className="w-4 h-4" /></Button>
     </header>
-    <div className="flex-1 min-h-0 overflow-auto grid gap-3 content-start">
+    <div className="flex flex-1 min-h-0 flex-col gap-3 overflow-hidden">
       {unavailable ? <div className="surface border border-token rounded p-6 grid gap-3">
         <p>{logStatus === "rotated" ? "Лог удалён по сроку хранения (ротирован). Результат теста сохранён." : "Текст лога этой попытки отсутствует. Результат теста сохранён."}</p>
         {canRetry && <Button disabled={busy} onClick={retry}>Перезапустить тест</Button>}

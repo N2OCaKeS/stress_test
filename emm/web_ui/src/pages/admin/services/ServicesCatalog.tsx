@@ -313,7 +313,7 @@ function ServiceRolesByDept({
             .filter((d) =>
               platformAdmin || !depAdmin ? true : d.id === myDept,
             )
-            .map((d): DropdownOption => ({ value: d.id, label: `${d.name} (${d.id})` }))}
+            .map((d): DropdownOption => ({ value: d.id, label: d.name }))}
           value={deptId ?? ""}
           onChange={(v) => setDeptId(v || null)}
           disabled={

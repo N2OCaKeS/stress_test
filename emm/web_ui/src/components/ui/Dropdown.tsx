@@ -33,6 +33,7 @@ import { Check, ChevronDown, Search } from "lucide-react";
 export interface DropdownOption {
   value: string;
   label: string;
+  disabled?: boolean;
 }
 
 interface DropdownCommonProps {
@@ -73,7 +74,7 @@ export function Dropdown(props: DropdownProps) {
     options,
     label,
     placeholder = "Все",
-    searchable = false,
+    searchable = true,
     maxHeight = DEFAULT_MAX_HEIGHT,
     disabled,
     className,
@@ -135,8 +136,8 @@ export function Dropdown(props: DropdownProps) {
 
   const filteredOptions = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((o) => o.label.toLowerCase().includes(q));
+    return options.filter((o) => !q || o.label.toLowerCase().includes(q))
+      .sort((a, b) => a.label.localeCompare(b.label, "ru", { numeric: true, sensitivity: "base" }));
   }, [options, query]);
 
   const triggerText = useMemo(() => {
@@ -230,7 +231,7 @@ export function Dropdown(props: DropdownProps) {
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm text-[11px]"
-                  onClick={() => props.onChange(new Set(filteredOptions.map((o) => o.value)))}
+                  onClick={() => props.onChange(new Set(filteredOptions.filter((o) => !o.disabled).map((o) => o.value)))}
                 >
                   Выбрать все
                 </button>
@@ -241,7 +242,7 @@ export function Dropdown(props: DropdownProps) {
               {props.mode === "multi"
                 ? filteredOptions.map((opt) => (
                     <label key={opt.value} className="flex items-center gap-2 px-1.5 py-1 rounded hover-bg cursor-pointer text-xs">
-                      <input type="checkbox" checked={props.value.has(opt.value)} onChange={() => toggleMulti(opt.value)} />
+                      <input type="checkbox" disabled={opt.disabled} checked={props.value.has(opt.value)} onChange={() => toggleMulti(opt.value)} />
                       <span className="truncate">{opt.label}</span>
                     </label>
                   ))
@@ -252,6 +253,7 @@ export function Dropdown(props: DropdownProps) {
                         key={opt.value}
                         type="button"
                         role="option"
+                        disabled={opt.disabled}
                         aria-selected={active}
                         className={`flex items-center gap-2 px-1.5 py-1 rounded hover-bg text-xs text-left ${active ? "surface-2" : ""}`}
                         onClick={() => selectSingle(opt.value)}

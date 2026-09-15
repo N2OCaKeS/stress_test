@@ -1,3 +1,4 @@
+import { listNamedTestStands } from "@/api/testing/standCatalogue";
 /**
  * Раздел «Прогоны» — fleet-wide кампании тестирования.
  *
@@ -32,13 +33,12 @@ import {
   Server,
 } from "lucide-react";
 import { listOsVersions } from "@/api/server/osVersions";
-import { naturalCompare } from "@/lib/naturalSort";
 import { formatMsk, formatMskShort, formatElapsedHMS } from "@/lib/datetime";
 import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
 import { useQuery } from "@/api/auth/useQuery";
 import { createTestRun, getRunSummaryComment, getTestRun, listTestRuns } from "@/api/testing/testRuns";
-import { getTestStand, listTestStands } from "@/api/testing/testStands";
+import { getTestStand } from "@/api/testing/testStands";
 import { getTestDefinition } from "@/api/testing/testDefinitions";
 import { retryQueueItem } from "@/api/testing/queueItems";
 import { AttemptLogWorkzone } from "./AttemptLogWorkzone";
@@ -122,10 +122,10 @@ function useByIds<T>(ids: string[], fetchOne: (id: string) => Promise<T>): Recor
   return q.data ?? {};
 }
 
-function standLabel(stand: TestStand | undefined, id: string): string {
+function standLabel(stand: TestStand | undefined, _id: string): string {
   const server = (stand?.server ?? null) as Record<string, unknown> | null;
   const name = (server?.["display_name"] ?? server?.["hostname"] ?? server?.["name"]) as string | undefined;
-  return name || `${id.slice(0, 8)}…`;
+  return name || "Имя стенда недоступно";
 }
 
 function testLabel(def: TestDefinition | undefined, id: string): string {
@@ -170,7 +170,7 @@ export function useRunsState(): RunsState {
       return run.id.toLowerCase().includes(term) || run.os_version_id.toLowerCase().includes(term);
     });
     return [...filtered].sort((a, b) =>
-      sortDir === "asc" ? naturalCompare(a.id, b.id) : naturalCompare(b.id, a.id),
+      sortDir === "asc" ? a.created_at.localeCompare(b.created_at) : b.created_at.localeCompare(a.created_at),
     );
   }, [allRuns, search, sortDir]);
 
@@ -549,8 +549,8 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
 
-  const standsQ = useQuery(() => listTestStands({ is_active: true, queue_enabled: true, limit: 500 }), []);
-  const stands = useMemo(() => standsQ.data?.items ?? [], [standsQ.data]);
+  const standsQ = useQuery(() => listNamedTestStands({ is_active: true, queue_enabled: true }), []);
+  const stands = useMemo(() => standsQ.data ?? [], [standsQ.data]);
 
   const poolIds = allStands ? stands.map((s) => s.id) : Array.from(selected);
 

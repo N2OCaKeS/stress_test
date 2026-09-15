@@ -47,7 +47,7 @@ import { listDepartments } from "@/api/auth/departments";
 import type { Department } from "@/api/auth/types";
 import { listOsVersions } from "@/api/server/osVersions";
 import type { OffsetPaginatedResponse, OsVersion } from "@/api/server/types";
-import { listTestStands } from "@/api/testing/testStands";
+import { listNamedTestStands, standName } from "@/api/testing/standCatalogue";
 import type { TestStand } from "@/api/testing/types";
 import {
   createStpTestCase,
@@ -330,11 +330,11 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
   const departments = mockMode ? [] : (departmentsQ.data ?? []);
 
   const standsQ = useQuery(
-    () => listTestStands({ department_id: deptFilter || undefined, limit: 500 }),
+    () => listNamedTestStands({ department_id: deptFilter || undefined }),
     [deptFilter],
     { enabled: !mockMode },
   );
-  const stands: TestStand[] = mockMode ? [] : (standsQ.data?.items ?? []);
+  const stands: TestStand[] = mockMode ? [] : (standsQ.data ?? []);
   const standIds = useMemo(() => new Set(stands.map((s) => s.id)), [stands]);
 
   const testCasesQ = useQuery(
@@ -424,10 +424,10 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
     return Array.from(kernels).map((k) => ({ value: k, label: k }));
   }, [runsForVersion]);
   const standOptions: DropdownOption[] = useMemo(
-    () => Array.from(new Set(runsForVersion.map((r) => r.stand_id))).map((id) => ({ value: id, label: id })),
-    [runsForVersion],
+    () => Array.from(new Set(runsForVersion.map((r) => r.stand_id))).map((id) => ({ value: id, label: standName(stands.find((stand) => stand.id === id)) })),
+    [runsForVersion, stands],
   );
-  const testOptions: DropdownOption[] = testCases.map((t) => ({ value: t.code, label: `${t.code} · ${t.title}` }));
+  const testOptions: DropdownOption[] = testCases.map((t) => ({ value: t.code, label: `${t.title} · ${t.code}` }));
   const departmentOptions: DropdownOption[] = departments.map((d) => ({ value: d.id, label: d.name }));
 
   const hasFilters = filters.mode.size > 0 || filters.kernel.size > 0 || filters.stand.size > 0 || filters.test.size > 0;

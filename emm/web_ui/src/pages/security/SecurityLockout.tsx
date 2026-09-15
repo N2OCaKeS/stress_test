@@ -1,3 +1,4 @@
+import { Dropdown } from "@/components/ui/Dropdown";
 import { useState } from "react";
 import {
   AlertTriangle,
@@ -403,30 +404,13 @@ function ManualUnlock() {
         пользователем
       </h3>
       <div className="text-xs text-dim mb-3">
-        Выберите пользователя из списка (поиск по username). По выбранной учётке
-        вызывается unlock или ban по её id.
+        Выберите пользователя для разблокировки входа или блокировки учётной записи.
       </div>
       <div className="flex items-end gap-2 flex-wrap">
         <label className="flex flex-col gap-1 text-sm flex-1 min-w-[200px]">
           <span className="text-dim text-xs">пользователь</span>
-          <input
-            className="input mono"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder={usersQ.loading ? "загрузка…" : "ivanov"}
-            list="lockout-user-options"
-            autoComplete="off"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onUnlock();
-            }}
-          />
-          <datalist id="lockout-user-options">
-            {users.map((u) => (
-              <option key={u.id} value={u.username}>
-                {u.email ?? u.id}
-              </option>
-            ))}
-          </datalist>
+          <Dropdown mode="single" value={username} onChange={setUsername} placeholder="Выберите пользователя"
+            disabled={usersQ.loading} options={users.map((u) => ({ value: u.username, label: u.username }))} />
         </label>
         <Button variant="primary"
           className="flex items-center gap-1"

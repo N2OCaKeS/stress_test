@@ -827,8 +827,8 @@ function MembersCard({
             placeholder={`— выберите ${addKind === "user" ? "юзера" : "бота"} —`}
             options={
               addKind === "user"
-                ? candidateUsers.map((u): DropdownOption => ({ value: u.id, label: `${u.username} (${u.id})` }))
-                : candidateBots.map((b): DropdownOption => ({ value: b.id, label: `${b.name} (${b.id})` }))
+                ? candidateUsers.map((u): DropdownOption => ({ value: u.id, label: u.username }))
+                : candidateBots.map((b): DropdownOption => ({ value: b.id, label: b.name }))
             }
             value={pickerId}
             onChange={setPickerId}

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Container, FileText, KeyRound, Loader2, RefreshCcw } from "lucide-react";
 import { ApiError, apiErrMsg } from "@/api/client";
+import { useQuery } from "@/api/auth/useQuery";
+import { listDepartments } from "@/api/auth/departments";
 import { Dropdown } from "@/components/ui/Dropdown";
 import {
   deleteRegistry,
@@ -48,6 +50,7 @@ export function SecurityDocker() {
 function RegistryConfig() {
   const { persona } = usePersona();
   const toast = useToast();
+  const departmentsQ = useQuery(listDepartments, []);
   const [deptInput, setDeptInput] = useState(persona.dept_id ?? "");
   const [cfg, setCfg] = useState<DockerRegistryConfig | null>(null);
   const [missing, setMissing] = useState(false);
@@ -153,13 +156,8 @@ function RegistryConfig() {
       </h3>
       <div className="flex items-end gap-2 mb-3">
         <label className="flex flex-col gap-1 text-sm flex-1">
-          <span className="text-dim text-xs">department_id</span>
-          <input
-            className="input mono"
-            value={deptInput}
-            onChange={(e) => setDeptInput(e.target.value)}
-            placeholder="dep_xyz"
-          />
+          <Dropdown mode="single" label="Отдел" placeholder="Выберите отдел" value={deptInput} onChange={setDeptInput}
+            options={(departmentsQ.data ?? []).map((department) => ({ value: department.id, label: department.name }))} />
         </label>
         <Button
           className="flex items-center gap-1"

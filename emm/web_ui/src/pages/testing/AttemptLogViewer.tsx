@@ -93,13 +93,13 @@ function LiveLogPanel({ queueItemId }: { queueItemId: string }) {
   };
 
   return (
-    <div className="surface border border-token rounded overflow-hidden flex flex-col min-h-[480px]">
+    <div className="surface border border-token rounded overflow-hidden flex flex-1 flex-col min-h-0">
       <div className="border-b border-token px-3 py-2 flex items-center gap-2 text-xs">
         <Radio className={`w-3.5 h-3.5 ${state === "open" ? "text-accent" : "text-dim"}`} />
         <span className={state === "open" ? "text-accent" : "text-dim"}>{stateLabel[state]}</span>
         <span className="text-dim ml-2">Только чтение — вывод исполняющегося сейчас теста</span>
       </div>
-      <pre ref={boxRef} className="log-tail flex-1 overflow-auto m-0">{text || "Ожидаем вывод…"}</pre>
+      <pre ref={boxRef} className="log-tail flex-1 min-h-0 overflow-auto m-0" style={{ maxHeight: "none" }}>{text || "Ожидаем вывод…"}</pre>
     </div>
   );
 }
@@ -258,7 +258,7 @@ function FinishedLogViewer({ queueItemId }: { queueItemId: string }) {
 
   return (
     <>
-      <div className="surface border border-token rounded p-3 flex items-center gap-3 flex-wrap">
+      <div className="surface border border-token rounded p-3 flex shrink-0 items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2 surface-2 border border-token rounded px-2 py-1 min-w-[240px]">
           <Search className="w-4 h-4 text-dim" />
           <input
@@ -282,7 +282,7 @@ function FinishedLogViewer({ queueItemId }: { queueItemId: string }) {
         </Button>
       </div>
 
-      <div className="surface border border-token rounded overflow-hidden flex min-h-[480px]">
+      <div className="surface border border-token rounded overflow-hidden flex flex-1 min-h-0">
         <aside className="w-64 shrink-0 border-r border-token overflow-y-auto">
           {segments.length === 0 && <div className="p-4 text-xs text-dim text-center">Лог пуст</div>}
           {navSegments.map((seg) => (
@@ -311,7 +311,7 @@ function FinishedLogViewer({ queueItemId }: { queueItemId: string }) {
           )}
         </aside>
 
-        <div className="flex-1 overflow-y-auto p-4 grid gap-3 content-start">
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto p-4 grid gap-3 content-start">
           {segments.map((seg) => (
             <ResolvedLogBlock
               key={seg.id}
@@ -325,7 +325,7 @@ function FinishedLogViewer({ queueItemId }: { queueItemId: string }) {
               }}
             />
           ))}
-          {segments.length === 0 && <pre className="log-tail whitespace-pre-wrap">{text || "Лог пока пуст"}</pre>}
+          {segments.length === 0 && <pre className="log-tail whitespace-pre-wrap" style={{ maxHeight: "none" }}>{text || "Лог пока пуст"}</pre>}
         </div>
       </div>
     </>

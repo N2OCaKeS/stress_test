@@ -57,13 +57,13 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
     <form onSubmit={submit} className="grid gap-4">
       {(testsQ.error || standsQ.error || versionsQ.error) && <div role="alert" className="text-danger text-xs">Не удалось загрузить каталог или стенды. <Button size="sm" type="button" onClick={() => { testsQ.refetch(); standsQ.refetch(); versionsQ.refetch(); }}>Повторить загрузку</Button></div>}
       <label className="grid gap-1 text-sm">Тест
-        <Dropdown mode="single" placeholder="Выберите тест" value={testId} onChange={setTestId} options={(testsQ.data?.items ?? []).map((item) => ({ value: item.id, label: `${item.code} · ${item.full_name}` }))} />
+        <Dropdown mode="single" placeholder="Выберите тест" value={testId} onChange={setTestId} options={(testsQ.data?.items ?? []).map((item) => ({ value: item.id, label: `${item.full_name} · ${item.code}` }))} />
       </label>
       <label className="flex items-center gap-2 text-sm"><Checkbox checked={debug} onChange={(event) => setDebug(event.target.checked)} />Debug</label>
       <label className="grid gap-1 text-sm">Стенд
         <Dropdown mode="single" placeholder="Выберите стенд" value={resolvedStand} onChange={setStandId} disabled={!debug} options={(standsQ.data ?? []).map((item) => {
           const server = item.server as { display_name?: string; hostname?: string } | undefined;
-          return { value: item.id, label: server?.display_name ?? server?.hostname ?? item.server_id };
+          return { value: item.id, label: server?.display_name ?? server?.hostname ?? "Имя стенда недоступно" };
         })} />
       </label>
       <label className="grid gap-1 text-sm">РЦ<Dropdown mode="single" placeholder="Выберите РЦ" value={rc} onChange={selectVersion} disabled={busy} options={(versionsQ.data?.items ?? []).map((item) => ({ value: item.id, label: item.name }))} /></label>

@@ -30,16 +30,15 @@ export interface AcsSettings {
   acs_url: string | null;
   /** Задан ли пароль clonezilla-сервера. Само значение не отдаётся. */
   password_is_set: boolean;
+  credential_id: string | null;
+  legacy_password_is_set: boolean;
 }
 
 /** Тело PUT /settings/acs — частичное обновление. */
 export interface AcsSettingsUpdate {
   enabled?: boolean;
   acs_url?: string;
-  /** Новый пароль, plaintext. Пусто/не передано — не менять текущий. */
-  acs_password?: string;
-  /** Явно стереть сохранённый пароль (игнорируется вместе с acs_password). */
-  clear_password?: boolean;
+  credential_id?: string | null;
 }
 
 /** Один отдел из GET /settings/acs/departments — без имени, только флаг. */
@@ -89,4 +88,11 @@ export async function updateAcsDepartmentAccess(
     { items },
   );
   return res.items;
+}
+
+export interface AcsCredentialOption {
+  id: string; name: string; owner_dept_id: string; valid_from: string | null; valid_to: string | null;
+}
+export function listAcsCredentials(): Promise<AcsCredentialOption[]> {
+  return apiGet(`${BASE}/settings/acs/credentials`);
 }

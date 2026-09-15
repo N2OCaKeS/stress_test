@@ -65,7 +65,7 @@ import {
   listGlobalVariables,
   updateGlobalVariable,
 } from "@/api/testing/global_variables";
-import { listTestStands } from "@/api/testing/testStands";
+import { listNamedTestStands, standName } from "@/api/testing/standCatalogue";
 import type {
   CommandArgKind,
   GlobalVariable,
@@ -176,7 +176,7 @@ export function TestsWorkzone() {
   const testsQ = useQuery(async () => (await listTestDefinitions({ limit: 500 })).items, []);
   const tests = testsQ.data ?? [];
 
-  const standsQ = useQuery(async () => (await listTestStands({ limit: 500 })).items, []);
+  const standsQ = useQuery(() => listNamedTestStands(), []);
 
   // Общий источник каталога переменных — им пользуется и панель управления
   // (эта переменная), и конструктор команды (`CommandConstructorModal`,
@@ -195,7 +195,7 @@ export function TestsWorkzone() {
       if (category !== "all" && key !== category) return false;
       if (!term) return true;
       return test.code.toLowerCase().includes(term) || test.full_name.toLowerCase().includes(term);
-    });
+    }).sort((a, b) => a.full_name.localeCompare(b.full_name, "ru", { numeric: true, sensitivity: "base" }));
   }, [tests, search, category]);
 
   const totals = useMemo(
@@ -590,7 +590,7 @@ function TestFormModal({
             placeholder="— не привязан —"
             options={[
               { value: "", label: "— не привязан —" },
-              ...stands.map((s) => ({ value: s.id, label: s.server_id })),
+              ...stands.map((s) => ({ value: s.id, label: standName(s) })),
             ]}
             value={pinnedStandId ?? ""}
             onChange={setPinnedStandId}
@@ -757,7 +757,7 @@ function CommandConstructorModal({
               placeholder="Выберите тест для копирования"
               options={copySources.map((source) => ({
                 value: source.id,
-                label: `${source.code} · ${source.full_name}`,
+                label: `${source.full_name} · ${source.code}`,
               }))}
               value={copySourceId}
               onChange={(value) => { setCopySourceId(value); setCopyError(null); }}
@@ -1018,7 +1018,7 @@ function SlotEditorForm({
             mode="single"
             searchable
             placeholder="— выберите переменную —"
-            options={variables.map((v) => ({ value: v.id, label: `${v.code} · ${v.label}` }))}
+            options={variables.map((v) => ({ value: v.id, label: `${v.label} · ${v.code}` }))}
             value={variableId}
             onChange={setVariableId}
           />

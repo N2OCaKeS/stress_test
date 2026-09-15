@@ -8,6 +8,7 @@ const updateAcsSettingsMock = vi.fn();
 const getAcsDepartmentAccessMock = vi.fn();
 const updateAcsDepartmentAccessMock = vi.fn();
 vi.mock("@/api/server/acsSettings", () => ({
+  listAcsCredentials: async () => [{ id: "cred_acs", name: "ACS испытаний", owner_dept_id: "dep_1", valid_from: null, valid_to: null }],
   get getAcsSettings() {
     return getAcsSettingsMock;
   },
@@ -36,6 +37,8 @@ function makeSettings(over: Record<string, unknown> = {}) {
     enabled: false,
     acs_url: null,
     password_is_set: false,
+    credential_id: null,
+    legacy_password_is_set: false,
     ...over,
   };
 }
@@ -80,12 +83,12 @@ describe("ServicesAcsSettings", () => {
   });
 
   it("сохранение настроек зовёт updateAcsSettings с текущими полями", async () => {
-    getAcsSettingsMock.mockResolvedValue(makeSettings());
+    getAcsSettingsMock.mockResolvedValue(makeSettings({ acs_url: "https://old.example/" }));
     updateAcsSettingsMock.mockResolvedValue(makeSettings());
     renderPage();
 
-    const urlInput = (await screen.findByPlaceholderText(
-      "https://acs.example.ru/",
+    const urlInput = (await screen.findByDisplayValue(
+      "https://old.example/",
     )) as HTMLInputElement;
     fireEvent.change(urlInput, {
       target: { value: "https://acs.example.ru/" },
@@ -95,6 +98,9 @@ describe("ServicesAcsSettings", () => {
     // подряд без точки синхронизации иногда обгоняли commit предыдущего
     // изменения, и `handleSave` читал устаревший (пустой) `acsUrl`.
     await waitFor(() => expect(urlInput.value).toBe("https://acs.example.ru/"));
+
+    fireEvent.click(screen.getByRole("button", { name: /^Учётные данные ACS:/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /ACS испытаний/ }));
 
     const enabledCheckbox = screen.getByLabelText(
       "Снимки ACS включены",
@@ -110,6 +116,8 @@ describe("ServicesAcsSettings", () => {
     expect(payload.enabled).toBe(true);
     expect(payload.acs_url).toBe("https://acs.example.ru/");
     expect(payload.acs_password).toBeUndefined();
+    expect(payload.credential_id).toBe("cred_acs");
+    expect(document.querySelector("input[type=password]")).toBeNull();
   });
 
   it("таблица отделов сохраняет только изменённые флаги", async () => {

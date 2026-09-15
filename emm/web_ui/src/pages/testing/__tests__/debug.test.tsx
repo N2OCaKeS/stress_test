@@ -142,7 +142,7 @@ describe("AdhocMiddlePanel — реальные одиночные запуск�
     await screen.findAllByText("adhoc-2026090701");
     fireEvent.click(screen.getByRole("button", { name: /Запустить разовый тест/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Выберите тест" }));
-    fireEvent.click(await screen.findByRole("option", { name: "STR-SEGFAULT-FUZZ · stress test" }));
+    fireEvent.click(await screen.findByRole("option", { name: "stress test · STR-SEGFAULT-FUZZ" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Debug" }));
     fireEvent.click(screen.getByRole("button", { name: "Выберите стенд" }));
     fireEvent.click(screen.getByRole("option", { name: "stand15-110" }));
@@ -157,7 +157,7 @@ describe("AdhocMiddlePanel — реальные одиночные запуск�
     renderHarness();
     fireEvent.click(screen.getByRole("button", { name: /Запустить разовый тест/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Выберите тест" }));
-    fireEvent.click(await screen.findByRole("option", { name: "STR-SEGFAULT-FUZZ · stress test" }));
+    fireEvent.click(await screen.findByRole("option", { name: "stress test · STR-SEGFAULT-FUZZ" }));
     fireEvent.click(await screen.findByRole("button", { name: "Выберите РЦ" }));
     fireEvent.click(screen.getByRole("option", { name: "1.8.5" }));
     fireEvent.click(screen.getByRole("button", { name: "Запустить тест" }));

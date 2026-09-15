@@ -8,6 +8,12 @@ import { listQueueItems, type QueueItemsQuery } from "@/api/testing/queueItems";
 import { getTestStand, listTestStands } from "@/api/testing/testStands";
 import { formatMsk } from "@/lib/datetime";
 import { Button } from "@/components/ui/Button";
+import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { listCatalogue } from "@/api/catalogue";
+import { listTestDefinitions } from "@/api/testing/testDefinitions";
+import { listTestRuns } from "@/api/testing/testRuns";
+import type { OsVersion } from "@/api/server/types";
+import type { TestDefinition, TestRun } from "@/api/testing/types";
 import { AttemptLogWorkzone } from "./AttemptLogWorkzone";
 
 const PAGE_SIZE = 50;
@@ -19,19 +25,19 @@ const STATES: Record<string, string> = {
 export function useLogsState(enabled = true) {
   const [params, setParams] = useSearchParams();
   const standsQ = useQuery(async () => {
-    const page = await listTestStands({ limit: 500 });
-    const details = await Promise.allSettled(page.items.map((stand) => getTestStand(stand.id)));
-    return page.items.map((stand, i) => {
+    const stands = await listCatalogue(listTestStands);
+    const details = await Promise.allSettled(stands.map((stand) => getTestStand(stand.id)));
+    return stands.map((stand, i) => {
       const result = details[i];
       const server = result.status === "fulfilled" ? result.value.server as { display_name?: string; hostname?: string } | undefined : undefined;
-      return { id: stand.id, label: server?.display_name ?? server?.hostname ?? stand.server_id };
+      return { id: stand.id, label: server?.display_name ?? server?.hostname ?? "Стенд: имя недоступно" };
     });
   }, [], { enabled });
 
   const kind = params.get("kind") === "campaign" ? "campaign" : params.get("kind") === "standalone" ? "standalone" : "all";
   const offset = Math.max(0, Number(params.get("offset")) || 0);
   const query: QueueItemsQuery = { kind, offset, limit: PAGE_SIZE };
-  for (const key of ["test_run_id", "test_id", "stand_id", "attempt_id", "retry_of_id", "q", "os_version_id", "kernel"] as const) {
+  for (const key of ["test_run_id", "test_id", "stand_id", "attempt_id", "retry_of_id", "q", "os_version_id", "os_version_name", "kernel"] as const) {
     const value = params.get(key);
     if (value) query[key] = value;
   }
@@ -45,7 +51,9 @@ export function useLogsState(enabled = true) {
   const queueQ = useQuery(async () => ({ key, page: await listQueueItems(query) }), [key], { enabled });
   // Не показываем строки предыдущего фильтра, пока загружается новый.
   const page = queueQ.data?.key === key ? queueQ.data.page : undefined;
-  const versionsQ = useQuery(() => listOsVersions({ limit: 500 }), [], { enabled });
+  const versionsQ = useQuery(() => listCatalogue(listOsVersions), [], { enabled });
+  const testsQ = useQuery(() => listCatalogue(listTestDefinitions), [], { enabled });
+  const runsQ = useQuery(() => listCatalogue(listTestRuns), [], { enabled });
   const [selectedId, setSelectedId] = useState("");
   const [closed, setClosed] = useState(false);
   const selected = closed ? undefined : page?.items.find((item) => item.id === selectedId) ?? page?.items[0];
@@ -63,29 +71,33 @@ export function useLogsState(enabled = true) {
     setParams(next);
   }
 
-  return { params, setParams, kind, offset, queueQ, page, selected, standsQ, versionsQ, navigate,
+  return { params, setParams, kind, offset, queueQ, page, selected, standsQ, versionsQ, testsQ, runsQ, navigate,
     select: (id: string) => { setSelectedId(id); setClosed(false); }, close: () => setClosed(true) };
 }
 
 type LogsState = ReturnType<typeof useLogsState>;
 
 export function LogsMiddlePanel({ state: s }: { state: LogsState }) {
+  const [filtersOpen, setFiltersOpen] = useState(true);
   return <aside className="flex flex-col min-h-0 border-r border-token surface">
-    <div className="shrink-0 border-b border-token p-3 max-h-[55vh] overflow-auto">
+    <div className="shrink-0 border-b border-token p-3">
       <h2 className="text-sm font-semibold mb-2">Все логи тестирования</h2>
+      <Button size="sm" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((open) => !open)}>{filtersOpen ? "Свернуть фильтры" : "Развернуть фильтры"}</Button>
+    </div>
+    <div hidden={!filtersOpen} className="shrink-0 border-b border-token p-3 max-h-[55vh] overflow-auto">
       <LogFilters key={s.params.toString()} params={s.params} onApply={s.setParams}
         stands={s.standsQ.data ?? []} standsError={!!s.standsQ.error}
-        versions={s.versionsQ.data?.items ?? []} />
+        versions={s.versionsQ.data ?? []} tests={s.testsQ.data ?? []} runs={s.runsQ.data ?? []} />
     </div>
     <div className="flex-1 min-h-0 overflow-auto">
       {s.queueQ.loading && <p className="p-3 text-xs">Загрузка логов…</p>}
       {!!s.queueQ.error && <p role="alert" className="p-3 text-xs text-danger">{apiErrMsg(s.queueQ.error, "Не удалось загрузить историю логов")}</p>}
       {s.page?.items.map((item) => <button key={item.id} onClick={() => s.select(item.id)} aria-label={`Открыть лог ${item.id}`}
         className={`w-full text-left px-3 py-3 border-b border-token hover-bg ${s.selected?.id === item.id ? "surface-2 border-l-2 border-l-accent" : ""}`}>
-        <div className="text-sm font-medium">{item.test_code ?? item.test_id}</div>
+        <div className="text-sm font-medium">{item.test_name ?? item.test_code ?? "Тест удалён"}</div>
         <div className="text-xs mt-1">{STATES[item.state] ?? item.state} · {item.debug_mode ? "Debug" : item.test_run_id ? "Прогон" : "Одиночный"}</div>
-        <div className="text-xs text-dim mt-1">{s.standsQ.data?.find((stand) => stand.id === item.stand_id)?.label ?? item.stand_id}</div>
-        <div className="text-xs text-dim">{s.versionsQ.data?.items.find((v) => v.id === item.rc)?.name ?? item.rc} · {item.kernel}</div>
+        <div className="text-xs text-dim mt-1">{s.standsQ.data?.find((stand) => stand.id === item.stand_id)?.label ?? "Имя стенда недоступно"}</div>
+        <div className="text-xs text-dim">{s.versionsQ.data?.find((v) => v.id === item.rc)?.name ?? item.rc} · {item.kernel}</div>
         <div className="text-[11px] text-dim mt-1">{formatMsk(item.created_at)} · {item.is_current === false ? "Предыдущая попытка" : item.retry_of_id ? "Повтор" : "Первая попытка"}</div>
         {item.log_status === "rotated" && <div className="text-xs text-dim mt-1">Лог ротирован</div>}
       </button>)}
@@ -101,6 +113,10 @@ export function LogsMiddlePanel({ state: s }: { state: LogsState }) {
 
 export function LogsWorkzone({ state: s }: { state: LogsState }) {
   const item = s.selected;
+  const osName = (value: string | null) => {
+    if (!value) return "—";
+    return s.versionsQ.data?.find((version) => version.id === value)?.name ?? (value.startsWith("os_") ? "Имя ОС недоступно" : value);
+  };
   if (!item) return <div className="p-8 text-center text-dim">Выберите лог в списке слева</div>;
   return <div className="flex flex-1 min-h-0 flex-col gap-3">
     <div className="flex gap-2 flex-wrap shrink-0">
@@ -108,8 +124,8 @@ export function LogsWorkzone({ state: s }: { state: LogsState }) {
       {item.is_current === false && <Button size="sm" onClick={() => s.setParams({ kind: s.kind, retry_of_id: item.id })}>Следующая попытка</Button>}
     </div>
     <AttemptLogWorkzone key={item.id} id={item.id} state={item.state} logStatus={item.log_status}
-      title={`Лог · ${item.test_code ?? item.test_id}`}
-      subtitle={`${item.test_run_id ? `Прогон ${item.test_run_id}` : "Одиночный запуск"} · ${item.rc} · ${item.kernel} · ${item.mode} · ${item.id}`}
+      title={`Лог · ${item.test_name ?? item.test_code ?? "Тест удалён"}`}
+      subtitle={`${item.test_run_id ? "Прогон" : "Одиночный запуск"} · ${osName(item.rc)} · ${item.kernel ?? "—"} · ${item.mode ?? "—"} · ${formatMsk(item.created_at)}`}
       canRetry={item.is_current !== false && ["succeeded", "failed"].includes(item.state)} onClose={s.close} onRetried={s.queueQ.refetch} />
   </div>;
 }
@@ -119,8 +135,27 @@ export function TestingLogs() {
   return <div className="flex min-h-0"><LogsMiddlePanel state={state} /><LogsWorkzone state={state} /></div>;
 }
 
-function LogFilters({ params, onApply, stands, standsError, versions }: { params: URLSearchParams; onApply: (params: URLSearchParams) => void; stands: { id: string; label: string }[]; standsError: boolean; versions: { id: string; name: string; kernels: string[] }[] }) {
+function LogFilters({ params, onApply, stands, standsError, versions, tests, runs }: {
+  params: URLSearchParams; onApply: (params: URLSearchParams) => void;
+  stands: { id: string; label: string }[]; standsError: boolean;
+  versions: OsVersion[]; tests: TestDefinition[]; runs: TestRun[];
+}) {
   const [error, setError] = useState("");
+  const [draft, setDraft] = useState(() => Object.fromEntries(params));
+  const value = (name: string, fallback = "") => draft[name] ?? fallback;
+  const change = (name: string, selected: string) => setDraft((previous) => ({ ...previous, [name]: selected, ...(name === "os_version_id" ? { kernel: "" } : {}) }));
+  const selectedOs = versions.find((version) => version.id === value("os_version_id") || version.name === value("os_version_id"));
+  const kernels = Array.from(new Set((selectedOs ? [selectedOs] : versions).flatMap((version) => version.kernels)));
+  function select(name: string, label: string, options: DropdownOption[], placeholder: string, fallback = "") {
+    const selected = value(name, fallback);
+    const shown = selected && !options.some((option) => option.value === selected)
+      ? [...options, { value: selected, label: "Недоступное значение", disabled: true }] : options;
+    return <div className="grid gap-1 text-xs">
+      <Dropdown mode="single" label={label} searchable className="w-full" options={shown} value={selected}
+        onChange={(next) => change(name, next)} placeholder={placeholder} />
+      <input type="hidden" name={name} value={selected} />
+    </div>;
+  }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -129,30 +164,27 @@ function LogFilters({ params, onApply, stands, standsError, versions }: { params
     if (from && until && from >= until) { setError("Начало периода должно быть раньше конца"); return; }
     setError("");
     const next = new URLSearchParams();
-    for (const [name, value] of data.entries()) if (String(value).trim()) next.set(name, String(value).trim());
+    for (const [name, entry] of data.entries()) if (String(entry).trim()) next.set(name, String(entry).trim());
+    if (selectedOs && next.has("os_version_id")) next.set("os_version_name", selectedOs.name);
     if (next.get("kind") === "standalone") next.delete("test_run_id");
     onApply(next);
   }
   return <form onSubmit={submit} className="grid gap-2">
-    <label className="text-xs grid gap-1">Вид запуска<select className="input" name="kind" defaultValue={params.get("kind") ?? "all"}><option value="all">Все логи</option><option value="campaign">Прогоны</option><option value="standalone">Одиночные запуски</option></select></label>
-    <label className="text-xs grid gap-1">ОС<input className="input" list="log-os" name="os_version_id" defaultValue={params.get("os_version_id") ?? ""} placeholder="Все ОС" /></label>
-    <datalist id="log-os">{versions.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}</datalist>
-    <label className="text-xs grid gap-1">Ядро<input className="input" list="log-kernels" name="kernel" defaultValue={params.get("kernel") ?? ""} placeholder="Все ядра" /></label>
-    <datalist id="log-kernels">{Array.from(new Set(versions.flatMap((v) => v.kernels))).map((kernel) => <option key={kernel}>{kernel}</option>)}</datalist>
-    <label className="text-xs grid gap-1">Тест (код или название)<input className="input" name="q" defaultValue={params.get("q") ?? ""} /></label>
-    <label className="text-xs grid gap-1">Стенд<input className="input" name="stand_id" list="log-stands" defaultValue={params.get("stand_id") ?? ""} placeholder="Все стенды" /></label>
-    <datalist id="log-stands">{stands.map((stand) => <option key={stand.id} value={stand.id}>{stand.label}</option>)}</datalist>
-    <label className="text-xs grid gap-1">Состояние<select className="input" name="state" defaultValue={params.get("state") ?? ""}><option value="">Все состояния</option>{Object.entries(STATES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-    <details className="text-xs"><summary className="cursor-pointer text-dim">Дополнительно: период, прогон, попытка, debug</summary><div className="grid gap-2 mt-2">
-    {params.get("kind") === "campaign" && <label className="text-xs grid gap-1">ID прогона<input className="input" name="test_run_id" defaultValue={params.get("test_run_id") ?? ""} /></label>}
-    <label className="text-xs grid gap-1">ID попытки<input className="input" name="attempt_id" defaultValue={params.get("attempt_id") ?? ""} /></label>
-    <label className="text-xs grid gap-1">Создана с (MSK)<input className="input" type="datetime-local" name="from" defaultValue={params.get("from") ?? ""} /></label>
-    <label className="text-xs grid gap-1">Создана до (не включая, MSK)<input className="input" type="datetime-local" name="until" defaultValue={params.get("until") ?? ""} /></label>
-    <label className="text-xs grid gap-1">Режим запуска<select className="input" name="debug" defaultValue={params.get("debug") ?? ""}><option value="">Все режимы</option><option value="false">Обычный</option><option value="true">Debug</option></select></label>
-    {params.get("test_id") && <input type="hidden" name="test_id" value={params.get("test_id")!} />}
-    {params.get("retry_of_id") && <div className="text-xs">Повтор попытки: {params.get("retry_of_id")}<input type="hidden" name="retry_of_id" value={params.get("retry_of_id")!} /></div>}
+    {select("kind", "Вид запуска", [{ value: "all", label: "Все логи" }, { value: "campaign", label: "Прогоны" }, { value: "standalone", label: "Одиночные запуски" }], "Все логи", "all")}
+    {select("os_version_id", "ОС", versions.map((v) => ({ value: v.id, label: v.name })), "Все ОС")}
+    {select("kernel", "Ядро", kernels.map((kernel) => ({ value: kernel, label: kernel })), selectedOs ? "Все ядра ОС" : "Все ядра")}
+    {select("test_id", "Тест", tests.map((test) => ({ value: test.id, label: `${test.full_name} · ${test.code}` })), "Все тесты")}
+    {select("stand_id", "Стенд", stands.map((stand) => ({ value: stand.id, label: stand.label })), "Все стенды")}
+    {select("state", "Состояние", Object.entries(STATES).map(([id, label]) => ({ value: id, label })), "Все состояния")}
+    <details className="text-xs"><summary className="cursor-pointer text-dim">Дополнительно: период, прогон, поиск, debug</summary><div className="grid gap-2 mt-2">
+      {value("kind", "all") !== "standalone" && select("test_run_id", "Прогон", runs.map((run) => ({ value: run.id, label: `${versions.find((v) => v.id === run.os_version_id)?.name ?? (run.os_version_id.startsWith("os_") ? "Имя ОС недоступно" : run.os_version_id)} · ${run.mode} · ${formatMsk(run.created_at)}` })), "Все прогоны")}
+      <label className="text-xs grid gap-1">Поиск по названию или коду теста<input className="input" name="q" defaultValue={params.get("q") ?? ""} /></label>
+      <label className="text-xs grid gap-1">Создана с (MSK)<input className="input" type="datetime-local" name="from" defaultValue={params.get("from") ?? ""} /></label>
+      <label className="text-xs grid gap-1">Создана до (не включая, MSK)<input className="input" type="datetime-local" name="until" defaultValue={params.get("until") ?? ""} /></label>
+      {select("debug", "Режим запуска", [{ value: "false", label: "Обычный" }, { value: "true", label: "Debug" }], "Все режимы")}
+      {["attempt_id", "retry_of_id"].map((key) => params.get(key) ? <div key={key} className="text-xs text-dim">Выбрана конкретная попытка<input type="hidden" name={key} value={params.get(key)!} /></div> : null)}
     </div></details>
-    {standsError && <div className="text-xs text-danger">Не удалось загрузить подсказки стендов. Можно указать ID.</div>}
+    {standsError && <div className="text-xs text-danger">Не удалось загрузить имена стендов. Повторите загрузку страницы.</div>}
     <div className="flex items-end gap-2"><Button type="submit" variant="primary">Применить фильтры</Button><Button type="button" onClick={() => onApply(new URLSearchParams())}>Сбросить</Button></div>
     {error && <div role="alert" className="text-danger text-xs">{error}</div>}
   </form>;

@@ -17,6 +17,8 @@ import { useCallback, useState } from "react";
 import { ShieldCheck, Plus, Trash2, UserPlus, UserMinus } from "lucide-react";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as srApi from "@/api/auth/service_roles";
+import { listUsersByDepartment } from "@/api/auth/users";
+import { listCatalogue } from "@/api/catalogue";
 import { ApiError } from "@/api/client";
 import { useDeptLabel } from "@/lib/labels";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
@@ -72,6 +74,7 @@ export function ServiceRolesLivePanel({
   const [bulkRole, setBulkRole] = useState("");
   const [bulkUserIds, setBulkUserIds] = useState("");
 
+  const usersQ = useQuery(() => listCatalogue((query) => listUsersByDepartment(departmentId, query)), [departmentId], { enabled: !mock && !!departmentId });
   const rolesQ = useQuery(
     () => srApi.listServiceRoles(departmentId, serviceName),
     [departmentId, serviceName, refreshTick],
@@ -235,7 +238,7 @@ export function ServiceRolesLivePanel({
           {canCreate && (
             <div className="mt-4 border-t border-token pt-3">
               <div className="text-xs uppercase text-dim mb-2 flex items-center gap-1">
-                <Plus className="w-3 h-3" /> Создать роль в `(dept={departmentId}, svc={serviceName})`
+                <Plus className="w-3 h-3" /> Создать роль · {deptLabel} · {serviceName}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <input
@@ -281,18 +284,10 @@ export function ServiceRolesLivePanel({
               Массовое назначение / отзыв
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <input
-                className="input mono"
-                placeholder="role_name"
-                value={bulkRole}
-                onChange={(e) => setBulkRole(e.target.value)}
-              />
-              <input
-                className="input mono"
-                placeholder="user_ids csv (usr_a,usr_b)"
-                value={bulkUserIds}
-                onChange={(e) => setBulkUserIds(e.target.value)}
-              />
+              <Dropdown mode="single" label="Роль" placeholder="Выберите роль" value={bulkRole} onChange={setBulkRole}
+                options={(rolesQ.data ?? []).map((role) => ({ value: role.role_name, label: role.role_name }))} />
+              <Dropdown mode="multi" label="Пользователи" placeholder="Выберите пользователей" value={new Set(bulkUserIds.split(",").filter(Boolean))} onChange={(ids) => setBulkUserIds([...ids].join(","))}
+                options={(usersQ.data ?? []).map((user) => ({ value: user.id, label: user.username }))} />
             </div>
             <div className="flex gap-2 mt-2">
               <Button variant="primary"

@@ -278,7 +278,7 @@ function LiveServiceRolesCard({
             searchable
             className="flex-1"
             placeholder="— нет отделов —"
-            options={(deptsQ.data ?? []).map((d): DropdownOption => ({ value: d.id, label: `${d.name} (${d.id})` }))}
+            options={(deptsQ.data ?? []).map((d): DropdownOption => ({ value: d.id, label: d.name }))}
             value={deptId ?? ""}
             onChange={(v) => setDeptId(v || null)}
             disabled={deptsQ.loading || (deptsQ.data?.length ?? 0) === 0}

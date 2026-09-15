@@ -65,6 +65,7 @@ const RUN_1: TestRun = {
 const RUN_2: TestRun = {
   ...RUN_1,
   id: "run_2",
+  created_at: "2026-09-02T00:00:00Z",
   status: "succeeded",
   final: false,
   test_run_stands: ["stand_1"],
@@ -187,7 +188,7 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     expect(await screen.findByText("run_1")).toBeInTheDocument();
     expect(screen.getByText("run_2")).toBeInTheDocument();
     expect(listTestRunsMock).toHaveBeenCalledWith({ limit: 200 });
-    // сортировка по умолчанию — "новые сверху" (desc по id), значит верхняя
+    // сортировка по умолчанию — "новые сверху" (desc по времени создания), значит верхняя
     // строка списка — run_2; деталь подтягивается сразу для неё.
     await waitFor(() => expect(getTestRunMock).toHaveBeenCalledWith("run_2"));
   });
@@ -231,7 +232,7 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
 
     fireEvent.click(screen.getByRole("button", { name: "Выберите РЦ" }));
     fireEvent.click(await screen.findByRole("option", { name: "1.7.1.44" }));
-    await waitFor(() => expect(listTestStandsMock).toHaveBeenCalledWith({ is_active: true, queue_enabled: true, limit: 500 }));
+    await waitFor(() => expect(listTestStandsMock).toHaveBeenCalledWith({ is_active: true, queue_enabled: true, limit: 500, offset: 0 }));
 
     const submitButtons = screen.getAllByRole("button", { name: /Запустить прогон/ });
     fireEvent.click(submitButtons[submitButtons.length - 1]);

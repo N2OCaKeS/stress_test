@@ -29,7 +29,7 @@ import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { hasAuditLogAccess } from "@/lib/rbac";
 import { formatMsk, formatMskTime } from "@/lib/datetime";
-import { exportEvents, getEventStats, listEvents } from "@/api/loging/events";
+import { exportEvents, getEventStats, listEvents, listEventFilterOptions } from "@/api/loging/events";
 import { listServices } from "@/api/loging/services";
 import { useDeptLabelOpt, useLabelMaps } from "@/lib/labels";
 import type {
@@ -158,6 +158,10 @@ export function LogEventsLive() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { depts } = useLabelMaps();
+  const namesQ = useQuery(async () => {
+    const [department, actor, target] = await Promise.all(["department", "actor", "target"].map((kind) => listEventFilterOptions(kind as "department" | "actor" | "target")));
+    return { department, actor, target };
+  }, [], { enabled: canAudit });
 
   // Обновление любого фильтра сбрасывает пагинацию — иначе текущий offset мог
   // бы указывать за пределы новой (более узкой) выборки.
@@ -219,11 +223,11 @@ export function LogEventsLive() {
   ].filter(Boolean).length;
   const anyActive = activeExtra > 0 || filters.action.trim().length > 0;
 
-  const deptOptions = useMemo(
-    () =>
-      Array.from(depts.entries()).sort((a, b) => a[1].localeCompare(b[1], "ru")),
-    [depts],
-  );
+  const deptOptions = useMemo(() => {
+    const names = new Map((namesQ.data?.department ?? []).map((option) => [option.value, option.label]));
+    depts.forEach((name, id) => names.set(id, name));
+    return [...names].map(([value, label]) => ({ value, label }));
+  }, [depts, namesQ.data]);
 
   // Имена сервисов из выдачи backend'а (только писавшие события) + известные
   // платформенные сервисы, чтобы по тихому сервису тоже можно было фильтровать.
@@ -286,42 +290,14 @@ export function LogEventsLive() {
               />
             </div>
 
-            {deptOptions.length > 0 ? (
-              <Dropdown
-                mode="single"
-                searchable
-                options={deptOptions.map(([id, name]) => ({ value: id, label: name }))}
-                value={filters.departmentId}
-                onChange={(v) => setFilter("departmentId", v)}
-                placeholder="отдел (любой)"
-              />
-            ) : (
-              // У loging_admin / loging_reader нет доступа к списку отделов
-              // (он account_admin-only), поэтому карта имён пустая — даём
-              // ручной ввод department_id, иначе фильтр по отделу недоступен.
-              <input
-                className="surface-2 border border-token rounded px-1.5 py-0.5 w-full"
-                placeholder="department_id (dep_…)"
-                value={filters.departmentId}
-                onChange={(e) => setFilter("departmentId", e.target.value)}
-                title="Фильтр по department_id"
-              />
-            )}
-
-            <input
-              className="surface-2 border border-token rounded px-1.5 py-0.5 w-full"
-              placeholder="actor_id (usr_… / bot_… / сервис)"
-              value={filters.actorId}
-              onChange={(e) => setFilter("actorId", e.target.value)}
-              title="Фильтр по actor_id (точное совпадение)"
-            />
-            <input
-              className="surface-2 border border-token rounded px-1.5 py-0.5 w-full"
-              placeholder="target_id (srv_… и т.п.)"
-              value={filters.targetId}
-              onChange={(e) => setFilter("targetId", e.target.value)}
-              title="Фильтр по target_id (точное совпадение)"
-            />
+            <Dropdown mode="single" label="Отдел" placeholder="Любой" options={deptOptions}
+              value={filters.departmentId} onChange={(v) => setFilter("departmentId", v)} />
+            <Dropdown mode="single" label="Инициатор" placeholder="Любой" options={namesQ.data?.actor ?? []}
+              value={filters.actorId} onChange={(v) => setFilter("actorId", v)} />
+            <Dropdown mode="single" label="Объект" placeholder="Любой" options={namesQ.data?.target ?? []}
+              value={filters.targetId} onChange={(v) => setFilter("targetId", v)} />
+            {!!namesQ.error && <span role="alert">{apiErrMsg(namesQ.error, "Не удалось загрузить имена из журнала")}</span>}
+            <span>Списки содержат имена, сохранённые в событиях аудита.</span>
             <input
               className="surface-2 border border-token rounded px-1.5 py-0.5 w-full"
               placeholder="request_id (трассировка)"

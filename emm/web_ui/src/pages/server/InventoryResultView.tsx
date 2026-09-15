@@ -480,7 +480,7 @@ function UnlinkedExistingRow({
         <div className="text-[11px] text-dim">
           uid {user.uid}
           {single
-            ? ` · аккаунт ${user.candidates[0]?.account_id} (${user.candidates[0]?.source})`
+            ? ` · аккаунт ${user.login} (${user.candidates[0]?.source})`
             : ` · кандидатов: ${user.candidates.length}`}
         </div>
       </div>
@@ -489,7 +489,7 @@ function UnlinkedExistingRow({
           mode="single"
           className="min-w-[160px]"
           disabled={disabled}
-          options={user.candidates.map((c) => ({ value: c.account_id, label: `${c.account_id} (${c.source})` }))}
+          options={user.candidates.map((c) => ({ value: c.account_id, label: `${user.login} (${c.source})` }))}
           value={picked}
           onChange={setPicked}
         />

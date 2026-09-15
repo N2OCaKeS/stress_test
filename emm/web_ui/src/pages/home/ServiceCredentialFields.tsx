@@ -3,6 +3,7 @@ import { useQuery } from "@/api/auth/useQuery";
 import { listCredentials } from "@/api/secret/credentials";
 import type { Credential } from "@/api/secret/types";
 import { apiErrMsg } from "@/api/client";
+import { Dropdown } from "@/components/ui/Dropdown";
 import { Button } from "@/components/ui/Button";
 
 const FIELDS = [
@@ -47,17 +48,15 @@ export function ServiceCredentialFields({ departmentId, values, onChange, disabl
       return <div key={key} className="flex flex-col gap-1 text-sm">
         <label className="flex flex-col gap-1">
           <span className="field-label">{label}</span>
-          <select className="field-input" value={selected} disabled={disabled || credentialsQ.isFetching}
-            onChange={(event) => onChange(key, event.target.value)}>
-            <option value="">Не выбраны</option>
-            {missing && <option value={selected} disabled>Текущая запись недоступна в списке</option>}
-            {credentials.map((cred) => {
-              const unavailable = unavailableReason(cred);
-              return <option key={cred.id} value={cred.id} disabled={!!unavailable}>
-                {cred.name} · {cred.service}{unavailable ? ` (${unavailable})` : ""}
-              </option>;
-            })}
-          </select>
+          <Dropdown mode="single" label={label} value={selected} disabled={disabled || credentialsQ.isFetching}
+            placeholder="Не выбраны" onChange={(next) => onChange(key, next)}
+            options={[
+              ...(missing ? [{ value: selected, label: "Текущая запись недоступна в списке", disabled: true }] : []),
+              ...credentials.map((cred) => {
+                const unavailable = unavailableReason(cred);
+                return { value: cred.id, label: `${cred.name} · ${cred.service}${unavailable ? ` (${unavailable})` : ""}`, disabled: !!unavailable };
+              }),
+            ]} />
         </label>
         {current && <Link to={`/secret/service?id=${encodeURIComponent(current.id)}`} target="_blank" rel="noopener noreferrer" className="text-xs text-accent">Открыть учётные данные</Link>}
         {reason && <span className="text-xs text-danger">Учётные данные {reason}. Обновите их в сервисе секретов.</span>}

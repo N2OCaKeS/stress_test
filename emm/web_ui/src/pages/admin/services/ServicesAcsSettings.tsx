@@ -22,12 +22,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Camera, AlertCircle, AlertTriangle } from "lucide-react";
 
+import { Dropdown } from "@/components/ui/Dropdown";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { useToast } from "@/contexts/ToastContext";
 import { ApiError, apiErrMsg } from "@/api/client";
 import { useQuery } from "@/api/auth/useQuery";
 import {
   getAcsSettings,
+  listAcsCredentials,
   updateAcsSettings,
   getAcsDepartmentAccess,
   updateAcsDepartmentAccess,
@@ -42,7 +44,7 @@ function settingsSaveError(e: unknown): string {
   if (e instanceof ApiError) {
     if (e.status === 403) return "Недостаточно прав (нужен account_admin).";
     if (e.errorCode === "ACS_ENABLE_REQUIRES_CONFIG")
-      return "Нельзя включить ACS без сохранённых URL и пароля.";
+      return "Нельзя включить ACS без URL и сервисных учётных данных.";
     if (e.status === 422) return "Backend отклонил значения (проверьте URL).";
   }
   return apiErrMsg(e, "Не удалось сохранить настройки ACS");
@@ -86,19 +88,19 @@ function AcsSettingsForm() {
   const toast = useToast();
   const cfgQ = useQuery<AcsSettings>(() => getAcsSettings(), []);
   const loaded = cfgQ.data;
+  const credentialsQ = useQuery(listAcsCredentials, []);
+  const departmentsQ = useQuery(listDepartments, []);
 
   const [enabled, setEnabled] = useState(false);
   const [acsUrl, setAcsUrl] = useState("");
-  const [password, setPassword] = useState("");
-  const [clearPassword, setClearPassword] = useState(false);
+  const [credentialId, setCredentialId] = useState("");
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
     if (!loaded) return;
     setEnabled(loaded.enabled);
     setAcsUrl(loaded.acs_url ?? "");
-    setPassword("");
-    setClearPassword(false);
+    setCredentialId(loaded.credential_id ?? "");
   }, [loaded]);
 
   const dirty = useMemo(() => {
@@ -106,21 +108,11 @@ function AcsSettingsForm() {
     return (
       enabled !== loaded.enabled ||
       acsUrl.trim() !== (loaded.acs_url ?? "") ||
-      password.trim() !== "" ||
-      clearPassword
+      credentialId.trim() !== (loaded.credential_id ?? "")
     );
-  }, [loaded, enabled, acsUrl, password, clearPassword]);
+  }, [loaded, enabled, acsUrl, credentialId]);
 
-  const wouldDisableOnEnable =
-    enabled &&
-    !password.trim() &&
-    !acsUrl.trim() &&
-    !(loaded?.password_is_set && loaded?.acs_url);
-
-  function onPasswordChange(v: string) {
-    setPassword(v);
-    if (v) setClearPassword(false);
-  }
+  const wouldDisableOnEnable = enabled && (!acsUrl.trim() || (!credentialId.trim() && !loaded?.legacy_password_is_set));
 
   async function handleSave() {
     if (pending || !loaded) return;
@@ -130,11 +122,7 @@ function AcsSettingsForm() {
         enabled,
         acs_url: acsUrl.trim(),
       };
-      if (password) {
-        body.acs_password = password;
-      } else if (clearPassword) {
-        body.clear_password = true;
-      }
+      if (credentialId.trim() !== (loaded.credential_id ?? "")) body.credential_id = credentialId.trim() || null;
       await updateAcsSettings(body);
       toast.success("Настройки ACS сохранены");
       cfgQ.refetch();
@@ -186,38 +174,25 @@ function AcsSettingsForm() {
             />
           </label>
 
-          <div className="flex flex-col gap-1">
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="field-label">
-                Пароль clonezilla-сервера
-                <span className="text-dim text-xs ml-1">
-                  ({loaded.password_is_set ? "задан" : "не задан"}, write-only)
-                </span>
-              </span>
-              <input
-                className="field-input mono"
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => onPasswordChange(e.target.value)}
-                placeholder={
-                  loaded.password_is_set ? "оставьте пустым — не менять" : "не задан"
-                }
-              />
-            </label>
-            <Checkbox
-              label="Стереть сохранённый пароль"
-              rowClassName="text-sm"
-              checked={clearPassword}
-              disabled={!!password}
-              onChange={(e) => setClearPassword(e.target.checked)}
-            />
+          <div className="flex flex-col gap-1 text-sm">
+            <Dropdown mode="single" label="Учётные данные ACS" placeholder="Выберите запись" value={credentialId} onChange={setCredentialId}
+              disabled={credentialsQ.isFetching} options={[
+                ...(credentialId && !credentialsQ.data?.some((item) => item.id === credentialId) ? [{ value: credentialId, label: "Привязанная запись недоступна", disabled: true }] : []),
+                ...(credentialsQ.data ?? []).map((item) => ({ value: item.id,
+                  label: `${item.name} · ${departmentsQ.data?.find((d) => d.id === item.owner_dept_id)?.name ?? "Имя отдела недоступно"}`,
+                  disabled: !!((item.valid_from && new Date(item.valid_from).getTime() > Date.now()) || (item.valid_to && new Date(item.valid_to).getTime() < Date.now())),
+                })),
+              ]} />
+            <span className="text-xs text-dim">Создать запись и изменить пароль можно в «Секреты → Сервисные учётные данные», система acs.</span>
+            {!!credentialsQ.error && <span role="alert" className="text-xs text-danger">{apiErrMsg(credentialsQ.error, "Не удалось загрузить учётные данные ACS")}</span>}
           </div>
+          <div className="text-xs text-dim">Пароль {loaded.password_is_set ? "задан" : "не задан"}. При сохранении ссылки проверяется доступ сервиса ACS к записи.</div>
+          {loaded.legacy_password_is_set && <div className="alert-warn text-xs">Используется старое хранение пароля. После выбора проверенной сервисной записи локальная копия будет удалена. Для переноса текущего значения без повторного ввода доступна команда миграции из инструкции ACS.</div>}
 
           {wouldDisableOnEnable && (
             <div className="alert-warn text-xs flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-              <div>Нельзя включить ACS без сохранённых URL и пароля.</div>
+              <div>Нельзя включить ACS без URL и сервисных учётных данных.</div>
             </div>
           )}
 
@@ -225,7 +200,7 @@ function AcsSettingsForm() {
             <Button variant="primary"
               type="button"
               onClick={handleSave}
-              disabled={pending || !dirty}
+              disabled={pending || !dirty || wouldDisableOnEnable}
             >
               {pending ? "Сохраняем…" : "Сохранить"}
             </Button>
@@ -264,7 +239,7 @@ function AcsDepartmentTable() {
     setFlags(initialFlags);
   }, [initialFlags]);
 
-  const departments = deptsQ.data ?? [];
+  const departments = [...(deptsQ.data ?? [])].sort((a, b) => a.name.localeCompare(b.name, "ru", { numeric: true }));
 
   const dirty = useMemo(() => {
     if (accessQ.data == null) return false;

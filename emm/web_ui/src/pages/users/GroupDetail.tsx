@@ -43,6 +43,9 @@ import {
 } from "./permissionGraph";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import * as groupsApi from "@/api/auth/groups";
+import { listBotsWithTotal } from "@/api/auth/bots";
+import { listCatalogue } from "@/api/catalogue";
+import { Dropdown } from "@/components/ui/Dropdown";
 import * as usersApi from "@/api/auth/users";
 import { ApiError } from "@/api/client";
 import { useDeptLabel, useServiceLabel } from "@/lib/labels";
@@ -495,6 +498,7 @@ function GroupLiveData({
   );
 
   const [addBotId, setAddBotId] = useState("");
+  const candidatesQ = useQuery(() => listCatalogue((query) => listBotsWithTotal({ ...query, department_id: detail.data?.department_id })), [detail.data?.department_id], { enabled: !!detail.data?.department_id });
   const [addService, setAddService] = useState("");
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -762,12 +766,8 @@ function GroupLiveData({
               </ul>
             )}
             <div className="flex gap-2 mt-2">
-              <input
-                className="input"
-                placeholder="bot_id"
-                value={addBotId}
-                onChange={(e) => setAddBotId(e.target.value)}
-              />
+              <Dropdown mode="single" label="Бот" placeholder="Выберите бота" value={addBotId} onChange={setAddBotId}
+                options={(candidatesQ.data ?? []).filter((candidate) => !(bots.data ?? []).some((member) => member.bot_id === candidate.id)).map((candidate) => ({ value: candidate.id, label: candidate.name }))} />
               <Button variant="primary"
                 className="flex items-center gap-1"
                 disabled={!caps.manageMembers || pending || !addBotId.trim()}

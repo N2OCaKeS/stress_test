@@ -16,7 +16,7 @@ export interface QueueLaunchRequest {
 }
 export interface QueueItemsQuery {
   kind?: "standalone" | "campaign" | "all";
-  os_version_id?: string; kernel?: string;
+  os_version_id?: string; os_version_name?: string; kernel?: string;
   test_run_id?: string; stand_id?: string; test_id?: string;
   attempt_id?: string; retry_of_id?: string;
   created_from?: string; created_until?: string;

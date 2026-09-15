@@ -163,3 +163,13 @@ export async function exportEvents(
 
   return { filename, truncated };
 }
+
+
+export async function listEventFilterOptions(kind: "department" | "actor" | "target") {
+  const items: { value: string; label: string }[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const page = await apiGet<{ items: typeof items; has_more: boolean }>("/logging/v1/events/filter-options", { query: { kind, offset, limit: 500 } });
+    items.push(...page.items);
+    if (!page.has_more) return items;
+  }
+}

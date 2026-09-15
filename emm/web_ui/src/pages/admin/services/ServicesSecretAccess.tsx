@@ -920,34 +920,18 @@ function UserAclModal({
     [actorDeptId],
     { enabled: !!actorDeptId },
   );
-  const canResolve = !!actorDeptId && (usersQ.data?.items.length ?? 0) > 0;
 
   const [input, setInput] = useState("");
   const [canRead, setCanRead] = useState(true);
   const [canWrite, setCanWrite] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  function resolveUserId(): string | null {
-    const raw = input.trim();
-    if (!raw) return null;
-    if (raw.startsWith("usr_")) return raw;
-    const match = usersQ.data?.items.find(
-      (u) => u.username.toLowerCase() === raw.toLowerCase(),
-    );
-    return match?.id ?? null;
-  }
-
-  const valid = input.trim() && (canRead || canWrite);
-  const resolveFailed =
-    input.trim() !== "" &&
-    !input.trim().startsWith("usr_") &&
-    canResolve &&
-    resolveUserId() === null;
+  const valid = !!usersQ.data?.items.some((user) => user.id === input) && (canRead || canWrite);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting || !valid) return;
-    const userId = resolveUserId();
+    const userId = input;
     if (!userId) return;
     setSubmitting(true);
     Promise.resolve(
@@ -960,36 +944,10 @@ function UserAclModal({
       <form onSubmit={handleSubmit} className="modal-body flex flex-col gap-3">
         <div className="text-xs text-dim">
           Доступ выдаётся конкретному пользователю в дополнение к ролевым ACL.
-          {canResolve
-            ? " Введите username — он будет сопоставлен с id."
-            : " Введите id пользователя (usr_…) — резолв по username недоступен."}
         </div>
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-dim text-xs">
-            {canResolve ? "username *" : "user id (usr_…) *"}
-          </span>
-          <input
-            className="surface-2 border border-token rounded px-2 py-1"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            maxLength={64}
-            required
-            list={canResolve ? "secret-admin-useracl-users" : undefined}
-            placeholder={canResolve ? "username" : "usr_…"}
-          />
-          {canResolve && (
-            <datalist id="secret-admin-useracl-users">
-              {(usersQ.data?.items ?? []).map((u) => (
-                <option key={u.id} value={u.username} />
-              ))}
-            </datalist>
-          )}
-          {resolveFailed && (
-            <span className="text-[11px] text-danger">
-              Пользователь с таким username не найден в вашем отделе. Можно
-              ввести id (usr_…) напрямую.
-            </span>
-          )}
+          <Dropdown mode="single" label="Пользователь" placeholder="Выберите пользователя" value={input} onChange={setInput}
+            options={(usersQ.data?.items ?? []).map((user) => ({ value: user.id, label: user.username }))} />
         </label>
         <div className="flex items-center gap-4 text-sm">
           <label className="flex items-center gap-2">

@@ -168,12 +168,14 @@ describe("HomeDepAdmin — настройки интеграции отдела 
       .mockResolvedValueOnce({ items: [{ ...cred, id: "cred_git", name: "Git испытаний" }, { ...cred, id: "foreign", name: "Другой отдел", owner_dept_id: "dep_other" }], next_cursor: null });
     upsertDepartmentIntegrationSettingsMock.mockResolvedValue(emptySettings());
     renderHome();
-    await waitFor(() => expect(screen.getAllByRole("option", { name: "Git испытаний · jira" })).toHaveLength(2));
-    expect(listCredentialsMock).toHaveBeenLastCalledWith({ scope: "service", limit: 100, cursor: "page2" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Учётные данные Jira / Zephyr / Confluence / Tempo: Не выбраны" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Учётные данные Jira / Zephyr / Confluence / Tempo: Не выбраны" }));
+    expect(await screen.findByRole("option", { name: "Git испытаний · jira" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /Другой отдел/ })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("option", { name: /Истёкший/ })[0]).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Учётные данные Jira / Zephyr / Confluence / Tempo"), { target: { value: "cred_jira" } });
-    fireEvent.change(screen.getByLabelText("Учётные данные Git / Bitbucket"), { target: { value: "cred_git" } });
+    expect(screen.getByRole("option", { name: /Истёкший/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("option", { name: "Jira испытаний · jira" }));
+    fireEvent.click(screen.getByRole("button", { name: "Учётные данные Git / Bitbucket: Не выбраны" }));
+    fireEvent.click(screen.getByRole("option", { name: "Git испытаний · jira" }));
     fireEvent.click(screen.getAllByRole("button", { name: "Сохранить" })[0]);
     await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith("dep_1", expect.objectContaining({ credential_id: "cred_jira", bitbucket_credential_id: "cred_git" })));
   });
@@ -184,7 +186,7 @@ describe("HomeDepAdmin — настройки интеграции отдела 
     upsertDepartmentIntegrationSettingsMock.mockResolvedValue(emptySettings());
     renderHome();
     await screen.findByText("Сервис секретов недоступен");
-    await waitFor(() => expect(screen.getByLabelText("Учётные данные Jira / Zephyr / Confluence / Tempo")).toHaveValue("cred_existing"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Учётные данные Jira / Zephyr / Confluence / Tempo: Текущая запись недоступна в списке" })).toBeInTheDocument());
     fireEvent.change(screen.getByPlaceholderText("PROJ"), { target: { value: "TST" } });
     fireEvent.click(screen.getAllByRole("button", { name: "Сохранить" })[0]);
     await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith("dep_1", expect.objectContaining({ credential_id: "cred_existing" })));

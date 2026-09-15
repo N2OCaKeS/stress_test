@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { ToastProvider } from "@/contexts/ToastContext";
 import type { TestCommandArg, TestDefinition, GlobalVariable } from "@/api/testing/types";
 
@@ -215,7 +215,7 @@ describe("TestsWorkzone — каталог тестов из API", () => {
     renderWorkzone();
     await screen.findByText("FS-EXT4-FILL");
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Изменить тест" })[0]);
+    fireEvent.click(within(screen.getByText("FS-EXT4-FILL").closest("tr")!).getByRole("button", { name: "Изменить тест" }));
     const fullNameInput = await screen.findByDisplayValue("filesystem / ext4 fill+remove cycle");
     fireEvent.change(fullNameInput, { target: { value: "filesystem / ext4 fill+remove cycle v2" } });
     fireEvent.click(screen.getByRole("button", { name: "Рабочий" }));
@@ -234,7 +234,7 @@ describe("TestsWorkzone — каталог тестов из API", () => {
     renderWorkzone();
     await screen.findByText("FS-EXT4-FILL");
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Удалить тест" })[0]);
+    fireEvent.click(within(screen.getByText("FS-EXT4-FILL").closest("tr")!).getByRole("button", { name: "Удалить тест" }));
 
     await waitFor(() => expect(confirmMock).toHaveBeenCalled());
     await waitFor(() => expect(deleteTestDefinitionMock).toHaveBeenCalledWith("td_1"));
@@ -245,7 +245,7 @@ describe("TestsWorkzone — каталог тестов из API", () => {
     renderWorkzone();
     await screen.findByText("FS-EXT4-FILL");
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Клонировать тест" })[0]);
+    fireEvent.click(within(screen.getByText("FS-EXT4-FILL").closest("tr")!).getByRole("button", { name: "Клонировать тест" }));
 
     // Копия рабочего теста требует собственной проверки.
     expect(screen.getByRole("button", { name: "В разработке" })).toBeInTheDocument();
@@ -281,7 +281,7 @@ describe("TestsWorkzone — конструктор команды", () => {
   async function openConstructor() {
     renderWorkzone();
     await screen.findByText("FS-EXT4-FILL");
-    fireEvent.click(screen.getAllByRole("button", { name: /Конструктор/ })[0]);
+    fireEvent.click(within(screen.getByText("FS-EXT4-FILL").closest("tr")!).getByRole("button", { name: /Конструктор/ }));
     await screen.findByText(/Конструктор команды/);
   }
 
@@ -382,7 +382,7 @@ describe("TestsWorkzone — конструктор команды", () => {
     fireEvent.click(screen.getByRole("button", { name: /Добавить слот/ }));
     fireEvent.click(screen.getByRole("button", { name: "Переменная" }));
     fireEvent.click(screen.getByRole("button", { name: /выберите переменную/ }));
-    fireEvent.click(await screen.findByRole("option", { name: "RC · Release candidate" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Release candidate · RC" }));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
 
     await waitFor(() =>
@@ -528,7 +528,7 @@ describe("TestsWorkzone — глобальные переменные", () => {
     // переиспользует тот же useQuery страницы, а не тянет свой собственный
     // список переменных, поэтому видит NEW_VAR немедленно
     fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
-    fireEvent.click(screen.getAllByRole("button", { name: /Конструктор/ })[0]);
+    fireEvent.click(within(screen.getByText("FS-EXT4-FILL").closest("tr")!).getByRole("button", { name: /Конструктор/ }));
     await screen.findByText(/Конструктор команды/);
 
     fireEvent.click(screen.getByRole("button", { name: /Добавить слот/ }));

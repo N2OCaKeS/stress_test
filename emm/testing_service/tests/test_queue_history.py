@@ -84,3 +84,15 @@ async def test_search_escapes_wildcards_and_matches_test_name(client, admin_toke
     assert page["total"] == 4
     page = (await client.get(BASE, headers=auth_hdr(admin_token), params={"q": "%"})).json()
     assert page["total"] == 0
+
+
+async def test_os_filter_matches_catalog_id_and_legacy_version_name(client, admin_token):
+    _, _, ids = await seed_history(client, admin_token)
+    async with AsyncSessionLocal() as db:
+        for item_id, version in zip(ids, ["os_catalog", "1.7.1.44", "1.8.1.1", "os_other"]):
+            item = await db.get(QueueItem, item_id)
+            item.launch_context = {"RC": version}
+        await db.commit()
+    result = await client.get(BASE, headers=auth_hdr(admin_token), params={"os_version_id": "os_catalog", "os_version_name": "1.7.1.44"})
+    assert result.status_code == 200
+    assert {item["id"] for item in result.json()["items"]} == set(ids[:2])

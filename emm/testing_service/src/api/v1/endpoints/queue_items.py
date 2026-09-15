@@ -49,6 +49,7 @@ async def list_items(
     kind: Literal["standalone", "campaign", "all"] = "standalone",
     test_run_id: str | None = None,
     os_version_id: str | None = None,
+    os_version_name: str | None = Query(None, max_length=64),
     kernel: str | None = None,
     stand_id: str | None = None,
     test_id: str | None = None,
@@ -74,7 +75,7 @@ async def list_items(
         test_run_id=test_run_id,
         limit=limit,
         offset=offset,
-        os_version_id=os_version_id, kernel=kernel, stand_id=stand_id, test_id=test_id, attempt_id=attempt_id,
+        os_version_id=os_version_id, os_version_name=os_version_name, kernel=kernel, stand_id=stand_id, test_id=test_id, attempt_id=attempt_id,
         retry_of_id=retry_of_id, created_from=created_from, created_until=created_until,
         states=states, debug_mode=debug_mode, q=q, order=order,
     )

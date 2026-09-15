@@ -10,6 +10,12 @@
 обновление идёт мимо HTTP (см. `services/queue.py` → `services/stp_status.py`).
 `/stp/matrix/publish` — ручная публикация сводной таблицы РЦ в Confluence,
 department-scoped `(stp_test_run, *, publish)` (см. `services/stp_matrix.py`).
+`/stp/test-runs/{run_id}/add-test` — добавить один тест EMM в конкретный
+СТП-прогон (§D6/D7): заводит недостающий Zephyr testcase, добавляет его в
+Zephyr test-run, локальную ячейку и переопубликовывает СТП-матрицу, шаг за
+шагом с retry (см. `services/stp_add_test.py`). Тот же гейт, что у
+`/stp/generate` — это тот же create-жест над `stp_test_run`, только на один
+тест вместо целого состава.
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -31,7 +37,9 @@ from src.schemas.stp import (
     StpTestCaseUpdate,
     StpTestRunResponse,
 )
+from src.schemas.stp_add_test import StpAddTestOperationResponse, StpAddTestRequest
 from src.services import stp as stp_svc
+from src.services import stp_add_test as stp_add_test_svc
 from src.services import stp_matrix as stp_matrix_svc
 from src.services import stp_status
 from src.services import stp_test_case as stp_test_case_svc
@@ -249,6 +257,38 @@ async def list_stp_test_run_cells(
 ) -> list[StpCellResponse]:
     _run, cells = await stp_svc.get_stp_test_run(db, run_id)
     return [StpCellResponse.model_validate(c) for c in cells]
+
+
+@router.post(
+    "/test-runs/{run_id}/add-test",
+    response_model=StpAddTestOperationResponse,
+    summary="Добавить один тест EMM в конкретный СТП-прогон",
+    description=(
+        "§D6/D7: узкий per-test аналог /stp/generate — заводит недостающий "
+        "Zephyr testcase (переиспользует существующую связь, если она уже "
+        "есть), добавляет его в Zephyr test-run, локальную ячейку и "
+        "переопубликовывает СТП-матрицу. Долговечно: повтор на ту же пару "
+        "(test_id, run_id) продолжает с первого не пройденного шага, не "
+        "дублирует работу ни локально, ни в Zephyr. Частичный сбой (например, "
+        "провал публикации в Confluence при уже готовом Zephyr-составе) "
+        "отражается в ответе как `status: failed` с уже пройденными шагами, "
+        "не выдаётся за завершённую синхронизацию."
+    ),
+    responses={
+        403: {"description": "Нет роли с `create`."},
+        404: {"description": "Тест или СТП-прогон не найдены."},
+    },
+)
+async def add_test_to_stp(
+    run_id: str,
+    body: StpAddTestRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> StpAddTestOperationResponse:
+    op = await stp_add_test_svc.add_test_to_stp(
+        db, identity, test_id=body.test_id, stp_test_run_id=run_id,
+    )
+    return StpAddTestOperationResponse.model_validate(op)
 
 
 # ── Ячейки: ручной override ─────────────────────────────────────────────────────

@@ -22,6 +22,13 @@
   `POST /rest/atm/1.0/testrun/{testRunKey}/testcase`, тело — список тех же
   элементов, что и `_build_body`. **Не проверено против живой Jira** — см.
   собственный docstring метода, та же оговорка, что у `update_test_result`.
+* `create_test_case` — §D6: завести НОВЫЙ testcase в Zephyr (не test-run),
+  используется, когда добавляемый в СТП тест ещё не имеет `stp_test_case`
+  со своим `zephyr_id` (`services/stp_add_test.py`). Ни в легаси, ни в этой
+  кодовой базе прежде эквивалента не было — легаси testcase'ы заводились
+  вручную в Zephyr UI. `POST /rest/atm/1.0/testcase`, построено по аналогии
+  с `create_test_run`/`_build_body`. **Не проверено против живой Jira** —
+  тот же класс оговорки, что у `add_test_cases_to_run`/`update_test_result`.
 * `update_test_result` — **НЕ переносит легаси-путь** (`ZefirStatusAPI.
   upload_status`, `rest/tests/1.0`, поиск тест-цикла по имени внутри
   `folder_tree_id` — хрупкий текстовый матчинг, дублирующий более новый API).
@@ -253,6 +260,73 @@ async def add_test_cases_to_run(
             error_code="ZEPHYR_ADD_TEST_CASES_FAILED",
             message=f"Zephyr returned {response.status_code} adding test cases to the test run",
         )
+
+
+async def create_test_case(
+    *,
+    base_url: str,
+    bearer_token: str,
+    name: str,
+    folder: str,
+    project_key: str = "BT",
+    owner_key: str | None = None,
+) -> str:
+    """`POST /rest/atm/1.0/testcase` — завести новый Zephyr Scale test case, вернуть его `key`.
+
+    §D6: заводится ровно один раз для нового `stp_test_case` — caller обязан
+    сперва проверить `stp_test_case_repo.get_by_code`, чтобы не плодить дубли
+    в Zephyr при повторном ручном добавлении уже связанного теста (см.
+    `services/stp_add_test.py`).
+
+    **Контракт не проверен против живой Jira.** Ни в легаси
+    (`allta_app/libs/zefir.py`) для создания testcase эквивалента нет вовсе
+    — легаси заводило тест-кейсы вручную в Zephyr UI, — ни в этой кодовой
+    базе прежде такого вызова не было. Путь и форма тела построены по
+    документации Zephyr Scale ATM REST API и по аналогии с
+    `create_test_run`/`_build_body` (тот же стиль Adaptavist ATM). Перед
+    первым реальным использованием стоит свериться вручную с актуальной
+    Jira (см. также docstring `add_test_cases_to_run`/`update_test_result` —
+    тот же класс оговорки).
+    """
+    settings = get_settings()
+    url = f"{_base(base_url)}/rest/atm/1.0/testcase"
+    headers = bearer_header(bearer_token)
+    body: dict = {"projectKey": project_key, "name": name, "folder": folder}
+    if owner_key:
+        body["owner"] = owner_key
+
+    async with build_client(settings.zephyr_request_timeout_seconds) as client:
+        try:
+            response = await client.post(url, json=body, headers=headers)
+        except httpx.HTTPError as exc:
+            raise ServiceUnavailableError(
+                error_code="ZEPHYR_UNREACHABLE",
+                message=f"Unable to reach Jira/Zephyr: {type(exc).__name__}",
+            ) from exc
+
+    if response.status_code != 201:
+        logger.warning(
+            "zephyr: create_test_case failed status=%s body=%s",
+            response.status_code, response.text[:500],
+        )
+        raise ServiceUnavailableError(
+            error_code="ZEPHYR_CREATE_TEST_CASE_FAILED",
+            message=f"Zephyr returned {response.status_code} creating the test case",
+        )
+
+    try:
+        key = response.json().get("key")
+    except ValueError as exc:
+        raise ServiceUnavailableError(
+            error_code="ZEPHYR_ERROR",
+            message="Zephyr returned a non-JSON body creating the test case",
+        ) from exc
+    if not key:
+        raise ServiceUnavailableError(
+            error_code="ZEPHYR_ERROR",
+            message="Zephyr response is missing the test case key",
+        )
+    return key
 
 
 async def update_test_result(

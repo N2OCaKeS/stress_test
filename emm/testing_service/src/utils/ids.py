@@ -107,3 +107,8 @@ def stp_matrix_publication_id() -> str:
 def stp_composition_id() -> str:
     """`stpcomp_<uuid>` — для stp_compositions."""
     return _new_id("stpcomp_")
+
+
+def stp_add_test_operation_id() -> str:
+    """`stpadd_<uuid>` — для stp_add_test_operations."""
+    return _new_id("stpadd_")

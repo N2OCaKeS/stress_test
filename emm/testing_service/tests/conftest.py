@@ -112,6 +112,10 @@ def _cleanup_created_variables():
             # владении этого домена, чистим безусловно. Каскадом сносит
             # test_log_segments/test_log_blobs (ON DELETE CASCADE).
             conn.execute(text("DELETE FROM test_logs"))
+            # stp_add_test_operations — целиком в владении этого домена, чистим
+            # безусловно и ПЕРВЫМ: держит RESTRICT FK на test_definitions и
+            # stp_test_runs, до её удаления DELETE этих таблиц ниже упадёт.
+            conn.execute(text("DELETE FROM stp_add_test_operations"))
             # stp_cells/stp_test_runs — целиком в владении этого домена (нет
             # сида, никогда не сеются миграцией), чистим безусловно, до
             # queue_items/test_stands (FK stp_cells.queue_item_id SET NULL,

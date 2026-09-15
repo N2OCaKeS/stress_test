@@ -11,6 +11,7 @@ from src.models.queue_item import QueueItem
 from src.models.run_summary_comment import RunSummaryComment
 from src.models.statistics_recalc import StatisticsRecalcState
 from src.models.statistics_settings import StatisticsSettings
+from src.models.stp_add_test_operation import StpAddTestOperation
 from src.models.stp_cell import StpCell
 from src.models.stp_composition import StpComposition
 from src.models.stp_matrix_publication import StpMatrixPublication
@@ -37,6 +38,7 @@ __all__ = [
     "RunSummaryComment",
     "StatisticsRecalcState",
     "StatisticsSettings",
+    "StpAddTestOperation",
     "StpCell",
     "StpComposition",
     "StpMatrixPublication",

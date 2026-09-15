@@ -9,6 +9,8 @@ from src.models.entity_permission import EntityPermission
 from src.models.global_variable import GlobalVariable
 from src.models.queue_item import QueueItem
 from src.models.run_summary_comment import RunSummaryComment
+from src.models.statistics_recalc import StatisticsRecalcState
+from src.models.statistics_settings import StatisticsSettings
 from src.models.stp_cell import StpCell
 from src.models.stp_matrix_publication import StpMatrixPublication
 from src.models.stp_test_case import StpTestCase
@@ -32,6 +34,8 @@ __all__ = [
     "GlobalVariable",
     "QueueItem",
     "RunSummaryComment",
+    "StatisticsRecalcState",
+    "StatisticsSettings",
     "StpCell",
     "StpMatrixPublication",
     "StpTestCase",

@@ -1,11 +1,12 @@
 /** Одиночные запуски и логи реальных попыток вне кампаний. */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Bug, ChevronDown, ChevronUp, Play, Search } from "lucide-react";
+import { BarChart3, Bug, ChevronDown, ChevronUp, Play, Search } from "lucide-react";
 import { formatElapsedHMS, formatMsk } from "@/lib/datetime";
 import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
 import { useQuery } from "@/api/auth/useQuery";
 import { listQueueItems, retryQueueItem } from "@/api/testing/queueItems";
+import { triggerStatisticsRecalc } from "@/api/testing/statistics";
 import { listOsVersions } from "@/api/server/osVersions";
 import { listTestDefinitions } from "@/api/testing/testDefinitions";
 import { listTestStands, getTestStand } from "@/api/testing/testStands";
@@ -144,6 +145,20 @@ export function useAdhocState(enabled = true): AdhocState {
 
 export function AdhocMiddlePanel({ state }: { state: AdhocState }) {
   const [launchOpen, setLaunchOpen] = useState(false);
+  const toast = useToast();
+  const [recalcPending, setRecalcPending] = useState(false);
+  async function handleRecalc() {
+    if (recalcPending) return;
+    setRecalcPending(true);
+    try {
+      await triggerStatisticsRecalc();
+      toast.success("Пересчёт статистики запущен в фоне — статус смотрите слева на панели");
+    } catch (error) {
+      toast.error(apiErrMsg(error, "Не удалось запустить пересчёт статистики"));
+    } finally {
+      setRecalcPending(false);
+    }
+  }
   return (
     <aside className="border-r border-token surface flex flex-col min-h-0">
       <div className="border-b border-token px-3 py-2 shrink-0">
@@ -205,6 +220,17 @@ export function AdhocMiddlePanel({ state }: { state: AdhocState }) {
         >
           <Play className="w-3.5 h-3.5" />
           Запустить разовый тест
+        </Button>
+        <Button
+          size="sm"
+          type="button"
+          className="w-full mt-2 flex items-center justify-center gap-2"
+          disabled={recalcPending}
+          onClick={handleRecalc}
+          title="Пересчитать статистику по одиночным тестам в фоне, не блокируя очередь"
+        >
+          <BarChart3 className="w-3.5 h-3.5" />
+          {recalcPending ? "Запускаем…" : "Пересчитать статистику"}
         </Button>
       </div>
       {launchOpen && <StandaloneLaunchModal onClose={() => setLaunchOpen(false)} onLaunched={(id) => { state.setOffset(0); state.setSearch(""); state.setStatusFilter("all"); state.setSelectedId(id); state.refresh(); setLaunchOpen(false); }} />}

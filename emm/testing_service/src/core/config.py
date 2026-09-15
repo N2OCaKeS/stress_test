@@ -251,6 +251,22 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Statistics service (§2.7, §9.3 плана миграции — фоновый пересчёт статистики) ─
+
+    statistics_request_timeout_seconds: float = Field(
+        default=300.0,
+        alias="STATISTICS_REQUEST_TIMEOUT_SECONDS",
+        description=(
+            "Таймаут POST /all-statistics внешнего сервиса статистики (ветка "
+            "`statistics` этого же монорепо, `statistics/main_api.py`). Все "
+            "его эндпоинты синхронные (`def`, не `async def`) и пересчитывают "
+            "много семейств тестов последовательно в одном запросе — может "
+            "идти минутами, поэтому таймаут заметно выше, чем у остальных "
+            "интеграций сервиса. Вызов всегда идёт из фоновой задачи "
+            "(`services/statistics_recalc.py`), не из request-response цикла."
+        ),
+    )
+
     # ── Redis creds stash (креды тестового пользователя между callback'ом ────
     # prepare-for-test и claim'ом testing_worker'а) ───────────────────────────
 

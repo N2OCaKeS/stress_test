@@ -83,6 +83,14 @@ class EntityType(StrEnum):
     # ролям. Зеркалит одноимённый entity_type в server_service/secret_service.
     PERMISSION = "permission"
 
+    # Платформенные настройки внешнего сервиса пересчёта статистики (ветка
+    # `statistics` этого же монорепо, §2.7/§9.3 плана миграции) — один
+    # инстанс на всю платформу, не per-department, тот же паттерн, что
+    # `acs_settings` в server_service. Чтение открыто любому аутентифи-
+    # цированному актору, под матрицей — запись настроек и ручной триггер
+    # пересчёта (`POST /statistics/recalculate`) для одиночных тестов.
+    STATISTICS_SETTINGS = "statistics_settings"
+
 
 class Action(StrEnum):
     """Fine-grained actions матрицы entity_permissions.
@@ -145,6 +153,9 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     }),
     EntityType.PERMISSION: frozenset({
         Action.VIEW, Action.PERMISSION_GRANT, Action.PERMISSION_REVOKE,
+    }),
+    EntityType.STATISTICS_SETTINGS: frozenset({
+        Action.VIEW, Action.UPDATE,
     }),
 }
 
@@ -271,6 +282,21 @@ class StpMatrixPublicationStatus(StrEnum):
     POSTED = "posted"
     SKIPPED_NOT_CONFIGURED = "skipped_not_configured"
     SKIPPED_NO_TEST_RUNS = "skipped_no_test_runs"
+    FAILED = "failed"
+
+
+class StatisticsRecalcStatus(StrEnum):
+    """Состояние фонового пересчёта статистики внешним сервисом (§2.7, §9.3 плана миграции).
+
+    `idle` — пересчёт ещё ни разу не запускался (строки в БД нет). `running` —
+    `POST /all-statistics` сейчас в процессе (может идти минутами — сам
+    сервис статистики синхронный внутри себя). `succeeded`/`failed` —
+    последняя попытка завершилась, `error` несёт текст причины на `failed`.
+    """
+
+    IDLE = "idle"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
     FAILED = "failed"
 
 

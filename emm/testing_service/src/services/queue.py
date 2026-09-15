@@ -57,6 +57,7 @@ from src.services import (
     run_summary,
     secret_client,
     server_client,
+    statistics_recalc,
     stp_status,
     test_run_status,
     launch_stp,
@@ -380,12 +381,16 @@ async def _fail_and_advance(
 
 
 async def _maybe_post_run_summary(db: AsyncSession, new_status: str | None, test_run_id: str) -> None:
-    """Best-effort триггер end-of-run комментария (§2.7, §9.2) на переходе в терминал.
+    """Best-effort триггеры на переходе кампании в терминал (§2.7, §9.2, §9.3).
 
-    `run_summary.post_run_summary` уже целиком best-effort (сохраняет
-    `status=failed` в свою же таблицу на любой сбой, коммитит сама), но
-    оборачиваем ещё раз здесь — сбой этого вызова не должен как-либо влиять
-    на уже завершённый прогон, который эта функция вызывается финализировать.
+    Два независимых best-effort вызова: end-of-run комментарий в Confluence
+    (`run_summary`) и фоновый пересчёт статистики (`statistics_recalc`) —
+    ровно один раз на кампанию, здесь же, а не на каждый отдельный item, так
+    что retry/повторы её тестов по ходу прогона не плодят лишних пересчётов.
+    Оба уже best-effort сами по себе (сохраняют свой статус на любой сбой),
+    но оборачиваем ещё раз здесь и по отдельности — сбой одного не должен
+    ни ронять другой, ни как-либо влиять на уже завершённый прогон, который
+    эта функция вызывается финализировать.
     """
     if new_status not in TERMINAL_TEST_RUN_STATUSES:
         return
@@ -394,6 +399,12 @@ async def _maybe_post_run_summary(db: AsyncSession, new_status: str | None, test
     except Exception as exc:  # noqa: BLE001 — best-effort, не должно ронять queue.py
         logger.warning(
             "run_summary.post_run_summary raised for test_run %s: %s", test_run_id, exc,
+        )
+    try:
+        await statistics_recalc.schedule_recalc(db, "test_run", test_run_id=test_run_id)
+    except Exception as exc:  # noqa: BLE001 — best-effort, не должно ронять queue.py
+        logger.warning(
+            "statistics_recalc.schedule_recalc raised for test_run %s: %s", test_run_id, exc,
         )
 
 

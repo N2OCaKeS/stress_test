@@ -604,6 +604,7 @@ export type TestingEntityType =
   | "department_report_member"
   | "department_activity_report"
   | "permission"
+  | "statistics_settings"
   | (string & {});
 
 /** Имя роли. Системные — `guest`/`admin`; остальные — кастомные, per department. */
@@ -673,4 +674,37 @@ export interface TestingPermissionListResponse {
  */
 export interface TestingPermissionGrantRequest {
   target_department_id?: string | null;
+}
+
+// ── statistics (§2.7, §9.3 плана миграции) ─────────────────────────────────
+
+/** Платформенные настройки внешнего сервиса статистики (`GET/PUT /statistics/settings`). */
+export interface StatisticsSettings {
+  enabled: boolean;
+  base_url: string | null;
+}
+
+/** Тело `PUT /statistics/settings` — частичное обновление, пустая строка в `base_url` очищает. */
+export interface StatisticsSettingsUpdateRequest {
+  enabled?: boolean;
+  base_url?: string;
+}
+
+/** Состояние фонового пересчёта статистики (`GET /statistics/status`). */
+export type StatisticsRecalcState = "idle" | "running" | "succeeded" | "failed";
+
+/** `GET /statistics/status` — индикатор для левой панели. */
+export interface StatisticsRecalcStatus {
+  status: StatisticsRecalcState;
+  triggered_by: "test_run" | "manual" | (string & {}) | null;
+  test_run_id: string | null;
+  started_at: Iso8601 | null;
+  finished_at: Iso8601 | null;
+  error: string | null;
+  updated_at: Iso8601 | null;
+}
+
+/** Тело `POST /statistics/recalculate` — не передан `department_id` → берётся отдел вызывающего. */
+export interface StatisticsRecalcTriggerRequest {
+  department_id?: string | null;
 }

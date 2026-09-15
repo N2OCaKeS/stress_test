@@ -67,6 +67,9 @@ SERVICE_EVENTS = [
     {"action": "department_activity_report.generate", "description": "Department activity report generation attempted (manual trigger)", "default_severity": "INFO"},
     {"action": "permission.grant", "description": "entity_permission row granted", "default_severity": "CRITICAL"},
     {"action": "permission.revoke", "description": "entity_permission row revoked", "default_severity": "CRITICAL"},
+    {"action": "statistics_settings.update", "description": "Platform statistics service settings upserted", "default_severity": "INFO"},
+    {"action": "statistics_recalc.triggered", "description": "Statistics recalculation manually triggered", "default_severity": "INFO"},
+    {"action": "statistics_recalc.completed", "description": "Background statistics recalculation finished (succeeded or failed)", "default_severity": "INFO"},
 ]
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
@@ -163,6 +166,12 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("permission.revoke", "success"): "CRITICAL",
     ("permission.revoke", "failure"): "WARNING",
     ("permission.revoke", "denied"): "WARNING",
+    ("statistics_settings.update", "success"): "INFO",
+    ("statistics_settings.update", "denied"): "WARNING",
+    ("statistics_recalc.triggered", "success"): "INFO",
+    ("statistics_recalc.triggered", "denied"): "WARNING",
+    ("statistics_recalc.completed", "success"): "INFO",
+    ("statistics_recalc.completed", "failure"): "WARNING",
 }
 
 

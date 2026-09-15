@@ -3,6 +3,7 @@ import { Navigate } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
+  BarChart3,
   Bot,
   Building2,
   Camera,
@@ -56,6 +57,7 @@ import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesSecretPermissions } from "./services/ServicesSecretPermissions";
 import { ServicesTestingPermissions } from "./services/ServicesTestingPermissions";
 import { ServicesTestingStands } from "./services/ServicesTestingStands";
+import { ServicesStatisticsSettings } from "./services/ServicesStatisticsSettings";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
 import { ServicesEncryptionRotation } from "./services/ServicesEncryptionRotation";
@@ -386,6 +388,17 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "testing",
     content: ServicesTestingStands,
+    visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
+  },
+
+  {
+    id: "services.testing.statistics_settings",
+    label: "Пересчёт статистики",
+    hint: "Доступ к внешнему сервису статистики (ветка `statistics`)",
+    icon: BarChart3,
+    block: "services",
+    group: "testing",
+    content: ServicesStatisticsSettings,
     visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
   },
 

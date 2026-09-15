@@ -20,6 +20,11 @@ vi.mock("@/api/testing/testStands", () => ({
   getTestStand: async (id: string) => ({ id, server_id: id, server: { display_name: id === "s1" ? "stand15-110" : "vm-stand1" } }),
 }));
 vi.mock("@/api/server/osVersions", () => ({ listOsVersions: async () => ({ items: [{ id: "osv_1", name: "1.8.5", kernels: ["6.1"] }] }) }));
+
+const triggerStatisticsRecalcMock = vi.fn();
+vi.mock("@/api/testing/statistics", () => ({
+  triggerStatisticsRecalc: (...args: unknown[]) => triggerStatisticsRecalcMock(...args),
+}));
 const ITEMS = [
   { id: "adhoc-2026090701", test_id: "t1", stand_id: "s1", test_run_id: null, retry_of_id: null, debug_mode: true, state: "running", rc: "1.8.5", kernel: "6.1", mode: "orel", created_at: "2026-09-07T06:40:00Z", started_at: "2026-09-07T06:40:00Z", finished_at: null, error: null },
   { id: "adhoc-2026090612", test_id: "t2", stand_id: "s2", test_run_id: null, retry_of_id: null, debug_mode: true, state: "succeeded", rc: "1.8.5", kernel: "6.1", mode: "smolensk", created_at: "2026-09-06T19:10:00Z", started_at: "2026-09-06T19:10:00Z", finished_at: "2026-09-06T20:10:00Z", error: null },
@@ -111,6 +116,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   listQueueItemsMock.mockResolvedValue({ items: ITEMS, total: 2 });
   launchQueueItemMock.mockResolvedValue({ ...ITEMS[0], id: "qi_new", state: "queued" });
+  triggerStatisticsRecalcMock.mockResolvedValue({
+    status: "running", triggered_by: "manual", test_run_id: null,
+    started_at: "2026-09-15T10:00:00Z", finished_at: null, error: null, updated_at: null,
+  });
   sockets = [];
   vi.stubGlobal("WebSocket", FakeWebSocket as unknown as typeof WebSocket);
 });
@@ -174,6 +183,22 @@ describe("AdhocMiddlePanel — реальные одиночные запуск�
     expect(screen.getByText(/Debug: результат не засчитывается/)).toBeInTheDocument();
     expect(screen.queryByText(/dev mode/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/dev режим/i)).not.toBeInTheDocument();
+  });
+
+  it("кнопка «Пересчитать статистику» запускает фоновый пересчёт и не ждёт его окончания", async () => {
+    renderHarness();
+    await screen.findAllByText("adhoc-2026090701");
+    fireEvent.click(screen.getByRole("button", { name: /Пересчитать статистику/ }));
+    await waitFor(() => expect(triggerStatisticsRecalcMock).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/запущен в фоне/)).toBeInTheDocument();
+  });
+
+  it("показывает ошибку тостом, если запуск пересчёта статистики отклонён", async () => {
+    triggerStatisticsRecalcMock.mockRejectedValueOnce(new Error("нет прав"));
+    renderHarness();
+    await screen.findAllByText("adhoc-2026090701");
+    fireEvent.click(screen.getByRole("button", { name: /Пересчитать статистику/ }));
+    expect(await screen.findByText("нет прав")).toBeInTheDocument();
   });
 });
 

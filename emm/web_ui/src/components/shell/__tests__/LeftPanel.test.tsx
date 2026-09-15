@@ -40,6 +40,16 @@ vi.mock("@/api/health", () => ({
   checkAllServices: () => new Promise(() => {}),
 }));
 
+// Индикатор пересчёта статистики (§9.3 плана миграции testing_service) —
+// подменяемый резолвер статуса, управляемый из теста.
+let currentStatisticsStatus: import("@/api/testing/types").StatisticsRecalcStatus | null = null;
+vi.mock("@/api/testing/statistics", () => ({
+  getStatisticsStatus: () =>
+    currentStatisticsStatus
+      ? Promise.resolve(currentStatisticsStatus)
+      : new Promise(() => {}),
+}));
+
 // Тяжёлые дочерние блоки панели тянут API/провайдеры — для теста навигации
 // они не нужны, подменяем заглушками.
 vi.mock("@/components/notifications/NotificationBell", () => ({
@@ -82,6 +92,7 @@ function renderPanel(persona: Persona) {
 
 beforeEach(() => {
   currentNavLinks = [];
+  currentStatisticsStatus = null;
 });
 
 describe("LeftPanel — настраиваемая кнопка allta", () => {
@@ -202,5 +213,57 @@ describe("LeftPanel — аудит-чип", () => {
     );
     expect(await screen.findByText("Журнал аудита")).toBeInTheDocument();
     expect(screen.getAllByText("Журнал аудита")).toHaveLength(1);
+  });
+});
+
+describe("LeftPanel — индикатор пересчёта статистики", () => {
+  it("показывает статус idle, когда пересчёт ни разу не запускался", async () => {
+    currentStatisticsStatus = {
+      status: "idle", triggered_by: null, test_run_id: null,
+      started_at: null, finished_at: null, error: null, updated_at: null,
+    };
+    renderPanel(
+      makePersona({
+        username: "regular",
+        service_roles: { server: "reader" },
+        accessible_services: ["server"] as ServiceName[],
+      }),
+    );
+    expect(await screen.findByText("Статистика")).toBeInTheDocument();
+    expect(screen.getByText("не запускался")).toBeInTheDocument();
+  });
+
+  it("показывает статус running с анимацией", async () => {
+    currentStatisticsStatus = {
+      status: "running", triggered_by: "test_run", test_run_id: "run_1",
+      started_at: "2026-09-15T10:00:00Z", finished_at: null, error: null, updated_at: null,
+    };
+    renderPanel(
+      makePersona({
+        username: "regular",
+        service_roles: { server: "reader" },
+        accessible_services: ["server"] as ServiceName[],
+      }),
+    );
+    expect(await screen.findByText("выполняется")).toBeInTheDocument();
+  });
+
+  it("не рендерится для персоны без доступа к server-зоне", async () => {
+    currentStatisticsStatus = {
+      status: "succeeded", triggered_by: "manual", test_run_id: null,
+      started_at: "2026-09-15T10:00:00Z", finished_at: "2026-09-15T10:05:00Z",
+      error: null, updated_at: null,
+    };
+    renderPanel(
+      makePersona({
+        username: "log_admin",
+        dept_id: null,
+        platform_role: "logging_admin",
+        accessible_services: ["logging", "config"] as ServiceName[],
+        has_admin: true,
+      }),
+    );
+    await screen.findByText("ОС");
+    expect(screen.queryByText("Статистика")).not.toBeInTheDocument();
   });
 });

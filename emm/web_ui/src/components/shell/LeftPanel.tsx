@@ -24,11 +24,14 @@ import {
   MonitorPlay,
   Box,
   Activity,
+  BarChart3,
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useQuery } from "@/api/auth/useQuery";
 import { getNavLinks } from "@/api/auth/navLinks";
+import { getStatisticsStatus } from "@/api/testing/statistics";
+import type { StatisticsRecalcStatus } from "@/api/testing/types";
 import {
   hasServerZoneAccess,
   hasAuditLogAccess,
@@ -341,6 +344,7 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
           />
         ))}
         <ServicesHealthPanel collapsed={collapsed} />
+        {hasServerZoneAccess(persona) && <StatisticsRecalcPanel collapsed={collapsed} />}
       </nav>
 
       <div className="mt-auto shrink-0 flex flex-col">
@@ -497,6 +501,87 @@ function ServicesHealthPanel({ collapsed }: { collapsed: boolean }) {
     <div className="mt-3 border-t border-token pt-3 flex flex-col gap-1">
       <HealthNavRow to="/health" title="Здоровье служб" status={alltaStatus} />
     </div>
+  );
+}
+
+const STATISTICS_POLL_INTERVAL_MS = 15_000;
+
+const STATISTICS_STATUS_META: Record<
+  StatisticsRecalcStatus["status"],
+  { label: string; badge: "idle" | "accent" | "ok" | "danger" }
+> = {
+  idle: { label: "не запускался", badge: "idle" },
+  running: { label: "выполняется", badge: "accent" },
+  succeeded: { label: "успешно", badge: "ok" },
+  failed: { label: "ошибка", badge: "danger" },
+};
+
+/**
+ * Индикатор фонового пересчёта статистики (§9.3 плана миграции testing_service).
+ *
+ * В отличие от легаси (`allta_back.py::calc_all_statistics`, синхронный вызов
+ * в конце прогона, блокирующий дальнейший запуск тестов), пересчёт в EMM
+ * идёт в фоне — эта панель только отображает его текущее/последнее
+ * состояние (`GET /statistics/status`), не запускает его сама. Запуск — либо
+ * автоматически в конце прогона (`services/queue.py`), либо кнопкой
+ * «Пересчитать статистику» на странице одиночных тестов (`/testing/debug`).
+ */
+function StatisticsRecalcPanel({ collapsed }: { collapsed: boolean }) {
+  const [status, setStatus] = useState<StatisticsRecalcStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function poll() {
+      try {
+        const next = await getStatisticsStatus();
+        if (!cancelled) setStatus(next);
+      } catch {
+        // Best-effort индикатор — тихо оставляем предыдущее значение при сбое опроса.
+      }
+    }
+
+    poll();
+    const timer = setInterval(poll, STATISTICS_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  if (status === null) return null;
+  const meta = STATISTICS_STATUS_META[status.status] ?? STATISTICS_STATUS_META.idle;
+  const lastAt = status.finished_at ?? status.started_at;
+  const tooltip = [
+    `Пересчёт статистики: ${meta.label}`,
+    lastAt ? `последний раз: ${new Date(lastAt).toLocaleString("ru-RU")}` : null,
+    status.error ? `ошибка: ${status.error}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  if (collapsed) {
+    return (
+      <div className="mt-1 flex justify-center">
+        <Link to="/testing/debug" title={tooltip} className="chip justify-center">
+          <BarChart3
+            className={`w-4 h-4 shrink-0 ${status.status === "running" ? "animate-pulse" : ""}`}
+          />
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <Link to="/testing/debug" title={tooltip} className="chip">
+      <BarChart3
+        className={`w-4 h-4 shrink-0 ${status.status === "running" ? "animate-pulse" : ""}`}
+      />
+      <span className="text-xs flex-1 min-w-0 truncate">Статистика</span>
+      <Badge kind={meta.badge} className="shrink-0">
+        {meta.label}
+      </Badge>
+    </Link>
   );
 }
 

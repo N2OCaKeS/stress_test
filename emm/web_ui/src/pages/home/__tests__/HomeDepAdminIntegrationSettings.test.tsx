@@ -184,6 +184,18 @@ describe("HomeDepAdmin — настройки интеграции отдела 
     );
   });
 
+  it("показывает баннер онбординга, пока все три ссылки на кред не заполнены", async () => {
+    renderHome();
+    expect(await screen.findByText("Ввести Jira / Git / Confluence →")).toBeInTheDocument();
+  });
+
+  it("не показывает баннер онбординга, если хотя бы одна ссылка уже настроена", async () => {
+    getDepartmentIntegrationSettingsMock.mockResolvedValue({ ...emptySettings(), credential_id: "cred_existing" });
+    renderHome();
+    await screen.findByText("Интеграции отдела (Jira / Confluence / Bitbucket)");
+    expect(screen.queryByText("Ввести Jira / Git / Confluence →")).not.toBeInTheDocument();
+  });
+
   it("кнопка «Сохранить» недоступна, пока форма не изменена", async () => {
     renderHome();
     await screen.findByText("Интеграции отдела (Jira / Confluence / Bitbucket)");

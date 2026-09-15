@@ -38,6 +38,11 @@ const ServerPackages = lazy(() =>
 const Secret = lazy(() =>
   import("@/pages/secret/Secret").then((m) => ({ default: m.Secret }))
 );
+const IntegrationOnboarding = lazy(() =>
+  import("@/pages/home/IntegrationOnboarding").then((m) => ({
+    default: m.IntegrationOnboarding,
+  }))
+);
 const Vm = lazy(() =>
   import("@/pages/vm/Vm").then((m) => ({ default: m.Vm }))
 );
@@ -163,6 +168,14 @@ export function App() {
               element={
                 <RouteGuard service="secret">
                   <Secret />
+                </RouteGuard>
+              }
+            />
+            <Route
+              path="/home/integration-onboarding"
+              element={
+                <RouteGuard service="secret">
+                  <IntegrationOnboarding />
                 </RouteGuard>
               }
             />

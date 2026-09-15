@@ -827,6 +827,16 @@ function DepartmentIntegrationSettingsCard({ departmentId }: { departmentId: str
         Выберите нужные записи вашего отдела ниже.
       </div>
 
+      {loaded && !loaded.credential_id && !loaded.confluence_credential_id && !loaded.bitbucket_credential_id && (
+        <div className="alert-warn text-sm flex items-start gap-2 mb-3">
+          <Link2 className="w-4 h-4 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <div>Реальные токены Jira, Git и Confluence ещё не введены — свежий dev-стенд их не заводит автоматически.</div>
+            <Link to="/home/integration-onboarding" className="text-accent">Ввести Jira / Git / Confluence →</Link>
+          </div>
+        </div>
+      )}
+
       {settingsQ.loading && !loaded && <div className="text-xs text-dim py-2">Загрузка…</div>}
       {!settingsQ.loading && settingsQ.error != null && (
         <div className="alert-danger text-sm flex items-start gap-2">

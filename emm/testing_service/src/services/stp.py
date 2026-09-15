@@ -39,7 +39,7 @@ from collections import defaultdict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import Action, EntityType, StpCellStatus, StpCompositionScope
+from src.core.constants import Action, EntityType, StpCellStatus, StpCompositionScope, TestReadiness
 from src.core.exceptions import AppException, AuthorizationError, DomainValidationError, NotFoundError
 from src.dependencies.auth import Identity
 from src.models import StpComposition, StpTestRun, TestDefinition
@@ -320,7 +320,14 @@ async def _reconcile_stand_runs(
     db: AsyncSession, *, os_version_id: str, mode: str, kernel: str, scope: str, department_id: str,
 ) -> tuple[list[StpTestRun], list[dict]]:
     tests = await test_definition_repo.list_by_department_pinned(db, department_id)
-    target_tests = await _filter_by_changelog(db, tests, os_version_id, scope)
+    # Полный набор — это все тесты со статусом «Рабочий», а не буквально весь
+    # каталог: «На проверке»/«Неисправен»/«В разработке» не входят в СТП, как
+    # и в обычный (не debug) запуск. `tests` ниже остаётся неотфильтрованным —
+    # по нему строятся кандидаты (`by_stand`/`pairs`), чтобы уже заведённая
+    # ячейка теста, ставшего нерабочим, корректно деактивировалась через
+    # обычный путь reconcile, а не просто пропадала из рассмотрения.
+    ready_tests = [t for t in tests if t.readiness == TestReadiness.READY]
+    target_tests = await _filter_by_changelog(db, ready_tests, os_version_id, scope)
 
     target_codes_by_stand: dict[str, set[str]] = defaultdict(set)
     for t in target_tests:

@@ -544,6 +544,37 @@ class TestStpGenerate:
         assert len(cells) == 1
         assert cells[0].status == StpCellStatus.NOT_RUN
 
+    async def test_full_scope_excludes_non_ready_tests(
+        self, client, admin_token, mock_server_service, mock_zephyr, mock_secret_client, dept_a,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token, department_id=dept_a)
+        ready_id, ready_code = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
+        broken_id, broken_code = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
+        patch = await client.patch(
+            f"{TESTS_BASE}/{broken_id}", headers=_hdr(admin_token), json={"readiness": "broken"},
+        )
+        assert patch.status_code == 200, patch.text
+        await _seed_stp_test_case(ready_code, zephyr_id="BT-T1")
+        await _seed_stp_test_case(broken_code, zephyr_id="BT-T2")
+        mock_secret_client["cred_x"] = ("jira_bot", "tok123")
+        await _seed_integration_settings(dept_a)
+
+        resp = await client.post(
+            f"{STP_BASE}/generate", headers=_hdr(admin_token),
+            json={"os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0", "scope": "full", "department_id": dept_a},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["errors"] == []
+        run = body["test_runs"][0]
+        async with AsyncSessionLocal() as db:
+            cells = await stp_cell_repo.list_by_run(db, run["id"])
+            case = await stp_test_case_repo.get_by_code(db, ready_code)
+        # Только «Рабочий» тест попал в состав — ровно одна ячейка, и это он.
+        assert len(cells) == 1
+        assert cells[0].stp_test_case_id == case.id
+
     async def test_missing_integration_settings_is_partial_error(
         self, client, admin_token, mock_server_service, mock_zephyr, mock_secret_client, dept_a,
     ):

@@ -16,6 +16,12 @@
 параметр `server_client.start_prepare_for_test()` (см. `_start_or_continue_
 cycle`), то есть RC и os_version_id в этой кодовой базе — одно и то же поле
 под двумя именами. Кампания просто следует уже существующему соглашению.
+
+СТП-гейт (`launch_stp.require_membership`) применяется к каждому тесту
+кампании только при `final=True` — обычный/пробный прогон пула по-прежнему
+не требует предварительно опубликованного состава СТП, финальный
+(официальный, релизный) обязан ему соответствовать, как и одиночный запуск
+вне debug-режима.
 """
 
 from __future__ import annotations
@@ -36,7 +42,7 @@ from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_run as repo
 from src.repositories import test_run_entry as test_run_entry_repo
 from src.schemas.test_run import TestRunPartialError
-from src.services import audit_service, permissions, queue as queue_svc, test_run_status
+from src.services import audit_service, launch_stp, permissions, queue as queue_svc, test_run_status
 from src.utils.ids import test_run_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -152,9 +158,12 @@ async def create_test_run(
     enqueue_errors: list[TestRunPartialError] = []
     for entry in entries:
         try:
+            ctx = {"RC": os_version_id, "KERNEL": entry.kernel, "MODE": mode}
+            stp = await launch_stp.require_membership(db, entry.test_code, entry.stand_id, ctx) if final else None
             await queue_svc.enqueue(
-                db, identity, entry.test_id, launch_context={"RC": os_version_id, "KERNEL": entry.kernel, "MODE": mode},
+                db, identity, entry.test_id, launch_context=ctx,
                 debug_mode=False, test_run_id=run.id, test_run_entry_id=entry.id,
+                stp_test_run_id=stp.id if stp else None,
             )
         except AppException as exc:
             logger.warning("test_run %s: enqueue failed for stand=%s test=%s: %s", run.id, entry.stand_id, entry.test_id, exc.message)

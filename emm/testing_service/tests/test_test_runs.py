@@ -13,15 +13,21 @@
 
 from __future__ import annotations
 
+import uuid
+
 from src.core.constants import QueueItemState
 from src.db.session import AsyncSessionLocal
 from src.repositories import department_test_settings as dts_repo
 from src.repositories import queue_item as queue_repo
-from src.utils.ids import department_test_settings_id
+from src.repositories import stp_cell as stp_cell_repo
+from src.repositories import stp_test_case as stp_test_case_repo
+from src.repositories import stp_test_run as stp_test_run_repo
+from src.utils.ids import department_test_settings_id, stp_cell_id, stp_test_case_id, stp_test_run_id
 from tests.conftest import auth_hdr as _hdr
 from tests.test_queue import (  # noqa: F401 — фикстуры переиспользуются pytest'ом по имени
     CALLBACK_BASE,
     QUEUE_BASE,
+    TESTS_BASE,
     _create_stand,
     _create_test_def,
     _server_hdr,
@@ -324,3 +330,101 @@ class TestListAndGet:
 
         resp = await client.get(f"{BASE}/{run_id}", headers=_hdr(no_role_token))
         assert resp.status_code == 200, resp.text
+
+
+async def _create_test_def_with_known_code(client, admin_token, pinned_stand_id: str) -> tuple[str, str]:
+    code = f"run.stp.{uuid.uuid4().hex[:8]}"
+    resp = await client.post(
+        TESTS_BASE, headers=_hdr(admin_token),
+        json={"code": code, "full_name": "STP gate test", "readiness": "ready", "pinned_stand_id": pinned_stand_id},
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"], code
+
+
+class TestFinalCampaignRequiresStp:
+    """`final=True` — кампания официального релиза, должна соответствовать СТП (§E1)."""
+
+    async def test_non_final_campaign_ignores_stp(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id]))
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["enqueue_errors"] == []
+
+    async def test_final_campaign_without_stp_membership_reports_partial_error(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], final=True))
+        assert resp.status_code == 201, resp.text
+        errors = resp.json()["enqueue_errors"]
+        assert len(errors) == 1
+        assert errors[0]["error_code"] == "TEST_NOT_IN_STP"
+
+    async def test_final_campaign_with_stp_membership_enqueues(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        _test_id, code = await _create_test_def_with_known_code(client, admin_token, stand_id)
+        payload = _payload([stand_id], final=True)
+
+        async with AsyncSessionLocal() as db:
+            case = await stp_test_case_repo.create(db, {
+                "id": stp_test_case_id(), "code": code, "title": code, "zephyr_id": "BT-T1",
+            })
+            run = await stp_test_run_repo.create(db, {
+                "id": stp_test_run_id(), "os_version_id": payload["os_version_id"],
+                "mode": payload["mode"], "kernel": payload["kernel"], "stand_id": stand_id,
+                "zephyr_test_run_key": "BT-R1", "zephyr_folder_path": "/stress_test",
+            })
+            await stp_cell_repo.create(db, {
+                "id": stp_cell_id(), "stp_test_case_id": case.id, "stp_test_run_id": run.id,
+            })
+            await db.commit()
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=payload)
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["enqueue_errors"] == []
+
+
+class TestRequestIdIdempotency:
+    async def test_same_request_id_and_body_replays_without_duplicating(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+        payload = _payload([stand_id], request_id="req_" + uuid.uuid4().hex)
+
+        first = await client.post(BASE, headers=_hdr(admin_token), json=payload)
+        assert first.status_code == 201, first.text
+        second = await client.post(BASE, headers=_hdr(admin_token), json=payload)
+        assert second.status_code == 201, second.text
+        assert second.json()["id"] == first.json()["id"]
+
+        listing = await client.get(BASE, headers=_hdr(admin_token), params={"department_id": "dep_a"})
+        ids = [r["id"] for r in listing.json()["items"]]
+        assert ids.count(first.json()["id"]) == 1
+
+    async def test_same_request_id_different_body_conflicts(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service()
+        stand_a, _ = await _create_stand(client, admin_token)
+        stand_b, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_a)
+        await _create_test_def(client, admin_token, stand_b)
+        request_id = "req_" + uuid.uuid4().hex
+
+        first = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_a], request_id=request_id))
+        assert first.status_code == 201, first.text
+        second = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_b], request_id=request_id))
+        assert second.status_code == 409, second.text
+        assert second.json()["error_code"] == "REQUEST_ID_CONFLICT"

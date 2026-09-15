@@ -71,6 +71,13 @@ class QueueClaimItem(BaseModel):
         description="Та же строка, но `is_sensitive`-переменные заменены на `***` — версия для логов.",
     )
     dates_filename: str = Field(description="Имя файла на стенде (`dates_<queue_item_id>.conf`).")
+    command_timeout_seconds: int | None = Field(
+        default=None,
+        description=(
+            "`test_definitions.timeout_seconds` этого теста. Пусто — воркер "
+            "берёт свой дефолт (`Settings.ssh_command_timeout_seconds`)."
+        ),
+    )
     debug_mode: bool
     is_retry: bool
 

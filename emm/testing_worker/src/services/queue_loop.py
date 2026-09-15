@@ -108,7 +108,7 @@ async def _run_one_item(item: dict) -> None:
         item["test_ssh_private_key"],
         item["command"],
         connect_timeout=settings.ssh_connect_timeout_seconds,
-        command_timeout=settings.ssh_command_timeout_seconds,
+        command_timeout=item.get("command_timeout_seconds") or settings.ssh_command_timeout_seconds,
         on_output_chunk=_on_output_chunk,
     )
 

@@ -137,6 +137,7 @@ function makeTestDef(id: string, fullName: string): TestDefinition {
     department_id: null,
     pinned_stand_id: "stand_1",
     changelog_component: null,
+    timeout_seconds: null,
     created_at: "2026-09-01T00:00:00Z",
     updated_at: "2026-09-01T00:00:00Z",
     created_by: null,

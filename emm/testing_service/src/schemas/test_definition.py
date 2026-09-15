@@ -69,6 +69,10 @@ class TestDefinitionCreate(BaseModel):
             "generic `run.py -n <dates_filename>` без дополнительного флага."
         ),
     )
+    timeout_seconds: int | None = Field(
+        default=None, gt=0,
+        description="Свой SSH-таймаут исполнения (сек). Пусто — дефолт testing_worker'а.",
+    )
 
     @field_validator("code")
     @classmethod
@@ -99,6 +103,9 @@ class TestDefinitionUpdate(BaseModel):
     starter_suffix: str | None = Field(
         default=None, max_length=16, description="Сменить позиционный $5 у legacy starter.sh.",
     )
+    timeout_seconds: int | None = Field(
+        default=None, gt=0, description="Сменить свой SSH-таймаут исполнения (сек).",
+    )
 
     @field_validator("code")
     @classmethod
@@ -123,6 +130,7 @@ class TestDefinitionResponse(BaseModel):
     pinned_stand_id: str | None = Field(default=None, description="Привязанный стенд.")
     changelog_component: str | None = Field(default=None, description="Компонент changelog-фильтра СТП.")
     starter_suffix: str | None = Field(default=None, description="Позиционный $5 у legacy starter.sh.")
+    timeout_seconds: int | None = Field(default=None, description="Свой SSH-таймаут исполнения (сек); пусто — дефолт testing_worker'а.")
     created_at: datetime = Field(description="Когда тест заведён.")
     updated_at: datetime = Field(description="Когда последний раз изменён.")
     created_by: str | None = Field(default=None, description="Кто завёл.")

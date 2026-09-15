@@ -640,6 +640,7 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         dates_content=dates_content,
         dates_content_masked=dates_content_masked,
         dates_filename=dates_filename,
+        command_timeout_seconds=test.timeout_seconds,
         debug_mode=item.debug_mode,
         is_retry=item.is_retry,
     )

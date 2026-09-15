@@ -131,6 +131,7 @@ export interface TestDefinition {
   department_id: string | null;
   pinned_stand_id: string | null;
   changelog_component: string | null;
+  timeout_seconds: number | null;
   created_at: Iso8601;
   updated_at: Iso8601;
   created_by: string | null;
@@ -146,6 +147,7 @@ export interface TestDefinitionCreateRequest {
   department_id?: string | null;
   pinned_stand_id?: string | null;
   changelog_component?: string | null;
+  timeout_seconds?: number | null;
 }
 
 /** Тело `PATCH /test-definitions/{id}` — все поля опциональны. */
@@ -158,6 +160,7 @@ export interface TestDefinitionUpdateRequest {
   department_id?: string | null;
   pinned_stand_id?: string | null;
   changelog_component?: string | null;
+  timeout_seconds?: number | null;
 }
 
 // ── test-command-args ─────────────────────────────────────────────────────

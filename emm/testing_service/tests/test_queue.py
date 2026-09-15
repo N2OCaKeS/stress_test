@@ -521,6 +521,7 @@ class TestClaim:
         assert payload["dates_content"] == "--run s3cr3t"
         assert payload["dates_content_masked"] == "--run ***"
         assert payload["dates_filename"] == f"dates_{item.id}.conf"
+        assert payload["command_timeout_seconds"] is None
         assert payload["debug_mode"] is False
         assert payload["is_retry"] is False
 
@@ -530,6 +531,38 @@ class TestClaim:
         # Очередь опустела для ready-строк — второй claim ничего не находит.
         resp2 = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
         assert resp2.json()["item"] is None
+
+    async def test_claim_passes_through_test_timeout_override(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+    ):
+        mock_server_service(host="10.9.9.9")
+        await mock_git_token()
+        stand_id, _ = await _create_stand(client, admin_token)
+        resp = await client.post(
+            TESTS_BASE, headers=_hdr(admin_token),
+            json={
+                "code": f"queue.timeout.{uuid.uuid4().hex[:8]}", "full_name": "Тест с таймаутом",
+                "readiness": "ready", "pinned_stand_id": stand_id, "timeout_seconds": 120,
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        test_id = resp.json()["id"]
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+        await client.post(
+            f"{CALLBACK_BASE}/{item.prepare_request_id}/completed",
+            headers=_server_hdr("server_service", SERVER_SECRET),
+            json={
+                "correlation_id": item.id, "succeeded": True,
+                "test_username": "u", "test_password": "s3cr3t",
+                "test_ssh_private_key": "-----KEY-----",
+            },
+        )
+
+        resp = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["item"]["command_timeout_seconds"] == 120
 
     async def test_claim_computes_confluence_new_page(
         self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,

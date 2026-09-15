@@ -105,6 +105,65 @@ class TestRunOneItem:
         await recorded["on_output_chunk"]("live piece")
         assert ("log_chunk", "qi_1", "live piece") in recorded["calls"]
 
+    async def test_uses_settings_default_timeout_when_not_overridden(self, monkeypatch):
+        recorded = {}
+
+        async def fake_execute(host, username, key, command, **kwargs):
+            recorded["command_timeout"] = kwargs.get("command_timeout")
+            return ExecutionResult(
+                connected=True, succeeded=True, exit_code=0, error=None,
+                output="", started_at=_STARTED, finished_at=_FINISHED,
+            )
+
+        async def fake_log_segment(*a, **k):
+            pass
+
+        async def fake_report(*a, **k):
+            pass
+
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
+
+        item = {
+            "queue_item_id": "qi_2", "host": "10.0.0.1", "test_username": "u",
+            "test_ssh_private_key": "keydata", "command": ["x"], "command_masked": ["x"],
+            "debug_mode": False, "is_retry": False,
+        }
+        await queue_loop._run_one_item(item)
+
+        from src.core.config import get_settings
+        assert recorded["command_timeout"] == get_settings().ssh_command_timeout_seconds
+
+    async def test_uses_per_test_timeout_override(self, monkeypatch):
+        recorded = {}
+
+        async def fake_execute(host, username, key, command, **kwargs):
+            recorded["command_timeout"] = kwargs.get("command_timeout")
+            return ExecutionResult(
+                connected=True, succeeded=True, exit_code=0, error=None,
+                output="", started_at=_STARTED, finished_at=_FINISHED,
+            )
+
+        async def fake_log_segment(*a, **k):
+            pass
+
+        async def fake_report(*a, **k):
+            pass
+
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
+
+        item = {
+            "queue_item_id": "qi_3", "host": "10.0.0.1", "test_username": "u",
+            "test_ssh_private_key": "keydata", "command": ["x"], "command_masked": ["x"],
+            "debug_mode": False, "is_retry": False, "command_timeout_seconds": 120,
+        }
+        await queue_loop._run_one_item(item)
+
+        assert recorded["command_timeout"] == 120
+
     async def test_reports_failure_from_execute(self, monkeypatch):
         recorded = {"calls": []}
 

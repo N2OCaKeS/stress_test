@@ -511,6 +511,9 @@ function TestFormModal({
   const [pinnedStandId, setPinnedStandId] = useState(
     initial?.pinned_stand_id ?? template?.pinned_stand_id ?? "",
   );
+  const [timeoutSeconds, setTimeoutSeconds] = useState(
+    (initial?.timeout_seconds ?? template?.timeout_seconds)?.toString() ?? "",
+  );
   const [submitting, setSubmitting] = useState(false);
 
   const valid = code.trim() !== "" && fullName.trim() !== "";
@@ -526,6 +529,7 @@ function TestFormModal({
         category: category.trim() || null,
         readiness,
         pinned_stand_id: pinnedStandId || null,
+        timeout_seconds: timeoutSeconds.trim() ? Number(timeoutSeconds) : null,
       });
     } finally {
       setSubmitting(false);
@@ -581,6 +585,17 @@ function TestFormModal({
           <span className="text-dim text-xs">Статус теста</span>
           <Dropdown mode="single" options={READINESS_OPTIONS} value={readiness} onChange={setReadiness} />
           <span className="text-dim text-xs">«Рабочий» — обычные и debug-запуски. Остальные статусы — только debug. Статус меняется вручную; падение запуска его не меняет.</span>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Свой таймаут выполнения, сек</span>
+          <input
+            type="number"
+            min={1}
+            className="surface-2 border border-token rounded px-2 py-1 mono text-sm"
+            value={timeoutSeconds}
+            onChange={(e) => setTimeoutSeconds(e.target.value)}
+            placeholder="по умолчанию (час)"
+          />
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">Привязанный стенд</span>

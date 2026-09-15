@@ -68,6 +68,7 @@ const TESTS: TestDefinition[] = [
     department_id: null,
     pinned_stand_id: null,
     changelog_component: null,
+    timeout_seconds: null,
     created_at: "2026-09-01T00:00:00Z",
     updated_at: "2026-09-01T00:00:00Z",
     created_by: null,
@@ -82,6 +83,7 @@ const TESTS: TestDefinition[] = [
     department_id: null,
     pinned_stand_id: null,
     changelog_component: null,
+    timeout_seconds: null,
     created_at: "2026-09-01T00:00:00Z",
     updated_at: "2026-09-01T00:00:00Z",
     created_by: null,
@@ -209,6 +211,29 @@ describe("TestsWorkzone — каталог тестов из API", () => {
     );
     // модалка закрылась
     expect(screen.queryByText("Новый тест каталога")).not.toBeInTheDocument();
+  });
+
+  it("свой таймаут теста уходит в createTestDefinition числом, пустое поле — null", async () => {
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+
+    fireEvent.click(screen.getByRole("button", { name: /Добавить тест/ }));
+    fireEvent.change(await screen.findByPlaceholderText("FS-EXT4-FILL"), {
+      target: { value: "NET-IPERF3" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("filesystem / ext4 fill+remove cycle"), {
+      target: { value: "network / iperf3 throughput" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("по умолчанию (час)"), {
+      target: { value: "120" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Создать" }));
+
+    await waitFor(() =>
+      expect(createTestDefinitionMock).toHaveBeenCalledWith(
+        expect.objectContaining({ timeout_seconds: 120 }),
+      ),
+    );
   });
 
   it("редактирование теста вызывает updateTestDefinition с id теста", async () => {

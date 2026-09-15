@@ -13,7 +13,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, String, func
+from sqlalchemy import CheckConstraint, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
@@ -49,6 +49,12 @@ class TestDefinition(Base):
     # (generic `run.py -n <файл>` без доп. флага). Не enum на уровне БД —
     # просто строка, значение диктует сам `starter.sh` (см. import_catalog).
     starter_suffix: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Переопределение таймаута SSH-исполнения для этого теста. NULL — берётся
+    # дефолт testing_worker'а (`Settings.ssh_command_timeout_seconds`, сейчас
+    # час) — общий cap не для каждого теста одинаково уместен: быстрый smoke
+    # не должен час висеть на зависшем стенде, а долгий бенчмарк наоборот
+    # может не уложиться в общий дефолт.
+    timeout_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Soft-FK на auth_service identity (`usr_<hex>`/`bot_<hex>`).
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

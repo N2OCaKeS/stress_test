@@ -14,6 +14,8 @@
 
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
 import type {
+  StpAddTestOperation,
+  StpAddTestRequest,
   StpCell,
   StpCellManualUpdateRequest,
   StpComposition,
@@ -135,6 +137,21 @@ export function getStpTestRun(runId: string): Promise<StpTestRun> {
 /** `GET /stp/test-runs/{id}/cells` — ячейки СТП-прогона. */
 export function listStpTestRunCells(runId: string): Promise<StpCell[]> {
   return apiGet<StpCell[]>(`${BASE}/stp/test-runs/${runId}/cells`);
+}
+
+/**
+ * `POST /stp/test-runs/{run_id}/add-test` — добавить один тест EMM в
+ * конкретный СТП-прогон (§D6/D7): заводит недостающий Zephyr testcase
+ * (переиспользует существующую связь, если она уже есть), добавляет его в
+ * Zephyr test-run, локальную ячейку и переопубликовывает СТП-матрицу.
+ * Долговечно — повтор с тем же `test_id` на тот же прогон продолжает с
+ * первого не пройденного шага вместо дублирования работы.
+ */
+export function addTestToStp(
+  runId: string,
+  body: StpAddTestRequest,
+): Promise<StpAddTestOperation> {
+  return apiPost<StpAddTestOperation>(`${BASE}/stp/test-runs/${runId}/add-test`, body);
 }
 
 // ── ячейки: ручной override ─────────────────────────────────────────────

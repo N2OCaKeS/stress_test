@@ -50,7 +50,10 @@ import { listOsVersions } from "@/api/server/osVersions";
 import type { OffsetPaginatedResponse, OsVersion } from "@/api/server/types";
 import { listNamedTestStands, standName } from "@/api/testing/standCatalogue";
 import type { TestStand } from "@/api/testing/types";
+import { listTestDefinitions } from "@/api/testing/testDefinitions";
+import type { TestDefinition } from "@/api/testing/types";
 import {
+  addTestToStp,
   createStpTestCase,
   deleteStpTestCase,
   generateStp,
@@ -65,6 +68,7 @@ import {
   updateStpTestCase,
 } from "@/api/testing/stp";
 import type {
+  StpAddTestOperation,
   StpCell,
   StpCellStatus,
   StpComposition,
@@ -629,7 +633,17 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
         />
       )}
 
-      {runTarget && <StpRunDetailModal mockMode={mockMode} run={runTarget} onClose={() => setRunTarget(null)} />}
+      {runTarget && (
+        <StpRunDetailModal
+          mockMode={mockMode}
+          run={runTarget}
+          testCases={testCases}
+          cells={cellsByRun[runTarget.id] ?? []}
+          departmentId={deptFilter || undefined}
+          onClose={() => setRunTarget(null)}
+          onAdded={() => refetchRunCells(runTarget.id)}
+        />
+      )}
     </div>
   );
 }
@@ -859,7 +873,23 @@ function StpCellModal({
 
 // ── модалка: карточка прогона (Zephyr) ──────────────────────────────────────
 
-function StpRunDetailModal({ mockMode, run, onClose }: { mockMode: boolean; run: StpTestRun; onClose: () => void }) {
+function StpRunDetailModal({
+  mockMode,
+  run,
+  testCases,
+  cells,
+  departmentId,
+  onClose,
+  onAdded,
+}: {
+  mockMode: boolean;
+  run: StpTestRun;
+  testCases: StpTestCase[];
+  cells: StpCell[];
+  departmentId?: string;
+  onClose: () => void;
+  onAdded: () => void;
+}) {
   const [detail, setDetail] = useState<StpTestRun>(run);
   const [loading, setLoading] = useState(!mockMode);
   const [err, setErr] = useState<string | null>(null);
@@ -882,6 +912,26 @@ function StpRunDetailModal({ mockMode, run, onClose }: { mockMode: boolean; run:
       cancelled = true;
     };
   }, [mockMode, run.id]);
+
+  // Тесты каталога EMM, закреплённые за стендом этого прогона, у которых
+  // ещё нет ячейки здесь — либо тест-кейса СТП вовсе нет, либо он есть, но
+  // не связан ячейкой с ИМЕННО этим прогоном (§D6: ручное добавление одного
+  // теста, не задевая остальной состав).
+  const testDefsQ = useQuery(
+    () => listTestDefinitions({ department_id: departmentId, limit: 500 }),
+    [departmentId],
+    { enabled: !mockMode },
+  );
+  const missingTests = useMemo(() => {
+    if (mockMode) return [];
+    const caseIdByCode = new Map(testCases.map((tc) => [tc.code, tc.id]));
+    const caseIdsWithCell = new Set(cells.map((c) => c.stp_test_case_id));
+    return (testDefsQ.data?.items ?? []).filter((t) => {
+      if (t.pinned_stand_id !== run.stand_id) return false;
+      const caseId = caseIdByCode.get(t.code);
+      return !caseId || !caseIdsWithCell.has(caseId);
+    });
+  }, [mockMode, testDefsQ.data, testCases, cells, run.stand_id]);
 
   return (
     <Modal
@@ -906,10 +956,84 @@ function StpRunDetailModal({ mockMode, run, onClose }: { mockMode: boolean; run:
         <div>создан: <span className="mono">{formatMskShort(detail.created_at)}</span></div>
         <div>обновлён: <span className="mono">{formatMskShort(detail.updated_at)}</span></div>
       </div>
+
+      <div className="border-t border-token mt-3 pt-3 grid gap-2">
+        <div className="text-xs font-medium text-dim">Тесты стенда без ячейки в этом прогоне</div>
+        {mockMode && <div className="text-xs text-dim italic">Mock-режим — недоступно.</div>}
+        {!mockMode && testDefsQ.loading && (
+          <div className="text-xs text-dim inline-flex items-center gap-1.5">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> загрузка…
+          </div>
+        )}
+        {!mockMode && testDefsQ.error && <div className="alert-danger text-xs">{apiErrMsg(testDefsQ.error)}</div>}
+        {!mockMode && !testDefsQ.loading && !testDefsQ.error && missingTests.length === 0 && (
+          <div className="text-xs text-dim italic">Все привязанные к стенду тесты уже в составе.</div>
+        )}
+        {!mockMode &&
+          missingTests.map((t) => <StpAddTestRow key={t.id} test={t} run={run} onAdded={onAdded} />)}
+      </div>
+
       <div className="flex justify-end mt-3">
         <Button type="button" onClick={onClose}>Закрыть</Button>
       </div>
     </Modal>
+  );
+}
+
+// ── ручное добавление одного теста EMM в прогон (§D6/D7) ────────────────────
+
+const ADD_TEST_STEP_LABELS: [keyof StpAddTestOperation, string][] = [
+  ["zephyr_testcase_created", "testcase"],
+  ["zephyr_added_to_run", "в ран"],
+  ["stp_cell_created", "ячейка"],
+  ["life_published", "life"],
+];
+
+function StpAddTestRow({ test, run, onAdded }: { test: TestDefinition; run: StpTestRun; onAdded: () => void }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [op, setOp] = useState<StpAddTestOperation | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const result = await addTestToStp(run.id, { test_id: test.id });
+      setOp(result);
+      if (result.status === "succeeded") {
+        toast.success(`${test.code} добавлен в СТП`);
+        onAdded();
+      } else {
+        toast.warn(`${test.code}: ${result.status}${result.last_error ? " — " + result.last_error : ""}`);
+      }
+    } catch (e) {
+      const msg = apiErrMsg(e);
+      setErr(msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs surface-2 border border-token rounded px-2 py-1.5">
+      <div className="min-w-0">
+        <div className="mono font-medium truncate">{test.code}</div>
+        <div className="text-dim truncate">{test.full_name}</div>
+        {op && (
+          <div className="mt-1 flex items-center gap-1 flex-wrap">
+            {ADD_TEST_STEP_LABELS.map(([key, label]) => (
+              <Badge key={key} kind={op[key] ? "ok" : "warn"}>{label}</Badge>
+            ))}
+          </div>
+        )}
+        {err && <div className="text-danger mt-1">{err}</div>}
+      </div>
+      <Button size="sm" type="button" variant="primary" disabled={busy} onClick={submit}>
+        {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Добавить в СТП"}
+      </Button>
+    </div>
   );
 }
 

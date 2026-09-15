@@ -629,6 +629,36 @@ export interface StpCellManualUpdateRequest {
   status: StpCellStatus | string;
 }
 
+/** Статус операции добавления одного теста в СТП (`StpAddTestOperationStatus`). */
+export type StpAddTestOperationStatus = "pending" | "succeeded" | "failed";
+
+/** Тело `POST /stp/test-runs/{run_id}/add-test`. */
+export interface StpAddTestRequest {
+  test_id: string;
+}
+
+/**
+ * Ответ добавления теста в СТП (§D6/D7) — шаговое состояние долговечной
+ * операции. Повторный вызов на ту же пару `(test_id, run_id)` возвращает эту
+ * же строку, продолженную с первого не пройденного шага.
+ */
+export interface StpAddTestOperation {
+  id: string;
+  department_id: string;
+  test_definition_id: string;
+  stp_test_run_id: string;
+  stp_test_case_id: string | null;
+  stp_cell_id: string | null;
+  zephyr_testcase_created: boolean;
+  zephyr_added_to_run: boolean;
+  stp_cell_created: boolean;
+  life_published: boolean;
+  status: StpAddTestOperationStatus | string;
+  last_error: string | null;
+  created_at: Iso8601;
+  updated_at: Iso8601;
+}
+
 // ── permissions (entity_permissions matrix) ───────────────────────────────
 
 /**

@@ -31,6 +31,7 @@ const getStpTestRunMock = vi.fn();
 const listStpTestRunCellsMock = vi.fn();
 const overrideStpCellMock = vi.fn();
 const publishStpMatrixMock = vi.fn();
+const addTestToStpMock = vi.fn();
 vi.mock("@/api/testing/stp", () => ({
   listStpTestCases: (...a: unknown[]) => listStpTestCasesMock(...a),
   createStpTestCase: (...a: unknown[]) => createStpTestCaseMock(...a),
@@ -44,6 +45,12 @@ vi.mock("@/api/testing/stp", () => ({
   listStpTestRunCells: (...a: unknown[]) => listStpTestRunCellsMock(...a),
   overrideStpCell: (...a: unknown[]) => overrideStpCellMock(...a),
   publishStpMatrix: (...a: unknown[]) => publishStpMatrixMock(...a),
+  addTestToStp: (...a: unknown[]) => addTestToStpMock(...a),
+}));
+
+const listTestDefinitionsMock = vi.fn();
+vi.mock("@/api/testing/testDefinitions", () => ({
+  listTestDefinitions: (...a: unknown[]) => listTestDefinitionsMock(...a),
 }));
 
 vi.mock("@/contexts/PersonaContext", () => ({
@@ -143,6 +150,25 @@ function cell(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+function testDefinition(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "tdef_1",
+    code: "ASTRA-T999",
+    full_name: "Новый тест без ячейки",
+    category: null,
+    owner: null,
+    readiness: "ready",
+    department_id: "dep_1",
+    pinned_stand_id: "stand_1",
+    changelog_component: null,
+    timeout_seconds: null,
+    created_at: ISO,
+    updated_at: ISO,
+    created_by: null,
+    ...overrides,
+  };
+}
+
 function composition(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "stpcomp_1",
@@ -210,6 +236,8 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     listStpTestRunCellsMock.mockReset();
     overrideStpCellMock.mockReset();
     publishStpMatrixMock.mockReset();
+    addTestToStpMock.mockReset();
+    listTestDefinitionsMock.mockReset();
 
     listOsVersionsMock.mockResolvedValue({ items: [osVersion()], total: 1, limit: 500, offset: 0 });
     listDepartmentsMock.mockResolvedValue([department()]);
@@ -217,6 +245,7 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     listStpTestCasesMock.mockResolvedValue({ items: [testCase()], total: 1, limit: 500, offset: 0 });
     listStpTestRunsMock.mockResolvedValue({ items: [testRun()], total: 1, limit: 500, offset: 0 });
     listStpTestRunCellsMock.mockResolvedValue([cell()]);
+    listTestDefinitionsMock.mockResolvedValue({ items: [testDefinition()], total: 1, limit: 500, offset: 0 });
     getStpCompositionMock.mockResolvedValue(composition({ scope: null, revision: 0, id: null, updated_at: null, updated_by: null }));
   });
 
@@ -404,5 +433,27 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Удалить" }));
 
     await waitFor(() => expect(deleteStpTestCaseMock).toHaveBeenCalledWith("case_1"));
+  });
+
+  it("карточка прогона — добавление недостающего теста зовёт addTestToStp и показывает шаговое состояние", async () => {
+    getStpTestRunMock.mockResolvedValue(testRun());
+    addTestToStpMock.mockResolvedValue({
+      id: "stpadd_1", department_id: "dep_1", test_definition_id: "tdef_1", stp_test_run_id: "run_1",
+      stp_test_case_id: "case_2", stp_cell_id: "cell_2",
+      zephyr_testcase_created: true, zephyr_added_to_run: true, stp_cell_created: true, life_published: true,
+      status: "succeeded", last_error: null, created_at: ISO, updated_at: ISO,
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("button", { name: "stand_1" }));
+    expect(await screen.findByText("Карточка СТП-прогона")).toBeInTheDocument();
+    expect(await screen.findByText("ASTRA-T999")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Добавить в СТП" }));
+
+    await waitFor(() =>
+      expect(addTestToStpMock).toHaveBeenCalledWith("run_1", { test_id: "tdef_1" }),
+    );
+    expect(await screen.findByText("life")).toBeInTheDocument();
   });
 });

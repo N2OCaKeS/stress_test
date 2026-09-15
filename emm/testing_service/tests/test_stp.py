@@ -353,6 +353,26 @@ class TestStpTestCasesCrud:
 # ── /department-integration-settings CRUD ───────────────────────────────────
 
 
+@pytest.fixture
+def mock_secret_metadata(monkeypatch):
+    """Включает валидацию ссылок (C4) и мокает `get_credential_metadata`.
+
+    `{cred_id: {"scope": ...}}` — отсутствие ключа моделирует 404.
+    """
+    store: dict[str, dict] = {}
+
+    async def fake_get_metadata(token: str, cred_id: str):
+        if cred_id not in store:
+            from src.core.exceptions import NotFoundError
+
+            raise NotFoundError(error_code="CREDENTIAL_NOT_FOUND", message="not found")
+        return store[cred_id]
+
+    monkeypatch.setattr(secret_client, "is_configured", lambda: True)
+    monkeypatch.setattr(secret_client, "get_credential_metadata", fake_get_metadata)
+    return store
+
+
 class TestDepartmentIntegrationSettings:
     async def test_default_is_empty(self, client, guest_token, dept_a):
         resp = await client.get(f"{DIS_BASE}/{dept_a}", headers=_hdr(guest_token))
@@ -386,6 +406,40 @@ class TestDepartmentIntegrationSettings:
         assert patch_resp.status_code == 200
         assert patch_resp.json()["credential_id"] == "cred_x"
         assert patch_resp.json()["confluence_base_url"] == "http://confluence.example"
+
+    async def test_confluence_credential_id_roundtrip(self, client, admin_token, dept_a):
+        resp = await client.put(
+            f"{DIS_BASE}/{dept_a}", headers=_hdr(admin_token),
+            json={"confluence_credential_id": "cred_confluence"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["confluence_credential_id"] == "cred_confluence"
+
+    async def test_service_scope_credential_is_accepted(self, client, admin_token, dept_a, mock_secret_metadata):
+        mock_secret_metadata["cred_service"] = {"scope": "service", "owner_dept_id": dept_a}
+        resp = await client.put(
+            f"{DIS_BASE}/{dept_a}", headers=_hdr(admin_token),
+            json={"credential_id": "cred_service"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["credential_id"] == "cred_service"
+
+    async def test_personal_scope_credential_is_rejected(self, client, admin_token, dept_a, mock_secret_metadata):
+        mock_secret_metadata["cred_personal"] = {"scope": "personal", "owner_user_id": "usr_someone"}
+        resp = await client.put(
+            f"{DIS_BASE}/{dept_a}", headers=_hdr(admin_token),
+            json={"confluence_credential_id": "cred_personal"},
+        )
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["error_code"] == "CREDENTIAL_SCOPE_INVALID"
+
+    async def test_credential_not_visible_is_rejected(self, client, admin_token, dept_a, mock_secret_metadata):
+        resp = await client.put(
+            f"{DIS_BASE}/{dept_a}", headers=_hdr(admin_token),
+            json={"bitbucket_credential_id": "cred_missing"},
+        )
+        assert resp.status_code == 404, resp.text
+        assert resp.json()["error_code"] == "CREDENTIAL_NOT_FOUND"
 
 
 # ── /stp/generate ────────────────────────────────────────────────────────────

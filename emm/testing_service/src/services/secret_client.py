@@ -43,6 +43,7 @@ from src.core.http import bearer_header
 logger = logging.getLogger("testing_service.secret_client")
 
 _REVEAL_PATH = "/api/secret/v1/credentials/{cred_id}/reveal"
+_CREDENTIAL_PATH = "/api/secret/v1/credentials/{cred_id}"
 
 
 def build_client(timeout: float) -> httpx.AsyncClient:
@@ -141,3 +142,71 @@ async def reveal_credential(cred_id: str) -> tuple[str, str]:
             message="secret_service returned a malformed secret payload",
         ) from exc
     return login, secret
+
+
+async def get_credential_metadata(token: str, cred_id: str) -> dict:
+    """Карточка credential (без значения) — `GET /credentials/{id}`, для валидации ссылки.
+
+    В отличие от `reveal_credential`, здесь пробрасывается bearer вызывающего
+    (department_admin, настраивающего `department_integration_settings`), а
+    не bot-токен сервиса — нужна именно ЕГО видимость в secret_service
+    (scope/ACL/грант его отдела), иначе отдел мог бы указать ссылку на чужую
+    credential, которую сам никогда бы не увидел. `reveal_credential`
+    продолжает ходить bot-токеном отдельно, во время публикации.
+
+    Те же доменные исключения, что `reveal_credential` (`CREDENTIAL_NOT_FOUND`
+    / `CREDENTIAL_ACCESS_DENIED` / `SECRET_SERVICE_*`).
+    """
+    settings = get_settings()
+    base = (settings.secret_service_url or "").rstrip("/")
+    if not base:
+        raise ServiceUnavailableError(
+            error_code="SECRET_SERVICE_NOT_CONFIGURED",
+            message="SECRET_SERVICE_URL is not configured",
+        )
+
+    headers = {**bearer_header(token), "X-Service-Identity": SERVICE_NAME}
+    path = _CREDENTIAL_PATH.format(cred_id=cred_id)
+
+    async with build_client(settings.secret_request_timeout_seconds) as client:
+        try:
+            response = await client.get(f"{base}{path}", headers=headers)
+        except httpx.TimeoutException as exc:
+            raise ServiceUnavailableError(
+                error_code="SECRET_SERVICE_TIMEOUT",
+                message="secret_service did not respond in time",
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ServiceUnavailableError(
+                error_code="SECRET_SERVICE_UNREACHABLE",
+                message=f"Unable to reach secret_service: {type(exc).__name__}",
+            ) from exc
+
+    if response.status_code == 404:
+        raise NotFoundError(
+            error_code="CREDENTIAL_NOT_FOUND",
+            message="Credential not found or not visible to the caller",
+            details={"credential_id": cred_id},
+        )
+    if response.status_code == 403:
+        raise AuthorizationError(
+            error_code="CREDENTIAL_ACCESS_DENIED",
+            message="secret_service denied access to this credential",
+            details={"credential_id": cred_id},
+        )
+    if response.status_code >= 300:
+        logger.warning(
+            "secret_service ответил %s на get_credential %s", response.status_code, cred_id,
+        )
+        raise ServiceUnavailableError(
+            error_code="SECRET_SERVICE_ERROR",
+            message=f"secret_service returned {response.status_code}",
+        )
+
+    try:
+        return response.json()
+    except ValueError as exc:
+        raise ServiceUnavailableError(
+            error_code="SECRET_SERVICE_ERROR",
+            message="secret_service returned a non-JSON body",
+        ) from exc

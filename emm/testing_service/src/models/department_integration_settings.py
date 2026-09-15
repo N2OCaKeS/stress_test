@@ -18,6 +18,15 @@ scope=service — так бот `testing_service` (платформенный с
   ОТДЕЛЬНЫЙ credential (basic auth login/password), потому что у Bitbucket и
   Jira/Confluence этого же инстанса могут быть разные сервисные учётки; тот
   же credential_id, что уже есть выше, сюда не годится по умолчанию.
+
+Поле C4 (`SERVICE_CREDENTIALS.md`, `services/run_summary.py`,
+`services/stp_matrix.py`, `services/activity_report.py`):
+
+* `confluence_credential_id` — отдельная учётка для всех Confluence-путей
+  (end-of-run комментарий, HR-отчёт, СТП-матрица). Jira/Zephyr/Tempo
+  по-прежнему используют `credential_id` без изменений. Пусто — Confluence-
+  потребители используют `credential_id` (совместимость с прежней общей
+  учёткой Jira+Confluence).
 * `jira_board_id`/`tempo_team_id` — легаси-хардкоды (`340`/`["7"]`), теперь
   per-department (Tempo сам API поддерживает список teamId, но здесь одна
   отдельская команда — строка, не список; API-клиент оборачивает её в список
@@ -58,6 +67,11 @@ class DepartmentIntegrationSettings(Base):
     credential_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     jira_base_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
     confluence_base_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    # Отдельная учётка для Confluence (C4) — отдел может завести Jira и
+    # Confluence на разных сервисных записях. Пусто — потребители, публикующие
+    # в Confluence, падают обратно на `credential_id` (совместимость с прежней
+    # общей учёткой).
+    confluence_credential_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # ── HR-отчёт по активности (§9.1, волна 10) ──────────────────────────────
     bitbucket_base_url: Mapped[str | None] = mapped_column(String(256), nullable=True)

@@ -21,9 +21,13 @@ Tempo недоступен — отчёт всё равно публикуетс
 ..."). Единственный источник, чей провал делает генерацию `failed` целиком —
 сама публикация в Confluence (без неё отчёта попросту нет, ради чего вся
 остальная работа) и отсутствие обязательной конфигурации
-(`confluence_report_page_space`/`confluence_base_url`/`credential_id`) —
-Jira/Confluence делят один и тот же `credential_id`, так что его недоступность
-в любом случае означает, что публиковать было бы нечем.
+(`confluence_report_page_space`/`confluence_base_url`/`credential_id`).
+
+`credential_id` остаётся обязательным и используется как раньше — для
+Jira-комментариев и Tempo-worklog'ов (`_resolve_jira_secret`). Публикация в
+Confluence (`_resolve_confluence_secret`, C4) предпочитает отдельный
+`confluence_credential_id`, если отдел его завёл; иначе падает обратно на
+тот же `credential_id` — прежнее поведение с общей учёткой Jira+Confluence.
 """
 
 from __future__ import annotations
@@ -199,8 +203,8 @@ def _apply_tempo_worklogs(
             metrics[member.id][day_key]["tempo_tasks"].append(task_key)
 
 
-async def _resolve_primary_secret(settings: DepartmentIntegrationSettings) -> str:
-    """Секрет `credential_id` — используется и Jira/Tempo, и публикацией в Confluence.
+async def _resolve_jira_secret(settings: DepartmentIntegrationSettings) -> str:
+    """Секрет `credential_id` — Jira-комментарии и Tempo-worklog'и (не тронуто C4).
 
     Поднимает `AppException` наружу (не best-effort) — без этого секрета
     отчёт в любом случае некуда публиковать, значит вся генерация проваливается.
@@ -215,6 +219,25 @@ async def _resolve_primary_secret(settings: DepartmentIntegrationSettings) -> st
         raise DomainValidationError(
             error_code="ACTIVITY_REPORT_NOT_CONFIGURED",
             message="reveal_credential returned an empty secret for credential_id",
+        )
+    return secret
+
+
+async def _resolve_confluence_secret(settings: DepartmentIntegrationSettings, jira_secret: str) -> str:
+    """Секрет для публикации отчёта в Confluence (C4).
+
+    Предпочитает отдельный `confluence_credential_id`; если отдел его не
+    завёл — переиспользует уже раскрытый `jira_secret` (прежняя общая учётка,
+    без лишнего похода в secret_service). Провал раскрытия здесь фатален,
+    как и для Jira, — без Confluence-секрета публиковать отчёт некуда.
+    """
+    if not settings.confluence_credential_id:
+        return jira_secret
+    _login, secret = await secret_client.reveal_credential(settings.confluence_credential_id)
+    if not secret:
+        raise DomainValidationError(
+            error_code="ACTIVITY_REPORT_NOT_CONFIGURED",
+            message="reveal_credential returned an empty secret for confluence_credential_id",
         )
     return secret
 
@@ -405,12 +428,13 @@ async def generate_report(
     await db.refresh(report)
 
     try:
-        secret = await _resolve_primary_secret(settings)
+        jira_secret = await _resolve_jira_secret(settings)
+        confluence_secret = await _resolve_confluence_secret(settings, jira_secret)
         members = await member_repo.list_active_by_department(db, department_id)
         days = month_business_days(period)
-        metrics, warnings = await collect_activity(settings, secret, period, days, members)
+        metrics, warnings = await collect_activity(settings, jira_secret, period, days, members)
         html = render_report_html(days=days, members=members, metrics=metrics, jira_base_url=settings.jira_base_url)
-        page_id = await _publish_page(settings, secret, period, html)
+        page_id = await _publish_page(settings, confluence_secret, period, html)
 
         await report_repo.update(db, report, {
             "status": DepartmentActivityReportStatus.DONE,

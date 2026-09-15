@@ -77,12 +77,14 @@ async def _seed_cell(*, case_id: str, run_id: str, status: str) -> str:
 async def _seed_integration_settings(
     department_id: str, *, credential_id="cred_x", confluence_base_url="http://confluence.example",
     stp_matrix_confluence_space="DEPTQA", stp_matrix_confluence_root_page_title="Состав тестового прогона",
+    confluence_credential_id=None,
 ) -> None:
     async with AsyncSessionLocal() as db:
         await dis_repo.create(db, {
             "id": department_integration_settings_id(),
             "department_id": department_id,
             "credential_id": credential_id,
+            "confluence_credential_id": confluence_credential_id,
             "jira_base_url": None,
             "confluence_base_url": confluence_base_url,
             "stp_matrix_confluence_space": stp_matrix_confluence_space,
@@ -235,6 +237,26 @@ class TestPublishStpMatrix:
                 department_id=dept_a, os_version_id="1.8.5.46",
             )
         assert result.status == StpMatrixPublicationStatus.SKIPPED_NO_TEST_RUNS
+
+    async def test_confluence_credential_id_overrides_bearer(self, dept_a, mock_secret_client):
+        """C4: confluence_credential_id имеет приоритет над credential_id для Confluence-контекста."""
+        mock_secret_client["cred_x"] = ("bot", "jira_tok")
+        mock_secret_client["cred_confluence"] = ("bot", "confluence_tok")
+        await _seed_integration_settings(dept_a, confluence_credential_id="cred_confluence")
+        async with AsyncSessionLocal() as db:
+            ctx = await stp_matrix_svc._resolve_confluence_ctx(db, dept_a)
+        assert ctx is not None
+        _base_url, bearer_token, _space, _root_title = ctx
+        assert bearer_token == "confluence_tok"
+
+    async def test_confluence_credential_id_falls_back_to_credential_id(self, dept_a, mock_secret_client):
+        mock_secret_client["cred_x"] = ("bot", "jira_tok")
+        await _seed_integration_settings(dept_a)
+        async with AsyncSessionLocal() as db:
+            ctx = await stp_matrix_svc._resolve_confluence_ctx(db, dept_a)
+        assert ctx is not None
+        _base_url, bearer_token, _space, _root_title = ctx
+        assert bearer_token == "jira_tok"
 
     async def test_full_publish_creates_hierarchy(self, dept_a, mock_secret_client, mock_confluence_pages):
         calls, pages = mock_confluence_pages

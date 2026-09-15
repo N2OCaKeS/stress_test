@@ -18,6 +18,13 @@ class DepartmentIntegrationSettingsUpdate(BaseModel):
     confluence_base_url: str | None = Field(
         default=None, max_length=256, description="Base URL Confluence этого отдела.",
     )
+    confluence_credential_id: str | None = Field(
+        default=None, max_length=64,
+        description=(
+            "Id credential в secret_service для Confluence (может отличаться от Jira). "
+            "Пусто — Confluence-публикации используют credential_id."
+        ),
+    )
     bitbucket_base_url: str | None = Field(
         default=None, max_length=256, description="Base URL Bitbucket Server этого отдела.",
     )
@@ -65,6 +72,7 @@ class DepartmentIntegrationSettingsResponse(BaseModel):
     credential_id: str | None = Field(default=None)
     jira_base_url: str | None = Field(default=None)
     confluence_base_url: str | None = Field(default=None)
+    confluence_credential_id: str | None = Field(default=None)
     bitbucket_base_url: str | None = Field(default=None)
     bitbucket_project_key: str | None = Field(default=None)
     bitbucket_repo_slug: str | None = Field(default=None)

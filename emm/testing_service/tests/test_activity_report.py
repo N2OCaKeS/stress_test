@@ -357,6 +357,38 @@ class TestGenerateReportEndpoint:
         assert resp.status_code == 201, resp.text
         assert resp.json()["status"] == "failed"
 
+    async def test_confluence_credential_id_overrides_publish_bearer(
+        self, client, make_token, mock_secret_client, mock_empty_sources, monkeypatch,
+    ):
+        """C4: confluence_credential_id идёт в Confluence, credential_id — только в Jira/Tempo."""
+        dept = "dep_gen_confcred"
+        await _seed_settings(dept, confluence_credential_id="cred_confluence")
+        mock_secret_client["cred_primary"] = ("bot", "jira_tok")
+        mock_secret_client["cred_bitbucket"] = ("bb", "pass")
+        mock_secret_client["cred_confluence"] = ("bot", "confluence_tok")
+
+        seen_bearers: list[str] = []
+
+        async def fake_find_page_id(*, base_url, bearer_token, space, title):
+            seen_bearers.append(bearer_token)
+            return None
+
+        async def fake_create_page(*, base_url, bearer_token, space, title, parent_id, body_html):
+            seen_bearers.append(bearer_token)
+            return "pg_new"
+
+        monkeypatch.setattr(confluence_client, "find_page_id", fake_find_page_id)
+        monkeypatch.setattr(confluence_client, "create_page", fake_create_page)
+
+        token = make_token(department_id=dept, service_roles={"testing_service": ["admin"]})
+        resp = await client.post(
+            REPORTS_BASE.format(dept=dept) + "/generate",
+            headers=_hdr(token), json={"period": "2026-09"},
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["status"] == "done"
+        assert seen_bearers and all(bearer == "confluence_tok" for bearer in seen_bearers)
+
     async def test_department_admin_bypasses_matrix(
         self, client, make_token, mock_secret_client, mock_confluence_pages, mock_empty_sources,
     ):

@@ -174,18 +174,20 @@ async def _resolve_confluence_ctx(
     settings = await dis_repo.get_by_department(db, department_id)
     if (
         settings is None
-        or not settings.credential_id
         or not settings.confluence_base_url
         or not settings.stp_matrix_confluence_space
         or not settings.stp_matrix_confluence_root_page_title
     ):
         return None
+    cred_id = settings.confluence_credential_id or settings.credential_id
+    if not cred_id:
+        return None
     try:
-        _login, secret = await secret_client.reveal_credential(settings.credential_id)
+        _login, secret = await secret_client.reveal_credential(cred_id)
     except AppException as exc:
         logger.warning(
             "stp_matrix: reveal_credential failed for dept=%s cred=%s: %s",
-            department_id, settings.credential_id, exc.message,
+            department_id, cred_id, exc.message,
         )
         return None
     if not secret:

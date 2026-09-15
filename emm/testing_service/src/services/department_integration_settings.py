@@ -8,12 +8,12 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import Action, EntityType
-from src.core.exceptions import AuthorizationError
+from src.core.exceptions import AuthorizationError, DomainValidationError
 from src.dependencies.auth import Identity
 from src.models import DepartmentIntegrationSettings
 from src.repositories import department_integration_settings as repo
 from src.schemas.department_integration_settings import DepartmentIntegrationSettingsUpdate
-from src.services import audit_service, permissions
+from src.services import audit_service, permissions, secret_client
 from src.utils.ids import department_integration_settings_id as new_id
 
 
@@ -21,6 +21,7 @@ _NULLABLE_FIELDS = (
     "credential_id",
     "jira_base_url",
     "confluence_base_url",
+    "confluence_credential_id",
     "bitbucket_base_url",
     "bitbucket_project_key",
     "bitbucket_repo_slug",
@@ -32,6 +33,41 @@ _NULLABLE_FIELDS = (
     "stp_matrix_confluence_space",
     "stp_matrix_confluence_root_page_title",
 )
+
+# Поля-ссылки на secret_service, которые нужно провалидировать на PUT (C4):
+# credential_id (Jira/Zephyr/Tempo и Confluence-fallback), confluence_credential_id,
+# bitbucket_credential_id.
+_CREDENTIAL_LINK_FIELDS = ("credential_id", "confluence_credential_id", "bitbucket_credential_id")
+
+
+async def _validate_credential_links(token: str, changes: dict) -> None:
+    """Проверяет заново заданные ссылки на credential в secret_service (C4).
+
+    Форвардим bearer вызывающего (не bot-токен сервиса) — решение о
+    видимости должно приниматься по ЕГО правам в secret_service, иначе отдел
+    мог бы сослаться на чужую credential, которую сам никогда бы не увидел.
+    `NotFoundError`/`AuthorizationError` от `get_credential_metadata`
+    пробрасываются как есть (404/403); здесь дополнительно отсекается
+    scope=personal — такая credential department-несовместима, даже если
+    вызывающий на неё смотрит как владелец.
+
+    Канал не настроен в этом окружении (`SECRET_SERVICE_URL` пуст) — молча
+    пропускаем, тот же best-effort, что у `reveal_credential` при публикации.
+    """
+    if not secret_client.is_configured():
+        return
+    for field in _CREDENTIAL_LINK_FIELDS:
+        cred_id = changes.get(field)
+        if not cred_id:
+            continue
+        metadata = await secret_client.get_credential_metadata(token, cred_id)
+        scope = metadata.get("scope")
+        if scope == "personal":
+            raise DomainValidationError(
+                error_code="CREDENTIAL_SCOPE_INVALID",
+                message=f"{field} must reference a department-scoped credential, not a personal one",
+                details={"field": field, "credential_id": cred_id, "scope": scope},
+            )
 
 
 async def get_effective(db: AsyncSession, department_id: str) -> dict:
@@ -59,6 +95,7 @@ async def upsert(
     identity: Identity,
     department_id: str,
     payload: DepartmentIntegrationSettingsUpdate,
+    token: str,
 ) -> DepartmentIntegrationSettings:
     """PUT — создаёт строку при первом вызове, иначе обновляет заданные поля."""
     try:
@@ -75,6 +112,7 @@ async def upsert(
         raise
 
     changes = payload.model_dump(exclude_unset=True, mode="json")
+    await _validate_credential_links(token, changes)
     row = await repo.get_by_department(db, department_id)
     if row is None:
         data = {

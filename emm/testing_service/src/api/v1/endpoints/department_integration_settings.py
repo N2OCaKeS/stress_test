@@ -8,7 +8,7 @@ GET открыт любому аутентифицированному акто�
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AuthenticatedIdentity, CurrentUserIdentity
+from src.dependencies.auth import AuthenticatedIdentity, BearerToken, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.department_integration_settings import (
     DepartmentIntegrationSettingsResponse,
@@ -45,16 +45,23 @@ async def get_department_integration_settings(
     summary="Изменить настройки интеграции отдела",
     description=(
         "Upsert — создаёт строку при первом вызове, иначе обновляет только "
-        "переданные поля."
+        "переданные поля. credential_id/confluence_credential_id/"
+        "bitbucket_credential_id проверяются в secret_service правами "
+        "вызывающего перед сохранением."
     ),
-    responses={403: {"description": "Нет роли с `update`."}},
+    responses={
+        403: {"description": "Нет роли с `update`, либо secret_service отказал в доступе к credential."},
+        404: {"description": "CREDENTIAL_NOT_FOUND — credential не существует или не видна вызывающему."},
+        422: {"description": "CREDENTIAL_SCOPE_INVALID — ссылка указывает на personal-credential."},
+    },
 )
 async def upsert_department_integration_settings(
     department_id: str,
     body: DepartmentIntegrationSettingsUpdate,
     identity: CurrentUserIdentity,
+    token: BearerToken,
     db: AsyncSession = Depends(get_db),
 ) -> DepartmentIntegrationSettingsResponse:
     """PUT настроек отдела. Доступ: `(department_integration_settings, *, update)`."""
-    obj = await svc.upsert(db, identity, department_id, body)
+    obj = await svc.upsert(db, identity, department_id, body, token)
     return DepartmentIntegrationSettingsResponse.model_validate(obj)

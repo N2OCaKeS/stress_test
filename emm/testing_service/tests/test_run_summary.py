@@ -58,13 +58,14 @@ async def _seed_test_run(*, department_id="dep_a", os_version_id="1.8.5.46", sta
 
 async def _seed_integration_settings(
     department_id: str, *, credential_id: str = "cred_x", confluence_base_url: str = "http://confluence.example",
-    bitbucket_credential_id: str | None = None,
+    bitbucket_credential_id: str | None = None, confluence_credential_id: str | None = None,
 ) -> None:
     async with AsyncSessionLocal() as db:
         await dis_repo.create(db, {
             "id": department_integration_settings_id(),
             "department_id": department_id,
             "credential_id": credential_id,
+            "confluence_credential_id": confluence_credential_id,
             "jira_base_url": None,
             "confluence_base_url": confluence_base_url,
             "bitbucket_credential_id": bitbucket_credential_id,
@@ -158,6 +159,30 @@ class TestRenderTitles:
         stp_title, blog_title = run_summary_svc.render_titles("1.8")
         assert stp_title == "STRESS_report ⬝ 1.8"
         assert blog_title == "1.8 оперативного обновления Astra Linux SE 1.8"
+
+
+# ── _resolve_confluence_bearer ───────────────────────────────────────────────
+
+
+class TestResolveConfluenceBearer:
+    async def test_confluence_credential_id_overrides_credential_id(self, mock_secret_client):
+        mock_secret_client["cred_x"] = ("bot", "jira_tok")
+        mock_secret_client["cred_confluence"] = ("bot", "confluence_tok")
+        await _seed_integration_settings("dep_conf_override", confluence_credential_id="cred_confluence")
+        async with AsyncSessionLocal() as db:
+            result = await run_summary_svc._resolve_confluence_bearer(db, "dep_conf_override")
+        assert result is not None
+        _base_url, secret = result
+        assert secret == "confluence_tok"
+
+    async def test_falls_back_to_credential_id_when_unset(self, mock_secret_client):
+        mock_secret_client["cred_x"] = ("bot", "jira_tok")
+        await _seed_integration_settings("dep_conf_fallback")
+        async with AsyncSessionLocal() as db:
+            result = await run_summary_svc._resolve_confluence_bearer(db, "dep_conf_fallback")
+        assert result is not None
+        _base_url, secret = result
+        assert secret == "jira_tok"
 
 
 # ── post_run_summary ─────────────────────────────────────────────────────────

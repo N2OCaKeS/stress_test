@@ -16,7 +16,9 @@ blog-пост, ни STP-страница здесь не создаются — 
 Отличия от легаси (осознанные, см. план миграции):
 
 * учётка Confluence — per-department (`department_integration_settings` +
-  `secret_client.reveal_credential`), не единый хардкод;
+  `secret_client.reveal_credential`), не единый хардкод; предпочитает
+  `confluence_credential_id`, при его отсутствии — `credential_id` (C4,
+  совместимость с прежней общей учёткой Jira+Confluence);
 * вместо «один раз добавить и не трогать» — обновляем существующий
   комментарий при повторном прогоне того же RC (`confluence_comment_id`
   хранится для `update_comment`, `body_snapshot` — basis для diff, чтобы не
@@ -94,14 +96,17 @@ async def _resolve_confluence_bearer(db: AsyncSession, department_id: str) -> tu
     трактует как `status=failed`, не как исключение.
     """
     settings = await dis_repo.get_by_department(db, department_id)
-    if settings is None or not settings.credential_id or not settings.confluence_base_url:
+    if settings is None or not settings.confluence_base_url:
+        return None
+    cred_id = settings.confluence_credential_id or settings.credential_id
+    if not cred_id:
         return None
     try:
-        _login, secret = await secret_client.reveal_credential(settings.credential_id)
+        _login, secret = await secret_client.reveal_credential(cred_id)
     except AppException as exc:
         logger.warning(
             "run_summary: reveal_credential failed for dept=%s cred=%s: %s",
-            department_id, settings.credential_id, exc.message,
+            department_id, cred_id, exc.message,
         )
         return None
     if not secret:

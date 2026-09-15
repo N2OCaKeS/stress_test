@@ -115,7 +115,7 @@ async def list_credentials(
         limit=limit,
         cursor=cursor_pair,
     )
-    if credential_service.is_guest_only(identity):
+    if credential_service.is_guest_only(identity) and not (scope == "service" and identity.actor_type == "bot" and identity.is_service_bot):
         guest_resp = CredentialGuestList(
             items=[_to_guest_read(c) for c in items],
             next_cursor=next_cursor,

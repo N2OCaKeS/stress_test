@@ -29,8 +29,10 @@ from src.schemas.acs_settings import (
     AcsInternalSettingsResponse,
     AcsSettingsResponse,
     AcsSettingsUpdate,
+    AcsCredentialOption,
 )
 from src.services import acs_settings as svc
+from src.services import secret_client
 
 router = APIRouter(prefix="/settings", tags=["system-settings"])
 
@@ -53,15 +55,21 @@ async def get_acs_settings(
     return await svc.get_acs_settings(db)
 
 
+@router.get("/acs/credentials", response_model=list[AcsCredentialOption])
+async def list_acs_credentials(identity: AccountAdminIdentity):
+    """Доступные сервисные записи ACS: названия и владельцы, без значений."""
+    return await secret_client.list_acs_credentials()
+
+
 @router.put(
     "/acs",
     response_model=AcsSettingsResponse,
     summary="Обновить настройки доступа к ACS",
     description=(
         "Частичное обновление: любое поле можно опустить — тогда текущее "
-        "значение сохраняется. `acs_password` — write-only, пусто = не менять; "
-        "`clear_password=true` — явно стереть сохранённый пароль. Включить "
-        "`enabled` без сохранённых url и пароля нельзя."
+        "значение сохраняется. `credential_id` ссылается на сервисную запись acs; "
+        "проверенная привязка удаляет локальный пароль. Старые поля пароля "
+        "принимаются только до миграции. Для включения нужны URL и учётные данные."
     ),
     responses={
         200: {"description": "Настройки обновлены."},

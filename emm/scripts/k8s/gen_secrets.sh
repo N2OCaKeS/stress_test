@@ -514,6 +514,7 @@ TESTING_SERVICE_INTERNAL_API_KEY="${TESTING_INBOUND_WORKER_KEY}"
 # guest@server_service) — нужен choices_source dynamic-резолверам, чтобы
 # читать каталог OS-версий у server_service (introspect-based, не whitelist).
 TESTING_SERVICE_BOT_TOKEN="${TESTING_SERVICE_BOT_TOKEN:-dbos_bot_$(rand "$RAND_S2S_KEY_LEN")}"
+SERVER_SERVICE_BOT_TOKEN="${SERVER_SERVICE_BOT_TOKEN:-dbos_bot_$(rand "$RAND_S2S_KEY_LEN")}"
 
 # Redis
 REDIS_PASSWORD=$(rand "$RAND_REDIS_PASS_LEN")
@@ -673,6 +674,7 @@ cat <<EOF
   # (SERVER_SERVICE_API_KEY, исходящий bearer) — см. 40-auth-service.yaml /
   # 63-testing-service.yaml.
   TESTING_SERVICE_BOT_TOKEN: ${TESTING_SERVICE_BOT_TOKEN}
+  SERVER_SERVICE_BOT_TOKEN: ${SERVER_SERVICE_BOT_TOKEN}
 
   # CronJob rotation-scheduler → server/secret /internal/migration_status
   # (Bearer == ключ rotation_runner в inbound-map'ах server и secret сервисов).

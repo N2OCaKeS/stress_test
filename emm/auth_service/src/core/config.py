@@ -588,6 +588,8 @@ class Settings(BaseSettings):
         ),
     )
 
+    server_service_bot_token: str = Field(default="", alias="SERVER_SERVICE_BOT_TOKEN")
+
     # ── Production-валидатор ─────────────────────────────────────────────────
     #
     # Запускается только при `APP_ENV=production`. Цель — не дать сервису

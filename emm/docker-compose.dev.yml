@@ -133,6 +133,7 @@ services:
       # резолверы читают каталог server_service) — должен совпадать байт-в-байт
       # с SERVER_SERVICE_API_KEY у testing_service ниже.
       TESTING_SERVICE_BOT_TOKEN: dbos_bot_dev_testing_service_local_token_do_not_use_in_prod
+      SERVER_SERVICE_BOT_TOKEN: dbos_bot_dev_server_service_local_token_do_not_use_in_prod
       APP_LOG_LEVEL: INFO
     command: >
       sh -c "python -m alembic upgrade head &&
@@ -171,6 +172,8 @@ services:
       SERVICE_API_KEY: dev-introspect-api-key
       SERVER_ENCRYPTION_KEY: dev-server-encryption-key-do-not-use-in-prod
       SERVER_ENCRYPTION_KEY_VERSION: "2"
+      SECRET_SERVICE_URL: http://secret_service:8003
+      SECRET_SERVICE_API_KEY: dbos_bot_dev_server_service_local_token_do_not_use_in_prod
       # Общий с server_worker'ом ключ для envelope-шифрования Redis-stash'а
       # кред (provision/prepare dispatch). Должен совпадать байт-в-байт с
       # REDIS_STASH_ENCRYPTION_KEY у server_worker'а ниже.

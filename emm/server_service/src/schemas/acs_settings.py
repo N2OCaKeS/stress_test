@@ -17,6 +17,8 @@ class AcsSettingsResponse(BaseModel):
     enabled: bool = Field(description="Общий кил-свитч снимков ACS на всю платформу.")
     acs_url: str | None = Field(default=None, description="Базовый URL ACS.")
     password_is_set: bool = Field(description="Задан ли пароль clonezilla-сервера. Само значение не отдаётся.")
+    credential_id: str | None = None
+    legacy_password_is_set: bool = False
 
 
 class AcsSettingsUpdate(BaseModel):
@@ -31,6 +33,7 @@ class AcsSettingsUpdate(BaseModel):
 
     enabled: bool | None = Field(default=None, description="Включить/выключить снимки ACS.")
     acs_url: str | None = Field(default=None, max_length=512, description="Базовый URL ACS.")
+    credential_id: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$", description="Ссылка на сервисные учётные данные ACS. null отвязывает запись.")
     acs_password: str | None = Field(
         default=None,
         description="Новый пароль clonezilla-сервера (plaintext). Пусто — не менять текущий.",
@@ -76,3 +79,11 @@ class AcsInternalSettingsResponse(BaseModel):
 
     acs_url: str = Field(description="Базовый URL ACS.")
     acs_password: str = Field(description="Расшифрованный пароль clonezilla-сервера (plaintext, только worker'у).")
+
+
+class AcsCredentialOption(BaseModel):
+    id: str
+    name: str
+    owner_dept_id: str
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None

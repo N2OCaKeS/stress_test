@@ -29,7 +29,7 @@ from src.schemas.acs_settings import (
     AcsSettingsUpdate,
 )
 from src.schemas.identity import IdentityContext
-from src.services import audit_service, permissions, secrets_service
+from src.services import audit_service, permissions, secrets_service, secret_client
 from src.utils.ids import acs_department_access_id
 
 
@@ -40,7 +40,9 @@ def _to_response(row: AcsSettings) -> AcsSettingsResponse:
     return AcsSettingsResponse(
         enabled=row.enabled,
         acs_url=row.acs_url,
-        password_is_set=bool(row.acs_password_encrypted),
+        password_is_set=bool(row.credential_id or row.acs_password_encrypted),
+        credential_id=row.credential_id,
+        legacy_password_is_set=bool(row.acs_password_encrypted),
     )
 
 
@@ -73,7 +75,7 @@ async def update_acs_settings(
     не трогаем. Включить `enabled=True` без сохранённых url+пароля нельзя —
     400 `ACS_ENABLE_REQUIRES_CONFIG`. Аудит `settings.acs_updated`.
     """
-    row = await _get_row(db)
+    row = (await db.execute(select(AcsSettings).where(AcsSettings.id == SINGLETON_ID).with_for_update().execution_options(populate_existing=True))).scalar_one_or_none()
     if row is None:
         row = AcsSettings(id=SINGLETON_ID, enabled=False, acs_url=None, acs_password_encrypted=None)
         db.add(row)
@@ -84,6 +86,14 @@ async def update_acs_settings(
         stripped = payload.acs_url.strip()
         row.acs_url = stripped or None
 
+    if "credential_id" in payload.model_fields_set:
+        if payload.credential_id:
+            await secret_client.reveal_acs_password(payload.credential_id)
+            row.acs_password_encrypted = None
+        row.credential_id = payload.credential_id
+
+    if row.credential_id and (payload.acs_password or payload.clear_password):
+        raise BadRequestError(error_code="ACS_PASSWORD_MANAGED_EXTERNALLY", message="Меняйте пароль ACS в сервисе секретов")
     if payload.acs_password:
         row.acs_password_encrypted = secrets_service.encrypt(
             payload.acs_password, aad=secrets_service.aad_for_acs_password(SINGLETON_ID)
@@ -91,11 +101,11 @@ async def update_acs_settings(
     elif payload.clear_password:
         row.acs_password_encrypted = None
 
-    if row.enabled and (not row.acs_url or not row.acs_password_encrypted):
+    if row.enabled and (not row.acs_url or not (row.credential_id or row.acs_password_encrypted)):
         raise BadRequestError(
             error_code="ACS_ENABLE_REQUIRES_CONFIG",
             message="Cannot enable ACS snapshots without acs_url and a stored password",
-            details={"acs_url_set": bool(row.acs_url), "password_set": bool(row.acs_password_encrypted)},
+            details={"acs_url_set": bool(row.acs_url), "password_set": bool(row.credential_id or row.acs_password_encrypted)},
         )
 
     await db.commit()
@@ -110,7 +120,8 @@ async def update_acs_settings(
         details={
             "enabled": row.enabled,
             "acs_url_set": bool(row.acs_url),
-            "password_set": bool(row.acs_password_encrypted),
+            "password_set": bool(row.credential_id or row.acs_password_encrypted),
+            "credential_id": row.credential_id,
         },
     )
 
@@ -143,7 +154,7 @@ async def get_acs_settings_for_worker(
         raise
 
     row = await _get_row(db)
-    if row is None or not row.enabled or not row.acs_url or not row.acs_password_encrypted:
+    if row is None or not row.enabled or not row.acs_url or not (row.credential_id or row.acs_password_encrypted):
         raise ServiceUnavailableError(
             error_code="ACS_DISABLED",
             message="ACS snapshots are disabled or not configured",
@@ -162,6 +173,8 @@ async def _resolve_credentials(db: AsyncSession, row: AcsSettings) -> tuple[str,
     выше по стеку, здесь только расшифровка + lazy-переширфровка протухшего
     конверта.
     """
+    if row.credential_id:
+        return row.acs_url, await secret_client.reveal_acs_password(row.credential_id)
     result = secrets_service.decrypt_with_meta(
         row.acs_password_encrypted, aad=secrets_service.aad_for_acs_password(SINGLETON_ID)
     )
@@ -189,7 +202,7 @@ async def get_acs_credentials(db: AsyncSession) -> tuple[str, str]:
     выключено / не заполнено (тот же контракт, что у worker-read).
     """
     row = await _get_row(db)
-    if row is None or not row.enabled or not row.acs_url or not row.acs_password_encrypted:
+    if row is None or not row.enabled or not row.acs_url or not (row.credential_id or row.acs_password_encrypted):
         raise ServiceUnavailableError(
             error_code="ACS_DISABLED",
             message="ACS snapshots are disabled or not configured",

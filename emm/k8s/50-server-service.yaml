@@ -14,6 +14,7 @@ data:
   # Plain http внутри cluster'а: сервисы стартуют uvicorn'ом без --ssl-*,
   # TLS-терминация только на Ingress. Изоляция — NetworkPolicy.
   AUTH_SERVICE_URL: http://auth-service:8000
+  SECRET_SERVICE_URL: http://secret-service:8003
   LOGGING_SERVICE_URL: http://logging-service:8001
   # Исходящий callback завершения prepare-for-test (§5.1 плана миграции).
   TESTING_SERVICE_URL: http://testing-service:8004
@@ -176,6 +177,9 @@ spec:
             - name: TESTING_SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: TESTING_SERVICE_API_KEY }
+            - name: SECRET_SERVICE_API_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_SERVICE_BOT_TOKEN, optional: true }
             # Подпись токена веб-консоли ВМ — общий секрет с console_proxy.
             - name: VM_CONSOLE_TOKEN_SECRET
               valueFrom:

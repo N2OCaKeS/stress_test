@@ -289,3 +289,34 @@ async def test_dept_grant_not_applicable_to_service_scope(http_client):
     )
     assert resp.status_code == 422, resp.text
     assert resp.json()["error_code"] == "DEPT_GRANT_NOT_APPLICABLE"
+
+
+@pytest.mark.asyncio
+async def test_service_bot_catalog_is_scoped_paginated_and_metadata_only(http_client, adb):
+    from src.models import Credential
+    ids = []
+    for i, (scope, service) in enumerate([("service", "acs"), ("service", "acs"), ("service", "jira"), ("department", "acs"), ("service", "acs")]):
+        response = await http_client.post("/api/secret/v1/credentials", json={
+            "name": f"catalog-{i}", "service": service, "scope": scope,
+            "secret_b64": b64("must-not-appear"), "owner_dept_id": OWNER_DEPT,
+        })
+        assert response.status_code == 201, response.text
+        ids.append(response.json()["id"])
+    blocked = await adb.get(Credential, ids[-1])
+    blocked.status = "blocked"
+    await adb.commit()
+    bot = _identity(user_id="bot_catalog", actor_type="bot", department_id=BOT_SYSTEM_DEPT, roles=["guest"], is_service_bot=True)
+    _set_identity(bot)
+    params = {"scope": "service", "service": "acs", "limit": 1}
+    first = await http_client.get("/api/secret/v1/credentials", params=params)
+    assert first.status_code == 200, first.text
+    page = first.json()
+    assert page["next_cursor"]
+    assert page["items"][0]["owner_dept_id"] == OWNER_DEPT
+    second = await http_client.get("/api/secret/v1/credentials", params={**params, "cursor": page["next_cursor"]})
+    assert {page["items"][0]["id"], second.json()["items"][0]["id"]} == set(ids[:2])
+    assert second.json()["next_cursor"] is None
+    assert "secret_b64" not in first.text and "must-not-appear" not in first.text
+    _set_identity(_identity(user_id="bot_catalog", actor_type="bot", department_id=BOT_SYSTEM_DEPT, roles=["guest"]))
+    ordinary = await http_client.get("/api/secret/v1/credentials", params=params)
+    assert ordinary.json()["items"] == []

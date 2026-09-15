@@ -392,6 +392,18 @@ async def list_visible(
     никаких personal чужих. Caller-endpoint сериализует через CredentialGuestRead
     (урезанная проекция, без значения).
     """
+    if scope == "service" and identity.actor_type == "bot" and identity.is_service_bot:
+        stmt = select(Credential).where(Credential.scope == "service", Credential.status == "active")
+        if status and status != "active":
+            return [], None
+        if service is not None:
+            stmt = stmt.where(Credential.service == service)
+        stmt = repo.apply_cursor(stmt, cursor).order_by(Credential.created_at.desc(), Credential.id.desc()).limit(limit + 1)
+        rows = list((await db.execute(stmt)).scalars())
+        page = rows[:limit]
+        next_cursor = f"{page[-1].created_at.isoformat()}|{page[-1].id}" if len(rows) > limit else None
+        return page, next_cursor
+
     if _is_guest_only(identity):
         if not identity.department_id:
             return [], None

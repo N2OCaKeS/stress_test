@@ -363,6 +363,17 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
     if not token:
         return
 
+    await _bootstrap_catalog_bot(db, token, TESTING_SERVICE_BOT_NAME, _TESTING_SERVICE_BOT_GRANTS)
+
+
+async def bootstrap_server_service_bot(db: AsyncSession) -> None:
+    """Сервисный бот server_service для чтения интеграционных секретов."""
+    token = (get_settings().server_service_bot_token or "").strip()
+    if token:
+        await _bootstrap_catalog_bot(db, token, "server_service", (("secret_service", "guest"),))
+
+
+async def _bootstrap_catalog_bot(db: AsyncSession, token: str, bot_name: str, grants: tuple[tuple[str, str], ...]) -> None:
     from src.models.bot_service_role import BotServiceRole
     from src.repositories.bot_roles import BotRoleRepository
     from src.repositories.bot_tokens import BotTokenRepository
@@ -391,13 +402,13 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
         if dept is None:
             dept = await dept_repo.create(SYSTEM_DEPARTMENT_NAME)
 
-        bot = await bot_repo.first_by_name(TESTING_SERVICE_BOT_NAME)
+        bot = await bot_repo.first_by_name(bot_name)
         if bot is None:
             bot = await bot_repo.create(
-                name=TESTING_SERVICE_BOT_NAME,
+                name=bot_name,
                 department_id=dept.id,
-                allowed_services=[svc for svc, _ in _TESTING_SERVICE_BOT_GRANTS],
-                description="Bootstrap: бот для testing_service (choices_source dynamic-резолверы + secret reveal)",
+                allowed_services=[svc for svc, _ in grants],
+                description=f"Bootstrap: {bot_name} service bot",
                 created_by="bootstrap",
                 is_service_bot=True,
             )
@@ -408,7 +419,7 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
             bot.is_service_bot = True
             await db.flush()
 
-        for service_name, role_name in _TESTING_SERVICE_BOT_GRANTS:
+        for service_name, role_name in grants:
             access = await dept_repo.get_access(dept.id, service_name)
             if access is None:
                 await dept_repo.grant_access(dept.id, service_name, granted_by="bootstrap")
@@ -464,11 +475,11 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
 
     if bot_created:
         logger.warning(
-            "Bootstrap: provisioned testing_service bot '%s' (dept '%s', roles %s) "
-            "from TESTING_SERVICE_BOT_TOKEN",
-            TESTING_SERVICE_BOT_NAME,
+            "Bootstrap: provisioned service bot '%s' (dept '%s', roles %s) "
+            "from configured bot token",
+            bot_name,
             SYSTEM_DEPARTMENT_NAME,
-            ", ".join(f"{r}@{s}" for s, r in _TESTING_SERVICE_BOT_GRANTS),
+            ", ".join(f"{r}@{s}" for s, r in grants),
         )
         audit_service.emit(
             "bot.create",
@@ -480,10 +491,10 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
             allowed=True,
             details={
                 "reason": "bootstrap_seed",
-                "name": TESTING_SERVICE_BOT_NAME,
+                "name": bot_name,
                 "department_id": bot.department_id,
                 "allowed_services": list(bot.allowed_services),
-                "roles": [f"{r}@{s}" for s, r in _TESTING_SERVICE_BOT_GRANTS],
+                "roles": [f"{r}@{s}" for s, r in grants],
             },
         )
         audit_service.emit(
@@ -497,7 +508,7 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
             details={
                 "reason": "bootstrap_seed",
                 "bot_id": bot.id,
-                "bot_name": TESTING_SERVICE_BOT_NAME,
+                "bot_name": bot_name,
                 "token_name": "bootstrap",
                 "token_prefix": token[:TOKEN_PREFIX_LEN],
             },
@@ -506,8 +517,8 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
         # Уже существующий бот (заведён прошлой версией бутстрапа) —
         # догнали недостающий грант без пересоздания токена/бота.
         logger.warning(
-            "Bootstrap: extended testing_service bot '%s' with roles %s",
-            TESTING_SERVICE_BOT_NAME,
+            "Bootstrap: extended service bot '%s' with roles %s",
+            bot_name,
             ", ".join(newly_granted),
         )
         audit_service.emit(
@@ -520,7 +531,7 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
             allowed=True,
             details={
                 "reason": "bootstrap_seed_extended",
-                "bot_name": TESTING_SERVICE_BOT_NAME,
+                "bot_name": bot_name,
                 "roles_added": newly_granted,
             },
         )
@@ -535,7 +546,7 @@ async def bootstrap_testing_service_bot(db: AsyncSession) -> None:
         details={
             "reason": "bootstrap_seed",
             "bot_id": bot.id,
-            "bot_name": TESTING_SERVICE_BOT_NAME,
+            "bot_name": bot_name,
             "token_name": "bootstrap",
             "token_prefix": token[:TOKEN_PREFIX_LEN],
         },

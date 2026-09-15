@@ -392,6 +392,10 @@ class Settings(BaseSettings):
             "LOGING_SERVICE_API_KEY env у loging_service. Пусто отключает удалённый аудит."
         ),
     )
+    secret_service_url: str = Field(default="", alias="SECRET_SERVICE_URL")
+    secret_service_api_key: str = Field(default="", alias="SECRET_SERVICE_API_KEY")
+    secret_request_timeout_seconds: float = Field(default=10.0, gt=0, alias="SECRET_REQUEST_TIMEOUT_SECONDS")
+
     # ── Исходящий канал в testing_service (callback prepare-for-test) ──────
     testing_service_url: str = Field(
         default="",

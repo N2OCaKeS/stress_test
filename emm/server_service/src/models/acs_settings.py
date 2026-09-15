@@ -36,6 +36,9 @@ class AcsSettings(Base):
     )
     acs_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     acs_password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    credential_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    migration_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    migration_owner_dept_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

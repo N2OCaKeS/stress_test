@@ -339,6 +339,8 @@ services:
     init: true
     env_file: [.env.prod]
     environment: &server_env
+      SECRET_SERVICE_URL: http://secret_service:8003
+      SECRET_SERVICE_API_KEY: ${SERVER_SERVICE_BOT_TOKEN:-}
       APP_ENV: production
       APP_DEBUG: "false"
       DBOS_HTTPS_GUARD_DISABLED: "true"

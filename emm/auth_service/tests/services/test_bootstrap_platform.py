@@ -272,6 +272,31 @@ async def test_bootstrap_worker_bot_idempotent(db, monkeypatch):
 # ── testing_service-бот ──────────────────────────────────────────────────────
 
 
+async def test_bootstrap_server_service_bot_is_idempotent_and_can_only_enter_secrets(db, monkeypatch):
+    from src.repositories.bots import BotRepository
+    from src.services import authorization_service
+    _silence_audit(monkeypatch)
+    token = "dbos_bot_" + "s" * 43
+    monkeypatch.setenv("SERVER_SERVICE_BOT_TOKEN", token)
+    await bootstrap_service.bootstrap_platform_services(db)
+    await bootstrap_service.bootstrap_server_service_bot(db)
+    first = await BotRepository(db).first_by_name("server_service")
+    await bootstrap_service.bootstrap_server_service_bot(db)
+    second = await BotRepository(db).first_by_name("server_service")
+    assert first.id == second.id
+    identity = await authorization_service.introspect(db, token)
+    assert identity.active and identity.is_service_bot
+    assert identity.allowed_services == ["secret_service"]
+    assert identity.service_roles == {"secret_service": ["guest"]}
+
+
+async def test_bootstrap_server_service_bot_without_token_is_noop(db, monkeypatch):
+    from src.repositories.bots import BotRepository
+    monkeypatch.setenv("SERVER_SERVICE_BOT_TOKEN", "")
+    await bootstrap_service.bootstrap_server_service_bot(db)
+    assert await BotRepository(db).first_by_name("server_service") is None
+
+
 async def test_bootstrap_testing_service_bot_grants_server_and_secret_service(
     db, monkeypatch
 ):

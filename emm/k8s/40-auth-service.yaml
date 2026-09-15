@@ -153,6 +153,9 @@ spec:
             - name: TESTING_SERVICE_BOT_TOKEN
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: TESTING_SERVICE_BOT_TOKEN }
+            - name: SERVER_SERVICE_BOT_TOKEN
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: SERVER_SERVICE_BOT_TOKEN, optional: true }
             - name: SECRET_INTERNAL_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SECRET_INTERNAL_API_KEY }

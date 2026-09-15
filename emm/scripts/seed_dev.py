@@ -17,7 +17,9 @@
     dev_postgres_password, dev_loadgen_secret),
   - импортирует каталог тестов+стенд из allta_app в testing_service
     (`testing_service/scripts/import_catalog.py`, живой логин dep_admin1,
-    server_id стенда подставляется реально засеянным).
+    server_id стенда подставляется реально засеянным),
+  - добавляет 126 демо-попыток с логами (`scripts/seed_test_logs.py`) —
+    только чтобы было что показать в интерфейсе, не результаты испытаний.
 
 Bot воркера (`server_worker`) в dev НЕ создаётся этим скриптом: его заводит
 auth_service на старте из `WORKER_BOT_TOKEN` в системном отделе `DBOS System`
@@ -577,8 +579,23 @@ def seed_test_catalog(server_id: str) -> None:
     # прогона осиротеет молча (сервер/отдел, на которые она ссылалась, уже
     # удалены), а не будет переиспользована/задедуплена импортом. Сносим её
     # явно перед реимпортом, как и остальные тестовые записи в этом файле.
+    # `queue_items`/`stp_test_runs` держат RESTRICT-FK на test_stands (может
+    # накопиться из demo-логов прошлого прогона, seed_demo_logs ниже, или из
+    # реального использования очереди/СТП на этом стенде) — сносим их первыми,
+    # иначе DELETE test_stands падает на FK. test_log_segments/blobs каскадом
+    # уйдут вместе с test_logs, stp_cells — вместе с stp_test_runs.
+    # `seed_demo_logs` (ниже) заводит свои test_definitions с кодом
+    # `EXAMPLE-<hash отдела>-*` — хэш зависит от department_id, который
+    # seed_auth пересоздаёт заново на каждый прогон, поэтому старый набор
+    # не задедуплицируется по code и копится под уже удалённым отделом. Код
+    # `EXAMPLE-` — код реального allta_app-теста никогда не примет (там
+    # `postgresql.balance` и т.п.), поэтому фильтр безопасен.
     with conn(TESTING_PG_HOST, TESTING_PG_PORT, "dev_testing") as c, c.cursor() as cur:
+        cur.execute("DELETE FROM test_logs")
+        cur.execute("DELETE FROM queue_items")
+        cur.execute("DELETE FROM stp_test_runs")
         cur.execute("DELETE FROM test_stands")
+        cur.execute("DELETE FROM test_definitions WHERE code LIKE 'EXAMPLE-%'")
     token = login("dep_admin1", DEV_PASSWORD)
     res = subprocess.run(
         [
@@ -594,6 +611,26 @@ def seed_test_catalog(server_id: str) -> None:
         fail(f"import_catalog.py вернул {res.returncode}")
         sys.exit(1)
     ok("каталог тестов allta_app импортирован")
+
+
+def seed_demo_logs() -> None:
+    """126 искусственных завершённых попыток (64 кампании / 62 одиночных) с
+    логами и сегментами — чтобы было что показать в `/testing/logs` без
+    реального прогона на железе (`scripts/seed_test_logs.py`, см.
+    [[../obsidian/reports/2026-09-13-132500-log-history-and-dev-examples]]).
+
+    Должен идти ПОСЛЕ `seed_test_catalog` — иначе создаст свой одноразовый
+    отключённый стенд вместо того, чтобы переиспользовать реальный
+    allta_app-стенд, и тот потом снесётся вместе с `DELETE FROM test_stands`
+    в `seed_test_catalog` при следующем прогоне seed'а.
+    """
+    section("testing_service: демо-логи для показа интерфейса")
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seed_test_logs.py")
+    res = subprocess.run([sys.executable, script], check=False)
+    if res.returncode != 0:
+        fail(f"seed_test_logs.py вернул {res.returncode}")
+        sys.exit(1)
+    ok("демо-попытки с логами добавлены")
 
 
 # ── main ─────────────────────────────────────────────────────────────────────
@@ -619,6 +656,7 @@ def main() -> None:
     seed_server_account(server_id, dept_id, created_by=user_ids["admin"])
     seed_secrets(dept_id, user_ids)
     seed_test_catalog(server_id)
+    seed_demo_logs()
 
     print()
     print("=" * WIDTH)
@@ -640,6 +678,7 @@ def main() -> None:
   Credentials: dev_jira_token, dev_postgres_password (dept НТ),
                dev_loadgen_secret (personal user1)
   Testing:    каталог тестов+стенд allta_app импортированы в testing_service
+              + 126 демо-попыток с логами (см. вывод seed_test_logs.py выше)
 """)
 
 

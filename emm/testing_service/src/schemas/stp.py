@@ -39,12 +39,21 @@ class StpTestCaseResponse(BaseModel):
 
 
 class StpGenerateRequest(BaseModel):
-    """Тело POST /stp/generate — админский запуск генерации СТП-прогонов (§5)."""
+    """Тело POST /stp/generate — админский запуск/переключение состава СТП (§5, §D4/D5).
+
+    `scope` — явный выбор («Полный набор»/«По changelog»), НЕ вычисляется из
+    вида RC (§D4). Повтор с тем же `scope` — идемпотентный no-op (можно
+    использовать, чтобы досоздать прогоны для новых стендов). Повтор с ДРУГИМ
+    `scope` для уже существующей пары (department, os_version_id) —
+    переключение активного состава: недостающие тесты добавляются в
+    существующий Zephyr test-run, выпавшие — деактивируются локально
+    (`stp_cells.is_active=false`), без потери статуса/истории.
+    """
 
     os_version_id: str = Field(..., min_length=1, max_length=64, description="РЦ (тот же id, что и test_runs.os_version_id).")
     mode: str | None = Field(None, min_length=1, max_length=16, description="Без значения — все режимы.")
     kernel: str | None = Field(None, min_length=1, max_length=64, description="Без значения — все ядра из репозиториев ОС.")
-    final: bool = Field(default=False, description="Официальный/финальный прогон — снимает changelog-фильтр.")
+    scope: str = Field(..., description="Один из: changelog/full (см. StpCompositionScope).")
     department_id: str | None = Field(None, description="По умолчанию — отдел пользователя.")
 
 
@@ -84,10 +93,28 @@ class StpCellResponse(BaseModel):
     stp_test_case_id: str
     stp_test_run_id: str
     status: str
+    is_active: bool = True
     queue_item_id: str | None = None
     updated_by: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class StpCompositionResponse(BaseModel):
+    """Ответ GET /stp/composition — текущий активный `scope`+`revision` пары
+    `(department_id, os_version_id)` (§D4/D5). Отсутствие строки — не 404, а
+    дефолт `scope: null, revision: 0` (состав ещё ни разу не генерировался),
+    тот же паттерн, что и `DepartmentIntegrationSettingsResponse`."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str | None = None
+    department_id: str
+    os_version_id: str
+    scope: str | None = None
+    revision: int = 0
+    updated_at: datetime | None = None
+    updated_by: str | None = None
 
 
 class StpCellManualUpdate(BaseModel):

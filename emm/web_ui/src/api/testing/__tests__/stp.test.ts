@@ -20,6 +20,7 @@ import {
   createStpTestCase,
   deleteStpTestCase,
   generateStp,
+  getStpComposition,
   listStpTestCases,
   listStpTestRunCells,
   overrideStpCell,
@@ -57,10 +58,21 @@ describe("stp wrappers", () => {
 
   it("generate — POST /stp/generate с телом", async () => {
     const body = {
-      os_version_id: "osv_1", mode: "orel", kernel: "6.1", department_id: "dep_1",
+      os_version_id: "osv_1", mode: "orel", kernel: "6.1", scope: "full" as const, department_id: "dep_1",
     };
     await generateStp(body);
     expect(apiPostMock).toHaveBeenCalledWith("/testing/v1/stp/generate", body);
+  });
+
+  it("composition — GET /stp/composition с параметрами", async () => {
+    apiGetMock.mockResolvedValueOnce({
+      id: null, department_id: "dep_1", os_version_id: "osv_1", scope: null, revision: 0,
+      updated_at: null, updated_by: null,
+    });
+    await getStpComposition({ os_version_id: "osv_1", department_id: "dep_1" });
+    expect(apiGetMock).toHaveBeenCalledWith("/testing/v1/stp/composition", {
+      query: { os_version_id: "osv_1", department_id: "dep_1" },
+    });
   });
 
   it("list cells — GET по run_id", async () => {

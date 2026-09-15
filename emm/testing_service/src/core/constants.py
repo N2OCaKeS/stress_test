@@ -268,6 +268,21 @@ class StpCellStatus(StrEnum):
     FAIL = "fail"
 
 
+class StpCompositionScope(StrEnum):
+    """Режим состава СТП для пары `(department_id, os_version_id)` (§D4/D5 плана миграции).
+
+    Явный выбор администратора/пользователя (кнопки «Полный набор»/«По
+    changelog»), НЕ вычисляется из вида строки версии (RC) — этого требует
+    §D4 буквально: угадывание первого/последнего РЦ по последней цифре
+    версии запрещено. `full` — все закреплённые за стендом тесты отдела,
+    `changelog` — подмножество, затронутое changelog-сервисом (см.
+    `services/stp.py::_filter_by_changelog`).
+    """
+
+    CHANGELOG = "changelog"
+    FULL = "full"
+
+
 class StpMatrixPublicationStatus(StrEnum):
     """Исход попытки публикации СТП-матрицы в Confluence (§D2/D3 плана миграции).
 

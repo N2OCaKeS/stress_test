@@ -1,12 +1,15 @@
-"""СТП: каталог тест-кейсов, генерация Zephyr test-run'ов, прогоны, ячейки (§2.5, §6, §D2/D3 плана миграции).
+"""СТП: каталог тест-кейсов, генерация Zephyr test-run'ов, прогоны, ячейки (§2.5, §6, §D2-D5 плана миграции).
 
 Тест-кейсы — чтение открыто любому аутентифицированному актору, запись —
 матрица `(stp_test_case, *, ...)`. `/stp/generate` — админский вызов,
-матрица `(stp_test_run, *, create)`. Ячейки — ручной override под
-`(stp_cell, *, update)`, событийное обновление идёт мимо HTTP (см.
-`services/queue.py` → `services/stp_status.py`). `/stp/matrix/publish` —
-ручная публикация сводной таблицы РЦ в Confluence, department-scoped
-`(stp_test_run, *, publish)` (см. `services/stp_matrix.py`).
+матрица `(stp_test_run, *, create)`, принимает явный `scope` (changelog/full,
+§D4/D5) — первый вызов заводит состав, повтор с тем же `scope` идемпотентен,
+с другим — переключает уже существующий состав (см. `services/stp.py`).
+`/stp/composition` — текущий `scope`+`revision` пары (отдел, РЦ), чтение
+открыто. Ячейки — ручной override под `(stp_cell, *, update)`, событийное
+обновление идёт мимо HTTP (см. `services/queue.py` → `services/stp_status.py`).
+`/stp/matrix/publish` — ручная публикация сводной таблицы РЦ в Confluence,
+department-scoped `(stp_test_run, *, publish)` (см. `services/stp_matrix.py`).
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -18,6 +21,7 @@ from src.schemas.common import OkResponse, PaginatedResponse
 from src.schemas.stp import (
     StpCellManualUpdate,
     StpCellResponse,
+    StpCompositionResponse,
     StpGenerateRequest,
     StpGenerateResponse,
     StpMatrixPublishRequest,
@@ -124,14 +128,17 @@ async def delete_stp_test_case(
 @router.post(
     "/generate",
     response_model=StpGenerateResponse,
-    summary="Сгенерировать СТП-прогоны в Zephyr для отдела/РЦ/режима/ядра",
+    summary="Сгенерировать/переключить состав СТП-прогонов для отдела/РЦ/режима/ядра",
     description=(
-        "Админский вызов (не автоматический вебхук). Changelog-фильтр (§1/§7), "
-        "группировка по pinned-стенду, резолв Jira-кред отдела, создание "
-        "Zephyr test-run на стенд. Провал одного стенда не рушит остальные — "
-        "см. `errors` в ответе."
+        "Админский вызов (не автоматический вебхук). Явный `scope` (changelog/full, "
+        "§D4/D5) — не выводится из вида RC. Первый вызов заводит Zephyr test-run на "
+        "стенд; повтор с тем же `scope` — идемпотентный no-op; повтор с другим "
+        "`scope` реконциливает существующий состав (добавляет недостающие тест-кейсы "
+        "в существующий Zephyr-ран, деактивирует выпавшие, без потери статуса/истории) "
+        "и увеличивает `stp_compositions.revision`. Провал одного стенда не рушит "
+        "остальные — см. `errors` в ответе."
     ),
-    responses={403: {"description": "Нет роли с `create`."}},
+    responses={403: {"description": "Нет роли с `create`."}, 422: {"description": "scope не changelog/full."}},
 )
 async def generate_stp(
     body: StpGenerateRequest,
@@ -141,12 +148,33 @@ async def generate_stp(
     runs, errors = await stp_svc.generate_stp_runs(
         db, identity,
         os_version_id=body.os_version_id, mode=body.mode, kernel=body.kernel,
-        final=body.final, department_id=body.department_id or identity.department_id,
+        scope=body.scope, department_id=body.department_id or identity.department_id,
     )
     return StpGenerateResponse(
         test_runs=[StpTestRunResponse.model_validate(r) for r in runs],
         errors=errors,
     )
+
+
+@router.get(
+    "/composition",
+    response_model=StpCompositionResponse,
+    summary="Текущий активный состав СТП (scope + revision) отдела для одной РЦ",
+    description=(
+        "Открыт любому аутентифицированному актору. Отсутствие строки — не 404, а "
+        "дефолт `scope: null, revision: 0` (состав ещё ни разу не генерировался)."
+    ),
+)
+async def get_stp_composition(
+    os_version_id: str,
+    identity: AuthenticatedIdentity,
+    db: AsyncSession = Depends(get_db),
+    department_id: str | None = Query(default=None),
+) -> StpCompositionResponse:
+    data = await stp_svc.get_stp_composition_effective(
+        db, department_id or identity.department_id, os_version_id,
+    )
+    return StpCompositionResponse(**data)
 
 
 @router.post(

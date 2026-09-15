@@ -54,6 +54,7 @@ import {
   createStpTestCase,
   deleteStpTestCase,
   generateStp,
+  getStpComposition,
   getStpTestCase,
   getStpTestRun,
   listStpTestCases,
@@ -66,6 +67,8 @@ import {
 import type {
   StpCell,
   StpCellStatus,
+  StpComposition,
+  StpCompositionScope,
   StpGeneratePartialError,
   StpGenerateRequest,
   StpMatrixPublishResponse,
@@ -142,12 +145,28 @@ const MOCK_CELLS: StpCell[] = [
     stp_test_case_id: "stpcase_mock_1",
     stp_test_run_id: "stprun_mock_1",
     status: "pass",
+    is_active: true,
     queue_item_id: "qi_mock_1",
     updated_by: null,
     created_at: "2026-09-03T00:00:00Z",
     updated_at: "2026-09-03T00:00:00Z",
   },
 ];
+
+const MOCK_COMPOSITION: StpComposition = {
+  id: "stpcomp_mock_1",
+  department_id: "dep_mock",
+  os_version_id: "osv_mock_astra187",
+  scope: "changelog",
+  revision: 1,
+  updated_at: "2026-09-03T00:00:00Z",
+  updated_by: "usr_admin",
+};
+
+const SCOPE_META: Record<StpCompositionScope, { label: string; badge: "ok" | "accent" }> = {
+  full: { label: "Полный набор", badge: "accent" },
+  changelog: { label: "По changelog", badge: "ok" },
+};
 
 // ── состояние средней панели, общее для StpMiddlePanel и StpWorkzone ───────
 
@@ -359,6 +378,19 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
       ? (testRunsQ.data?.items ?? [])
       : [];
 
+  // Текущий активный состав СТП (scope+revision, §D4/D5) для выбранной пары
+  // (отдел, РЦ) — не своя сущность на стенд, одна строка на (department, os_version_id).
+  const compositionQ = useQuery(
+    () => getStpComposition({ os_version_id: version!.id, department_id: deptFilter || undefined }),
+    [version?.id, deptFilter],
+    { enabled: !mockMode && !!version },
+  );
+  const composition: StpComposition | null = mockMode
+    ? MOCK_COMPOSITION
+    : version
+      ? (compositionQ.data ?? null)
+      : null;
+
   // Фильтр по отделу режется через принадлежность стенда отделу — у самого
   // прогона `department_id` нет (только `stand_id`), см. `StpTestRun` схему.
   const visibleRuns = useMemo(() => {
@@ -457,6 +489,19 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
               обнаружена {formatMskShort(version.discovered_at)} · ядра: {version.kernels.join(", ") || "—"}
             </div>
           )}
+          {version && (
+            <div className="text-xs mt-1 flex items-center gap-1.5">
+              <span className="text-dim">Состав СТП:</span>
+              {composition?.scope ? (
+                <>
+                  <Badge kind={SCOPE_META[composition.scope].badge}>{SCOPE_META[composition.scope].label}</Badge>
+                  <span className="text-dim">ревизия {composition.revision}</span>
+                </>
+              ) : (
+                <span className="text-dim italic">ещё не сгенерирован</span>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <label className="flex items-center gap-1.5 text-xs text-dim">
@@ -478,7 +523,7 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
             onClick={() => setGenerateOpen(true)}
           >
             <Plus className="w-3.5 h-3.5" />
-            Сгенерировать СТП
+            Состав СТП
           </Button>
           <Button
             type="button"
@@ -540,9 +585,12 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
         <StpGenerateModal
           mockMode={mockMode}
           version={version}
+          departmentId={deptFilter || undefined}
+          composition={composition}
           onClose={() => setGenerateOpen(false)}
           onDone={() => {
             testRunsQ.refetch();
+            compositionQ.refetch();
           }}
         />
       )}
@@ -692,13 +740,21 @@ function StpMatrix({
                     return (
                       <td
                         key={run.id}
-                        className={`stp-cell-${cell.status} border-b border-token px-2 py-1 cursor-pointer whitespace-nowrap`}
+                        className={`stp-cell-${cell.status} border-b border-token px-2 py-1 cursor-pointer whitespace-nowrap ${
+                          cell.is_active ? "" : "opacity-50"
+                        }`}
                         onClick={() => onOpenCell(test, run, cell)}
+                        title={cell.is_active ? undefined : "Исключён из текущего активного состава — история сохранена"}
                       >
                         <Badge kind={meta.badge}>{meta.label}</Badge>
                         {cell.updated_by && (
                           <span className="ml-1 text-[10px] italic" title="Ручной override">
                             override
+                          </span>
+                        )}
+                        {!cell.is_active && (
+                          <span className="ml-1 text-[10px] italic" title="Исключён из активного состава">
+                            искл.
                           </span>
                         )}
                       </td>
@@ -770,6 +826,9 @@ function StpCellModal({
         <div className="text-sm">{test.title}</div>
         <div className="text-xs text-dim grid gap-1">
           <div>queue_item_id: <span className="mono">{cell.queue_item_id ?? "—"}</span></div>
+          <div>
+            в активном составе: <span className="mono">{cell.is_active ? "да" : "нет — исключён, история сохранена"}</span>
+          </div>
           <div>обновлено: <span className="mono">{formatMskShort(cell.updated_at)}</span>{cell.updated_by ? ` · вручную (${cell.updated_by})` : " · автоматически"}</div>
         </div>
 
@@ -854,42 +913,50 @@ function StpRunDetailModal({ mockMode, run, onClose }: { mockMode: boolean; run:
   );
 }
 
-// ── генерация СТП ────────────────────────────────────────────────────────────
+// ── состав СТП: переключатель «Полный набор»/«По changelog» (§D4/D5) ───────
 
 function StpGenerateModal({
   mockMode,
   version,
+  departmentId,
+  composition,
   onClose,
   onDone,
 }: {
   mockMode: boolean;
   version: OsVersion;
+  departmentId?: string;
+  composition: StpComposition | null;
   onClose: () => void;
   onDone: () => void;
 }) {
   const toast = useToast();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<StpCompositionScope | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [result, setResult] = useState<{ createdCount: number; errors: StpGeneratePartialError[] } | null>(null);
+  const [result, setResult] = useState<{ scope: StpCompositionScope; touchedCount: number; errors: StpGeneratePartialError[] } | null>(null);
 
-  async function submit() {
+  const currentScope = composition?.scope ?? null;
+
+  async function submit(scope: StpCompositionScope) {
     if (mockMode) {
-      toast.warn("Mock-режим — генерация не отправляется на backend.");
+      toast.warn("Mock-режим — переключение состава не отправляется на backend.");
       onClose();
       return;
     }
-    setBusy(true);
+    setBusy(scope);
     setErr(null);
     try {
       const body: StpGenerateRequest = {
         os_version_id: version.id,
+        scope,
+        department_id: departmentId,
       };
       const res = await generateStp(body);
-      setResult({ createdCount: res.test_runs.length, errors: res.errors });
+      setResult({ scope, touchedCount: res.test_runs.length, errors: res.errors });
       if (res.errors.length === 0) {
-        toast.success(`Создано прогонов: ${res.test_runs.length}`);
+        toast.success(`${SCOPE_META[scope].label}: прогонов в составе — ${res.test_runs.length}`);
       } else {
-        toast.warn(`Создано ${res.test_runs.length} из ${res.test_runs.length + res.errors.length} — часть стендов провалилась`);
+        toast.warn(`${SCOPE_META[scope].label}: ${res.test_runs.length} прогонов, ${res.errors.length} стендов с ошибкой`);
       }
       onDone();
     } catch (e) {
@@ -897,7 +964,7 @@ function StpGenerateModal({
       setErr(msg);
       toast.error(msg);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -907,20 +974,39 @@ function StpGenerateModal({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
-      title="Сгенерировать СТП"
+      title="Состав СТП"
       subtitle={version.name}
     >
       <div className="grid gap-3">
         {!result && (
           <>
-            <p className="text-sm">Ядра будут найдены в репозиториях {version.name} и сохранены в каталоге ОС. СТП создаётся для всех найденных ядер и режимов безопасности вашего отдела.</p>
+            <p className="text-sm">
+              «Полный набор» добавляет в состав все закреплённые за стендами тесты отдела. «По changelog» оставляет
+              только тесты, затронутые изменившимися компонентами этой РЦ. Повтор с тем же вариантом ничего не
+              дублирует; переключение между вариантами не теряет уже полученные результаты — исключённые тесты
+              просто скрываются из активного состава и возвращаются при обратном переключении.
+            </p>
+            <div className="text-xs text-dim">
+              Текущий состав:{" "}
+              {currentScope ? (
+                <>
+                  <Badge kind={SCOPE_META[currentScope].badge}>{SCOPE_META[currentScope].label}</Badge>
+                  {" "}(ревизия {composition?.revision})
+                </>
+              ) : (
+                <span className="italic">ещё не сгенерирован</span>
+              )}
+            </div>
             {err && <div className="alert-danger text-xs">{err}</div>}
-            <div className="flex gap-2 justify-end">
-              <Button type="button" onClick={onClose} disabled={busy}>
+            <div className="flex gap-2 justify-end flex-wrap">
+              <Button type="button" onClick={onClose} disabled={busy !== null}>
                 Отмена
               </Button>
-              <Button type="button" variant="primary" onClick={submit} disabled={busy}>
-                {busy ? "..." : "Сгенерировать"}
+              <Button type="button" onClick={() => submit("changelog")} disabled={busy !== null}>
+                {busy === "changelog" ? "..." : "По changelog"}
+              </Button>
+              <Button type="button" variant="primary" onClick={() => submit("full")} disabled={busy !== null}>
+                {busy === "full" ? "..." : "Полный набор"}
               </Button>
             </div>
           </>
@@ -928,14 +1014,16 @@ function StpGenerateModal({
 
         {result && (
           <>
-            <div className="text-sm">
-              Создано прогонов: <span className="font-semibold">{result.createdCount}</span>
+            <div className="text-sm flex items-center gap-1.5">
+              <span>Состав:</span>
+              <Badge kind={SCOPE_META[result.scope].badge}>{SCOPE_META[result.scope].label}</Badge>
+              <span>прогонов в составе: <span className="font-semibold">{result.touchedCount}</span></span>
             </div>
             {result.errors.length > 0 && (
               <div className="alert-warn text-xs grid gap-2">
                 <div className="flex items-center gap-1.5 font-medium">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                  Часть стендов провалилась ({result.errors.length}) — остальные прогоны созданы успешно:
+                  Часть стендов провалилась ({result.errors.length}) — остальные прогоны затронуты успешно:
                 </div>
                 <ul className="grid gap-1">
                   {result.errors.map((e, i) => (

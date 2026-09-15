@@ -102,3 +102,8 @@ def department_activity_report_id() -> str:
 def stp_matrix_publication_id() -> str:
     """`stpmx_<uuid>` — для stp_matrix_publications."""
     return _new_id("stpmx_")
+
+
+def stp_composition_id() -> str:
+    """`stpcomp_<uuid>` — для stp_compositions."""
+    return _new_id("stpcomp_")

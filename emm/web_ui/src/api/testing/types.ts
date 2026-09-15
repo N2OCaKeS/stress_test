@@ -505,13 +505,27 @@ export interface StpTestCaseUpdateRequest {
   department_id?: string | null;
 }
 
-/** Тело `POST /stp/generate`. */
+/** Режим состава СТП (`StpCompositionScope`) — явный выбор, не выводится из RC. */
+export type StpCompositionScope = "changelog" | "full";
+
+/** Тело `POST /stp/generate`. `scope` обязателен — «Полный набор»/«По changelog». */
 export interface StpGenerateRequest {
   os_version_id: string;
   mode?: string;
   kernel?: string;
-  final?: boolean;
+  scope: StpCompositionScope;
   department_id?: string;
+}
+
+/** Ответ `GET /stp/composition` — текущий активный состав пары (отдел, РЦ). */
+export interface StpComposition {
+  id: string | null;
+  department_id: string;
+  os_version_id: string;
+  scope: StpCompositionScope | null;
+  revision: number;
+  updated_at: Iso8601 | null;
+  updated_by: string | null;
 }
 
 /** Один частичный провал генерации СТП для одного стенда. */
@@ -575,6 +589,7 @@ export interface StpCell {
   stp_test_case_id: string;
   stp_test_run_id: string;
   status: StpCellStatus | string;
+  is_active: boolean;
   queue_item_id: string | null;
   updated_by: string | null;
   created_at: Iso8601;
@@ -710,4 +725,48 @@ export interface StatisticsRecalcStatus {
 /** Тело `POST /statistics/recalculate` — не передан `department_id` → берётся отдел вызывающего. */
 export interface StatisticsRecalcTriggerRequest {
   department_id?: string | null;
+}
+
+// ── pool overview (§F плана 2026-09-11) ─────────────────────────────────────
+
+/** Контекст обзора пула — переключатель «Все задания / прогон / одиночные». */
+export type PoolOverviewContext = "all" | "run" | "standalone";
+
+/** Статус стенда в обзоре пула, приоритет — §F плана 2026-09-11. */
+export type PoolStandStatus = "recovering" | "unreachable" | "testing" | "ready" | "no_data";
+
+/** Заголовок кампании в обзоре пула — только при `context=run`. */
+export interface PoolOverviewTestRun {
+  id: string;
+  os_version_id: string;
+  kernel: string;
+  mode: string;
+  status: string;
+  final: boolean;
+  created_at: Iso8601;
+}
+
+/** Один стенд пула с посчитанным статусом. */
+export interface PoolOverviewStand {
+  stand_id: string;
+  server_id: string;
+  status: PoolStandStatus;
+  busy_state: string | null;
+  busy_service_name: string | null;
+  ping_reachable: boolean | null;
+  ping_checked_at: Iso8601 | null;
+}
+
+/** `GET /pool-overview` — очередь/исходы + статусы стендов одним запросом. */
+export interface PoolOverviewResponse {
+  context: PoolOverviewContext;
+  test_run_id: string | null;
+  test_run: PoolOverviewTestRun | null;
+  remaining: number;
+  running: number;
+  succeeded: number;
+  failed: number;
+  stands: PoolOverviewStand[];
+  stand_status_counts: Record<PoolStandStatus, number>;
+  generated_at: Iso8601;
 }

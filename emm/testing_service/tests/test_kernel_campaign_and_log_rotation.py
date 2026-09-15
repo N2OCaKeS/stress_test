@@ -64,12 +64,15 @@ async def test_stp_only_os_discovers_kernels_and_all_modes(
     await _seed_stp_test_case(code)
     discover = AsyncMock(return_value=["6.1.1-1-generic", "6.1.1-1-lowlatency"])
     monkeypatch.setattr(server_client, "resolve_os_kernels", discover)
-    monkeypatch.setattr(stp, "_filter_by_changelog", AsyncMock(side_effect=lambda db, tests, rc, final: tests))
+    monkeypatch.setattr(stp, "_filter_by_changelog", AsyncMock(side_effect=lambda db, tests, rc, scope: tests))
     monkeypatch.setattr(secret_client, "reveal_credential", AsyncMock(return_value=("test_user", "test_token")))
     create = AsyncMock(side_effect=["BT-R1", "BT-R2", "BT-R3", "BT-R4"])
     monkeypatch.setattr(zephyr_client, "create_test_run", create)
     monkeypatch.setattr(zephyr_client, "resolve_user_key", AsyncMock(return_value="test_user"))
-    response = await client.post("/api/testing/v1/stp/generate", headers=auth_hdr(admin_token), json={"os_version_id": "1.7.1.44"})
+    response = await client.post(
+        "/api/testing/v1/stp/generate", headers=auth_hdr(admin_token),
+        json={"os_version_id": "1.7.1.44", "scope": "full"},
+    )
     assert response.status_code == 200, response.text
     assert response.json()["errors"] == []
     assert {(run["kernel"], run["mode"]) for run in response.json()["test_runs"]} == {

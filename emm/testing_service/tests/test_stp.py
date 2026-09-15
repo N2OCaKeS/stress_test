@@ -77,24 +77,36 @@ async def _create_test_def_for_dept(
 
 
 class TestChangelogFilter:
-    def test_final_is_always_full_scope(self):
-        assert stp_svc._is_full_scope("1.8.5.46", final=True) is True
+    def test_scope_is_explicit_not_guessed_from_rc(self):
+        # §D4: full/changelog — явный параметр, не производная от вида RC.
+        assert stp_svc._is_full_scope("full") is True
+        assert stp_svc._is_full_scope("changelog") is False
 
-    def test_rc_ending_dot_one_without_uu_is_full_scope(self):
-        assert stp_svc._is_full_scope("1.8.5.1", final=False) is True
+    async def test_full_scope_skips_changelog_service_regardless_of_rc_shape(self, monkeypatch):
+        from src.models import TestDefinition
 
-    def test_rc_ending_dot_one_with_uu_is_not_full_scope(self):
-        assert stp_svc._is_full_scope("1.8.5.1UU", final=False) is False
+        t = TestDefinition(id="t1", code="a", full_name="A", changelog_component="kernel")
+        called = False
 
-    def test_ordinary_rc_is_not_full_scope(self):
-        assert stp_svc._is_full_scope("1.8.5.46", final=False) is False
+        async def fake_fetch(db, rc: str):
+            nonlocal called
+            called = True
+            return []
+
+        monkeypatch.setattr(changelog_service, "fetch_changed_components", fake_fetch)
+        async with AsyncSessionLocal() as db:
+            # RC вида "X.Y.Z.1" — раньше по этой строке угадывался full scope;
+            # теперь это никак не влияет, только явный scope="full".
+            result = await stp_svc._filter_by_changelog(db, [t], "1.8.5.1UU", "full")
+        assert result == [t]
+        assert called is False
 
     async def test_filter_keeps_tests_without_component(self):
         from src.models import TestDefinition
 
         t = TestDefinition(id="t1", code="a", full_name="A", changelog_component=None)
         async with AsyncSessionLocal() as db:
-            result = await stp_svc._filter_by_changelog(db, [t], "1.8.5.46-nocache1", final=False)
+            result = await stp_svc._filter_by_changelog(db, [t], "1.8.5.46-nocache1", "changelog")
         # changelog service not configured in tests → fetch_changed_components
         # returns None → safe default is "keep everything" regardless of component.
         assert result == [t]
@@ -112,7 +124,7 @@ class TestChangelogFilter:
         monkeypatch.setattr(changelog_service, "fetch_changed_components", fake_fetch)
         async with AsyncSessionLocal() as db:
             result = await stp_svc._filter_by_changelog(
-                db, [kept, dropped, no_component], "1.8.5.46", final=False,
+                db, [kept, dropped, no_component], "1.8.5.46", "changelog",
             )
         assert result == [kept, no_component]
 
@@ -407,7 +419,7 @@ async def _seed_stp_test_case(code: str, *, zephyr_id="BT-T1"):
 
 @pytest.fixture
 def mock_zephyr(monkeypatch):
-    calls = {"create": [], "resolve_user": []}
+    calls = {"create": [], "resolve_user": [], "add": []}
 
     async def fake_create_test_run(*, base_url, bearer_token, folder, name, items, project_key="BT"):
         calls["create"].append({
@@ -420,10 +432,17 @@ def mock_zephyr(monkeypatch):
         calls["resolve_user"].append(username)
         return f"jira_{username}"
 
+    async def fake_add_test_cases_to_run(*, base_url, bearer_token, test_run_key, items):
+        calls["add"].append({
+            "base_url": base_url, "bearer_token": bearer_token,
+            "test_run_key": test_run_key, "items": items,
+        })
+
     from src.services import zephyr_client as zc
 
     monkeypatch.setattr(zc, "create_test_run", fake_create_test_run)
     monkeypatch.setattr(zc, "resolve_user_key", fake_resolve_user_key)
+    monkeypatch.setattr(zc, "add_test_cases_to_run", fake_add_test_cases_to_run)
     return calls
 
 
@@ -456,7 +475,7 @@ class TestStpGenerate:
 
         resp = await client.post(
             f"{STP_BASE}/generate", headers=_hdr(admin_token),
-            json={"os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0", "final": True, "department_id": dept_a},
+            json={"os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0", "scope": "full", "department_id": dept_a},
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -482,7 +501,7 @@ class TestStpGenerate:
 
         resp = await client.post(
             f"{STP_BASE}/generate", headers=_hdr(admin_token),
-            json={"os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0", "final": True, "department_id": dept_a},
+            json={"os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0", "scope": "full", "department_id": dept_a},
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -522,7 +541,7 @@ class TestStpGenerate:
             f"{STP_BASE}/generate", headers=_hdr(admin_token),
             json={
                 "os_version_id": "1.8.5.1", "mode": "orel", "kernel": "6.1.0",
-                "final": False, "department_id": dept_a,
+                "scope": "full", "department_id": dept_a,
             },
         )
         assert resp.status_code == 200, resp.text
@@ -536,9 +555,22 @@ class TestStpGenerate:
     async def test_guest_cannot_generate(self, client, guest_token, dept_a):
         resp = await client.post(
             f"{STP_BASE}/generate", headers=_hdr(guest_token),
-            json={"os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0", "department_id": dept_a},
+            json={
+                "os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0",
+                "scope": "full", "department_id": dept_a,
+            },
         )
         assert resp.status_code == 403
+
+    async def test_invalid_scope_rejected(self, client, admin_token, dept_a):
+        resp = await client.post(
+            f"{STP_BASE}/generate", headers=_hdr(admin_token),
+            json={
+                "os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0",
+                "scope": "bogus", "department_id": dept_a,
+            },
+        )
+        assert resp.status_code == 422
 
 
 # ── Событийное обновление stp_cells из очереди ──────────────────────────────

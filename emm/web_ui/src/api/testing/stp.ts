@@ -4,7 +4,9 @@
  *
  * Тест-кейсы — чтение открыто любому аутентифицированному актору, запись —
  * матрица `(stp_test_case, *, ...)`. `/stp/generate` — админский вызов,
- * матрица `(stp_test_run, *, create)`. Ячейки — ручной override под
+ * матрица `(stp_test_run, *, create)`, принимает явный `scope` (changelog/
+ * full) — не выводится из вида RC. `/stp/composition` — текущий scope+
+ * revision пары (отдел, РЦ), чтение открыто. Ячейки — ручной override под
  * `(stp_cell, *, update)`; событийное обновление статуса идёт мимо HTTP.
  *
  * Source of truth: `testing_service/src/api/v1/endpoints/stp.py`.
@@ -14,6 +16,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
 import type {
   StpCell,
   StpCellManualUpdateRequest,
+  StpComposition,
   StpGenerateRequest,
   StpGenerateResponse,
   StpMatrixPublishRequest,
@@ -82,6 +85,18 @@ export function deleteStpTestCase(caseId: string): Promise<TestingOkResponse> {
  */
 export function generateStp(body: StpGenerateRequest): Promise<StpGenerateResponse> {
   return apiPost<StpGenerateResponse>(`${BASE}/stp/generate`, body);
+}
+
+/**
+ * `GET /stp/composition` — текущий активный `scope`+`revision` состава СТП
+ * пары (отдел, РЦ). Отсутствие строки — не 404, а дефолт `scope: null,
+ * revision: 0` (состав ещё ни разу не генерировался). Чтение открыто.
+ */
+export function getStpComposition(params: {
+  os_version_id: string;
+  department_id?: string;
+}): Promise<StpComposition> {
+  return apiGet<StpComposition>(`${BASE}/stp/composition`, { query: { ...params } });
 }
 
 /**

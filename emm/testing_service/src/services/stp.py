@@ -1,22 +1,30 @@
-"""Генерация СТП-прогонов (§1, §5, §6.1 плана миграции).
+"""Генерация/переключение состава СТП-прогонов (§1, §5, §6.1, §D4/D5 плана миграции).
 
-`generate_stp_runs()`:
+`generate_stp_runs()` управляет составом Zephyr test-run'ов отдела для одной
+РЦ:
 
 1. Берёт все тесты отдела, закреплённые за каким-либо стендом
    (`test_definitions.pinned_stand_id`).
-2. Прогоняет их через changelog-фильтр (`_filter_by_changelog`, §1/§7): на
-   `final=true` или `rc` вида `X.Y.Z.1` без `UU` — фильтр не применяется
-   (полный набор); иначе тест проходит, если его `changelog_component` пуст
-   (безопасный дефолт) или входит в список изменившихся компонентов из
-   changelog-сервиса. Недоступность changelog-сервиса — тоже безопасный
-   дефолт (полный набор, см. `changelog_service.fetch_changed_components`).
-3. Группирует отфильтрованные тесты по `pinned_stand_id` — тот же принцип,
-   что и легаси-группировка топиков по `(mode, stand)`, но не хардкодом, а
-   реальной моделью.
-4. На каждый стенд: сопоставляет тесты с `stp_test_cases` по `code`,
-   отбрасывая тесты без карточки СТП или без `zephyr_id` (нечего создавать в
-   Zephyr), резолвит Jira-креды отдела и создаёт один Zephyr test-run на
-   стенд со всеми его тест-кейсами.
+2. Вычисляет целевой набор по явному `scope` (`StpCompositionScope`,
+   `changelog`/`full`) — параметр, который задаёт вызывающий (кнопки «По
+   changelog»/«Полный набор», §D5), НЕ угадывается по виду строки версии.
+   `changelog` фильтрует через `_filter_by_changelog` (§1/§7): тест проходит,
+   если его `changelog_component` пуст (безопасный дефолт) или входит в
+   список изменившихся компонентов из changelog-сервиса; недоступность
+   changelog-сервиса — тоже безопасный дефолт (полный набор).
+3. Группирует тесты по `pinned_stand_id`, резолвит Jira-креды отдела.
+4. На каждый стенд — либо заводит новый Zephyr test-run (первый вызов для
+   этой пары стенд/РЦ/режим/ядро), либо РЕКОНЦИЛИРУЕТ уже существующий:
+   тесты, вновь попавшие в объём и не имевшие ячейки — создаются локально и
+   добавляются тест-кейсом в СУЩЕСТВУЮЩИЙ Zephyr-ран (`zephyr_client.
+   add_test_cases_to_run`, НЕ новый ран); тесты, ранее исключённые и
+   возвращающиеся — просто `is_active=True` без потери статуса; тесты,
+   выпадающие из объёма — `is_active=False`, ячейка и её история остаются.
+   Повтор с тем же `scope` — идемпотентный no-op относительно Zephyr и
+   локальных данных (полезен, чтобы досоздать прогоны для новых стендов).
+5. `stp_compositions` (одна строка на `(department_id, os_version_id)`)
+   несёт текущий `scope` + `revision`; `revision` растёт только когда
+   `scope` РЕАЛЬНО меняется (changelog↔full), не на каждый вызов.
 
 Провал одного стенда (нет интеграционных настроек, reveal не прошёл, Zephyr
 недоступен) не должен рушить остальные — собирается в `errors`, тем же
@@ -31,34 +39,42 @@ from collections import defaultdict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import Action, EntityType, StpCellStatus
-from src.core.exceptions import AppException, AuthorizationError, NotFoundError
+from src.core.constants import Action, EntityType, StpCellStatus, StpCompositionScope
+from src.core.exceptions import AppException, AuthorizationError, DomainValidationError, NotFoundError
 from src.dependencies.auth import Identity
-from src.models import StpTestRun, TestDefinition
+from src.models import StpComposition, StpTestRun, TestDefinition
 from src.repositories import department_integration_settings as dis_repo
 from src.repositories import stp_cell as stp_cell_repo
+from src.repositories import stp_composition as stp_composition_repo
 from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
 from src.repositories import test_definition as test_definition_repo
 from src.services import audit_service, changelog_service, permissions, secret_client, zephyr_client
 from src.services.zephyr_client import ZephyrRunItem
 from src.utils.ids import stp_cell_id as new_cell_id
+from src.utils.ids import stp_composition_id as new_composition_id
 from src.utils.ids import stp_test_run_id as new_run_id
 
 logger = logging.getLogger(__name__)
 
 
-def _is_full_scope(rc: str, final: bool) -> bool:
-    """§1: `final=true`, или `rc` заканчивается на `.1` и не содержит `UU` — без фильтра."""
-    if final:
-        return True
-    return rc.endswith(".1") and "UU" not in rc
+def _is_full_scope(scope: str) -> bool:
+    """`scope == "full"` — явный параметр (§D4), не выводится из RC."""
+    return scope == StpCompositionScope.FULL
+
+
+def _validate_scope(scope: str) -> None:
+    if scope not in set(StpCompositionScope):
+        raise DomainValidationError(
+            error_code="STP_COMPOSITION_SCOPE_INVALID",
+            message="scope must be one of: " + ", ".join(sorted(StpCompositionScope)),
+        )
 
 
 async def _filter_by_changelog(
-    db: AsyncSession, tests: list[TestDefinition], rc: str, final: bool,
+    db: AsyncSession, tests: list[TestDefinition], rc: str, scope: str,
 ) -> list[TestDefinition]:
-    if _is_full_scope(rc, final):
+    if _is_full_scope(scope):
         return tests
     changed = await changelog_service.fetch_changed_components(db, rc)
     if changed is None:
@@ -106,56 +122,216 @@ async def _resolve_jira_bearer(db: AsyncSession, department_id: str) -> tuple[st
     return settings.jira_base_url, secret
 
 
-async def generate_stp_runs(
-    db: AsyncSession,
-    identity: Identity,
-    *,
-    os_version_id: str,
-    mode: str | None,
-    kernel: str | None,
-    final: bool,
-    department_id: str,
-) -> tuple[list[StpTestRun], list[dict]]:
-    """Сгенерировать СТП-прогоны для всех подходящих (стенд, набор тест-кейсов) пар отдела.
+async def _resolve_composition(
+    db: AsyncSession, *, department_id: str, os_version_id: str, scope: str, identity: Identity,
+) -> StpComposition:
+    """Upsert `stp_compositions` — revision растёт только при реальной смене `scope`."""
+    existing = await stp_composition_repo.get_by_department_and_os_version(db, department_id, os_version_id)
+    if existing is None:
+        composition = await stp_composition_repo.create(db, {
+            "id": new_composition_id(),
+            "department_id": department_id,
+            "os_version_id": os_version_id,
+            "scope": scope,
+            "revision": 1,
+            "updated_by": identity.user_id,
+        })
+    elif existing.scope != scope:
+        composition = await stp_composition_repo.update(db, existing, {
+            "scope": scope, "revision": existing.revision + 1, "updated_by": identity.user_id,
+        })
+    else:
+        composition = existing
+    await db.commit()
+    await db.refresh(composition)
+    return composition
 
-    Возвращает `(created_runs, errors)` — `errors` это список
-    `{"stand_id", "error_code", "message"}`, стенды без единого пригодного
-    тест-кейса молча пропускаются (не ошибка — например, тесты есть, но ни
-    один ещё не заведён в каталоге СТП).
-    """
+
+async def get_stp_composition_effective(
+    db: AsyncSession, department_id: str, os_version_id: str,
+) -> dict:
+    """Эффективный состав пары `(department, РЦ)` — пустой дефолт, если строки ещё нет
+    (состав ни разу не генерировался), тот же паттерн, что и
+    `department_integration_settings.get_effective`."""
+    row = await stp_composition_repo.get_by_department_and_os_version(db, department_id, os_version_id)
+    if row is None:
+        return {
+            "id": None, "department_id": department_id, "os_version_id": os_version_id,
+            "scope": None, "revision": 0, "updated_at": None, "updated_by": None,
+        }
+    return {
+        "id": row.id, "department_id": row.department_id, "os_version_id": row.os_version_id,
+        "scope": row.scope, "revision": row.revision,
+        "updated_at": row.updated_at, "updated_by": row.updated_by,
+    }
+
+
+async def _create_stand_run(
+    db: AsyncSession, *,
+    department_id: str, os_version_id: str, mode: str, kernel: str, stand_id: str, release: str,
+    pairs: list[tuple],
+    target_codes: set[str],
+) -> tuple[StpTestRun | None, dict | None]:
+    """Первый вызов для этой пары `(stand, os_version, mode, kernel)` — заводит Zephyr
+    test-run + локальный прогон/ячейки для тестов, попавших в `target_codes`."""
+    target_pairs = [(case, t) for case, t in pairs if t.code in target_codes]
+    if not target_pairs:
+        return None, None
+
+    jira_ctx = await _resolve_jira_bearer(db, department_id)
+    if jira_ctx is None:
+        return None, {
+            "stand_id": stand_id,
+            "error_code": "JIRA_INTEGRATION_NOT_AVAILABLE",
+            "message": "department_integration_settings not configured or credential reveal failed",
+        }
+    base_url, bearer_token = jira_ctx
+
+    items = []
+    for case, test in target_pairs:
+        assignee_key = None
+        if test.owner:
+            assignee_key = await zephyr_client.resolve_user_key(
+                base_url=base_url, bearer_token=bearer_token, username=test.owner,
+            )
+        items.append(ZephyrRunItem(
+            test_case_key=case.zephyr_id, environment=kernel, assigned_to_key=assignee_key,
+        ))
+
+    folder = f"/stress_test/{release}/{os_version_id}"
+    name = f"{os_version_id}_{mode}_{kernel}_{stand_id}"
     try:
-        await permissions.require_action(db, identity, EntityType.STP_TEST_RUN, Action.CREATE)
-    except AuthorizationError:
-        audit_service.emit(
-            "stp_test_run.generate",
-            target_type="stp_test_run",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
+        zephyr_test_run_key = await zephyr_client.create_test_run(
+            base_url=base_url, bearer_token=bearer_token, folder=folder, name=name, items=items,
         )
-        raise
+    except AppException as exc:
+        return None, {"stand_id": stand_id, "error_code": exc.error_code, "message": exc.message}
 
-    if kernel is None or mode is None:
-        from src.services import server_client
-        kernels = [kernel] if kernel else await server_client.resolve_os_kernels(os_version_id)
-        modes = [mode] if mode else ["orel", "smolensk"]
-        all_runs, all_errors = [], []
-        for selected_kernel in kernels:
-            for selected_mode in modes:
-                runs, errors = await generate_stp_runs(db, identity, os_version_id=os_version_id,
-                    kernel=selected_kernel, mode=selected_mode, final=final, department_id=department_id)
-                all_runs.extend(runs)
-                all_errors.extend(errors)
-        return all_runs, all_errors
+    run = await stp_test_run_repo.create(db, {
+        "id": new_run_id(),
+        "os_version_id": os_version_id,
+        "mode": mode,
+        "kernel": kernel,
+        "stand_id": stand_id,
+        "zephyr_test_run_key": zephyr_test_run_key,
+        "zephyr_folder_path": folder,
+    })
+    for case, _test in target_pairs:
+        await stp_cell_repo.create(db, {
+            "id": new_cell_id(),
+            "stp_test_case_id": case.id,
+            "stp_test_run_id": run.id,
+            "status": StpCellStatus.NOT_RUN,
+            "is_active": True,
+        })
+    await db.commit()
+    await db.refresh(run)
+    return run, None
 
+
+async def _reconcile_existing_run(
+    db: AsyncSession, *,
+    department_id: str, run: StpTestRun, pairs: list[tuple], target_codes: set[str],
+) -> tuple[StpTestRun, dict | None]:
+    """Повторный вызов для стенда, у которого уже есть Zephyr test-run: свести
+    текущие ячейки к `target_codes` без создания нового рана.
+
+    Активация/деактивация уже существующих ячеек — чисто локальные операции
+    (не трогают Zephyr, не трогают `status`/`queue_item_id`/`updated_by`).
+    Добавление НОВЫХ ячеек требует и локальной записи, и добавления
+    тест-кейса в существующий Zephyr-ран — если это не удаётся, активация/
+    деактивация уже применённых изменений не откатывается (тот же принцип
+    частичных ошибок, что и у создания рана впервые).
+    """
+    existing_cells = await stp_cell_repo.list_by_run(db, run.id)
+    cells_by_case_id = {c.stp_test_case_id: c for c in existing_cells}
+
+    to_activate = []
+    to_deactivate = []
+    to_create: list[tuple] = []
+
+    for case, test in pairs:
+        in_target = test.code in target_codes
+        cell = cells_by_case_id.get(case.id)
+        if cell is None:
+            if in_target:
+                to_create.append((case, test))
+        elif in_target and not cell.is_active:
+            to_activate.append(cell)
+        elif not in_target and cell.is_active:
+            to_deactivate.append(cell)
+
+    for cell in to_activate:
+        await stp_cell_repo.update(db, cell, {"is_active": True})
+    for cell in to_deactivate:
+        await stp_cell_repo.update(db, cell, {"is_active": False})
+
+    error: dict | None = None
+    if to_create:
+        if not run.zephyr_test_run_key:
+            error = {
+                "stand_id": run.stand_id,
+                "error_code": "ZEPHYR_TEST_RUN_KEY_MISSING",
+                "message": "stp_test_run has no zephyr_test_run_key, cannot add test cases",
+            }
+        else:
+            jira_ctx = await _resolve_jira_bearer(db, department_id)
+            if jira_ctx is None:
+                error = {
+                    "stand_id": run.stand_id,
+                    "error_code": "JIRA_INTEGRATION_NOT_AVAILABLE",
+                    "message": "department_integration_settings not configured or credential reveal failed",
+                }
+            else:
+                base_url, bearer_token = jira_ctx
+                items = []
+                for case, test in to_create:
+                    assignee_key = None
+                    if test.owner:
+                        assignee_key = await zephyr_client.resolve_user_key(
+                            base_url=base_url, bearer_token=bearer_token, username=test.owner,
+                        )
+                    items.append(ZephyrRunItem(
+                        test_case_key=case.zephyr_id, environment=run.kernel, assigned_to_key=assignee_key,
+                    ))
+                try:
+                    await zephyr_client.add_test_cases_to_run(
+                        base_url=base_url, bearer_token=bearer_token,
+                        test_run_key=run.zephyr_test_run_key, items=items,
+                    )
+                except AppException as exc:
+                    error = {"stand_id": run.stand_id, "error_code": exc.error_code, "message": exc.message}
+                else:
+                    for case, _test in to_create:
+                        await stp_cell_repo.create(db, {
+                            "id": new_cell_id(),
+                            "stp_test_case_id": case.id,
+                            "stp_test_run_id": run.id,
+                            "status": StpCellStatus.NOT_RUN,
+                            "is_active": True,
+                        })
+
+    await db.commit()
+    await db.refresh(run)
+    return run, error
+
+
+async def _reconcile_stand_runs(
+    db: AsyncSession, *, os_version_id: str, mode: str, kernel: str, scope: str, department_id: str,
+) -> tuple[list[StpTestRun], list[dict]]:
     tests = await test_definition_repo.list_by_department_pinned(db, department_id)
-    filtered = await _filter_by_changelog(db, tests, os_version_id, final)
+    target_tests = await _filter_by_changelog(db, tests, os_version_id, scope)
+
+    target_codes_by_stand: dict[str, set[str]] = defaultdict(set)
+    for t in target_tests:
+        target_codes_by_stand[t.pinned_stand_id].add(t.code)
 
     by_stand: dict[str, list[TestDefinition]] = defaultdict(list)
-    for test in filtered:
-        by_stand[test.pinned_stand_id].append(test)
+    for t in tests:
+        by_stand[t.pinned_stand_id].append(t)
 
     release = _derive_release(os_version_id)
-    created: list[StpTestRun] = []
+    touched: list[StpTestRun] = []
     errors: list[dict] = []
 
     for stand_id, stand_tests in by_stand.items():
@@ -171,58 +347,85 @@ async def generate_stp_runs(
             )
             continue
 
-        jira_ctx = await _resolve_jira_bearer(db, department_id)
-        if jira_ctx is None:
-            errors.append({
-                "stand_id": stand_id,
-                "error_code": "JIRA_INTEGRATION_NOT_AVAILABLE",
-                "message": "department_integration_settings not configured or credential reveal failed",
-            })
-            continue
-        base_url, bearer_token = jira_ctx
+        target_codes = target_codes_by_stand.get(stand_id, set())
+        existing_run = await stp_test_run_repo.find_latest_for_context(
+            db, stand_id=stand_id, os_version_id=os_version_id, mode=mode, kernel=kernel,
+        )
 
-        items = []
-        for case, test in pairs:
-            assignee_key = None
-            if test.owner:
-                assignee_key = await zephyr_client.resolve_user_key(
-                    base_url=base_url, bearer_token=bearer_token, username=test.owner,
-                )
-            items.append(ZephyrRunItem(
-                test_case_key=case.zephyr_id, environment=kernel, assigned_to_key=assignee_key,
-            ))
-
-        folder = f"/stress_test/{release}/{os_version_id}"
-        name = f"{os_version_id}_{mode}_{kernel}_{stand_id}"
-        try:
-            zephyr_test_run_key = await zephyr_client.create_test_run(
-                base_url=base_url, bearer_token=bearer_token, folder=folder, name=name, items=items,
+        if existing_run is None:
+            run, error = await _create_stand_run(
+                db, department_id=department_id, os_version_id=os_version_id, mode=mode, kernel=kernel,
+                stand_id=stand_id, release=release, pairs=pairs, target_codes=target_codes,
             )
-        except AppException as exc:
-            errors.append({
-                "stand_id": stand_id, "error_code": exc.error_code, "message": exc.message,
-            })
+            if error is not None:
+                errors.append(error)
+            if run is not None:
+                touched.append(run)
             continue
 
-        run = await stp_test_run_repo.create(db, {
-            "id": new_run_id(),
-            "os_version_id": os_version_id,
-            "mode": mode,
-            "kernel": kernel,
-            "stand_id": stand_id,
-            "zephyr_test_run_key": zephyr_test_run_key,
-            "zephyr_folder_path": folder,
-        })
-        for case, _test in pairs:
-            await stp_cell_repo.create(db, {
-                "id": new_cell_id(),
-                "stp_test_case_id": case.id,
-                "stp_test_run_id": run.id,
-                "status": StpCellStatus.NOT_RUN,
-            })
-        await db.commit()
-        await db.refresh(run)
-        created.append(run)
+        run, error = await _reconcile_existing_run(
+            db, department_id=department_id, run=existing_run, pairs=pairs, target_codes=target_codes,
+        )
+        if error is not None:
+            errors.append(error)
+        touched.append(run)
+
+    return touched, errors
+
+
+async def generate_stp_runs(
+    db: AsyncSession,
+    identity: Identity,
+    *,
+    os_version_id: str,
+    mode: str | None,
+    kernel: str | None,
+    scope: str,
+    department_id: str,
+) -> tuple[list[StpTestRun], list[dict]]:
+    """Сгенерировать/переключить состав СТП-прогонов отдела для одной РЦ (§D4/D5).
+
+    `scope` — явный `changelog`/`full`, задаётся вызывающим (кнопки UI), не
+    выводится из RC. Возвращает `(test_runs, errors)` — `test_runs` несёт как
+    вновь созданные, так и уже существующие (реконциленные) прогоны, `errors`
+    — список `{"stand_id", "error_code", "message"}` частичных провалов;
+    стенды без единого пригодного тест-кейса молча пропускаются.
+    """
+    try:
+        await permissions.require_action(db, identity, EntityType.STP_TEST_RUN, Action.CREATE)
+    except AuthorizationError:
+        audit_service.emit(
+            "stp_test_run.generate",
+            target_type="stp_test_run",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied"},
+        )
+        raise
+
+    _validate_scope(scope)
+
+    composition = await _resolve_composition(
+        db, department_id=department_id, os_version_id=os_version_id, scope=scope, identity=identity,
+    )
+
+    if kernel is None or mode is None:
+        from src.services import server_client
+        kernels = [kernel] if kernel else await server_client.resolve_os_kernels(os_version_id)
+        modes = [mode] if mode else ["orel", "smolensk"]
+    else:
+        kernels = [kernel]
+        modes = [mode]
+
+    all_runs: list[StpTestRun] = []
+    all_errors: list[dict] = []
+    for selected_kernel in kernels:
+        for selected_mode in modes:
+            runs, errors = await _reconcile_stand_runs(
+                db, os_version_id=os_version_id, mode=selected_mode, kernel=selected_kernel,
+                scope=scope, department_id=department_id,
+            )
+            all_runs.extend(runs)
+            all_errors.extend(errors)
 
     audit_service.emit(
         "stp_test_run.generate",
@@ -233,12 +436,13 @@ async def generate_stp_runs(
             "os_version_id": os_version_id,
             "mode": mode,
             "kernel": kernel,
-            "final": final,
-            "created_count": len(created),
-            "error_count": len(errors),
+            "scope": scope,
+            "composition_revision": composition.revision,
+            "touched_run_count": len(all_runs),
+            "error_count": len(all_errors),
         },
     )
-    return created, errors
+    return all_runs, all_errors
 
 
 async def list_stp_test_runs(

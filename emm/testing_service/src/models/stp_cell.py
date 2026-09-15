@@ -1,15 +1,22 @@
-"""Ячейка СТП — статус `(stp_test_case × stp_test_run)` (§2.5, §6.2 плана миграции).
+"""Ячейка СТП — статус `(stp_test_case × stp_test_run)` (§2.5, §6.2, §D4/D5 плана миграции).
 
 Ровно одно из `queue_item_id`/`updated_by` заполнено (constraint на уровне
 приложения, см. `services/stp_status.py` — событийный путь пишет
 `queue_item_id`, ручной override пишет `updated_by`, никогда оба сразу).
 `UNIQUE(stp_test_case_id, stp_test_run_id)` — одна ячейка на пару, создаётся
-один раз при `/stp/generate`, дальше только обновляется.
+один раз (при первой генерации СТП либо при последующем расширении состава,
+см. `services/stp.py`), дальше только обновляется.
+
+`is_active` (§D5) — входит ли ячейка в ТЕКУЩИЙ активный состав (`stp_
+compositions.scope`). Переключение changelog/full не удаляет и не сбрасывает
+ячейку — тесты, выпавшие из объёма, получают `is_active=False`, сохраняя
+`status`/`queue_item_id`/`updated_by`; обратное переключение просто
+возвращает `is_active=True` тем же строкам.
 """
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.constants import StpCellStatus
@@ -33,6 +40,7 @@ class StpCell(Base):
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default=StpCellStatus.NOT_RUN,
     )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     # Заполнен, когда статус пришёл автоматически из queue_items (§6.2).
     queue_item_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("queue_items.id", ondelete="SET NULL"), nullable=True,

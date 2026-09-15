@@ -25,6 +25,7 @@ const getStpTestCaseMock = vi.fn();
 const updateStpTestCaseMock = vi.fn();
 const deleteStpTestCaseMock = vi.fn();
 const generateStpMock = vi.fn();
+const getStpCompositionMock = vi.fn();
 const listStpTestRunsMock = vi.fn();
 const getStpTestRunMock = vi.fn();
 const listStpTestRunCellsMock = vi.fn();
@@ -37,6 +38,7 @@ vi.mock("@/api/testing/stp", () => ({
   updateStpTestCase: (...a: unknown[]) => updateStpTestCaseMock(...a),
   deleteStpTestCase: (...a: unknown[]) => deleteStpTestCaseMock(...a),
   generateStp: (...a: unknown[]) => generateStpMock(...a),
+  getStpComposition: (...a: unknown[]) => getStpCompositionMock(...a),
   listStpTestRuns: (...a: unknown[]) => listStpTestRunsMock(...a),
   getStpTestRun: (...a: unknown[]) => getStpTestRunMock(...a),
   listStpTestRunCells: (...a: unknown[]) => listStpTestRunCellsMock(...a),
@@ -132,10 +134,24 @@ function cell(overrides: Partial<Record<string, unknown>> = {}) {
     stp_test_case_id: "case_1",
     stp_test_run_id: "run_1",
     status: "pass",
+    is_active: true,
     queue_item_id: "qi_1",
     updated_by: null,
     created_at: ISO,
     updated_at: ISO,
+    ...overrides,
+  };
+}
+
+function composition(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "stpcomp_1",
+    department_id: "dep_1",
+    os_version_id: "osv_1",
+    scope: "changelog",
+    revision: 1,
+    updated_at: ISO,
+    updated_by: "usr_admin",
     ...overrides,
   };
 }
@@ -188,6 +204,7 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     updateStpTestCaseMock.mockReset();
     deleteStpTestCaseMock.mockReset();
     generateStpMock.mockReset();
+    getStpCompositionMock.mockReset();
     listStpTestRunsMock.mockReset();
     getStpTestRunMock.mockReset();
     listStpTestRunCellsMock.mockReset();
@@ -200,6 +217,7 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     listStpTestCasesMock.mockResolvedValue({ items: [testCase()], total: 1, limit: 500, offset: 0 });
     listStpTestRunsMock.mockResolvedValue({ items: [testRun()], total: 1, limit: 500, offset: 0 });
     listStpTestRunCellsMock.mockResolvedValue([cell()]);
+    getStpCompositionMock.mockResolvedValue(composition({ scope: null, revision: 0, id: null, updated_at: null, updated_by: null }));
   });
 
   afterEach(() => {
@@ -216,30 +234,54 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     expect(await screen.findByText("Пройден")).toBeInTheDocument();
   });
 
-  it("генерация СТП — успех создаёт прогоны и рефетчит список", async () => {
+  it("состав СТП — «По changelog» зовёт generateStp с явным scope и рефетчит список/состав", async () => {
     generateStpMock.mockResolvedValue({ test_runs: [testRun()], errors: [] });
     renderPage();
 
     await screen.findAllByText("1.8.7.46");
-    const generateButton = await screen.findByRole("button", { name: /Сгенерировать СТП/ });
+    const generateButton = await screen.findByRole("button", { name: /Состав СТП/ });
     await waitFor(() => expect(generateButton).toBeEnabled());
     fireEvent.click(generateButton);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Сгенерировать" }));
+    fireEvent.click(await screen.findByRole("button", { name: "По changelog" }));
 
     await waitFor(() => expect(generateStpMock).toHaveBeenCalledTimes(1));
     expect(generateStpMock).toHaveBeenCalledWith({
       os_version_id: "osv_1",
+      scope: "changelog",
+      department_id: "dep_1",
     });
-    await waitFor(() =>
-      expect(
-        screen.getAllByText((_, el) => el?.textContent === "Создано прогонов: 1").length,
-      ).toBeGreaterThan(0),
-    );
+    expect(await screen.findByText(/прогонов в составе:/)).toBeInTheDocument();
     await waitFor(() => expect(listStpTestRunsMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(getStpCompositionMock).toHaveBeenCalledTimes(2));
   });
 
-  it("генерация СТП — частичные ошибки отображаются как предупреждение", async () => {
+  it("состав СТП — «Полный набор» зовёт generateStp со scope=full", async () => {
+    generateStpMock.mockResolvedValue({ test_runs: [testRun()], errors: [] });
+    renderPage();
+
+    await screen.findAllByText("1.8.7.46");
+    fireEvent.click(await screen.findByRole("button", { name: /Состав СТП/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Полный набор" }));
+
+    await waitFor(() => expect(generateStpMock).toHaveBeenCalledTimes(1));
+    expect(generateStpMock).toHaveBeenCalledWith({
+      os_version_id: "osv_1",
+      scope: "full",
+      department_id: "dep_1",
+    });
+  });
+
+  it("состав СТП — показывает текущий scope/revision из GET /stp/composition", async () => {
+    getStpCompositionMock.mockResolvedValue(composition({ scope: "full", revision: 3 }));
+    renderPage();
+
+    await screen.findAllByText("1.8.7.46");
+    expect(await screen.findByText("Полный набор")).toBeInTheDocument();
+    expect(await screen.findByText(/ревизия 3/)).toBeInTheDocument();
+  });
+
+  it("состав СТП — частичные ошибки отображаются как предупреждение", async () => {
     generateStpMock.mockResolvedValue({
       test_runs: [testRun()],
       errors: [{ stand_id: "stand_9", error_code: "SSH_TIMEOUT", message: "не удалось подключиться" }],
@@ -247,8 +289,8 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     renderPage();
 
     await screen.findAllByText("1.8.7.46");
-    fireEvent.click(await screen.findByRole("button", { name: /Сгенерировать СТП/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Сгенерировать" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Состав СТП/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "По changelog" }));
 
     await waitFor(() => expect(generateStpMock).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(/Часть стендов провалилась/)).toBeInTheDocument();

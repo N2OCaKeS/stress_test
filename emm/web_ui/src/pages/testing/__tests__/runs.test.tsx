@@ -134,6 +134,7 @@ function makeTestDef(id: string, fullName: string): TestDefinition {
     category: null,
     owner: null,
     readiness: null,
+    mode: "orel",
     department_id: null,
     pinned_stand_id: "stand_1",
     changelog_component: null,

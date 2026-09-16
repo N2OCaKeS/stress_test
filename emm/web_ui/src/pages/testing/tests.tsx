@@ -149,6 +149,11 @@ const READINESS_OPTIONS = [
   { value: "development", label: "В разработке" },
 ];
 
+const TEST_MODE_OPTIONS = [
+  { value: "orel", label: "Орёл" },
+  { value: "smolensk", label: "Смоленск" },
+];
+
 const SOURCE_OPTIONS: { value: GlobalVariableSource; label: string }[] = [
   { value: "launch_context", label: "launch_context — из контекста запуска" },
   { value: "static", label: "static — статическое значение" },
@@ -508,6 +513,7 @@ function TestFormModal({
   const [fullName, setFullName] = useState(initial?.full_name ?? template?.full_name ?? "");
   const [category, setCategory] = useState(initial?.category ?? template?.category ?? "");
   const [readiness, setReadiness] = useState(initial?.readiness ?? "development");
+  const [testMode, setTestMode] = useState(initial?.mode ?? template?.mode ?? "orel");
   const [pinnedStandId, setPinnedStandId] = useState(
     initial?.pinned_stand_id ?? template?.pinned_stand_id ?? "",
   );
@@ -528,6 +534,7 @@ function TestFormModal({
         full_name: fullName.trim(),
         category: category.trim() || null,
         readiness,
+        mode: testMode,
         pinned_stand_id: pinnedStandId || null,
         timeout_seconds: timeoutSeconds.trim() ? Number(timeoutSeconds) : null,
       });
@@ -585,6 +592,11 @@ function TestFormModal({
           <span className="text-dim text-xs">Статус теста</span>
           <Dropdown mode="single" options={READINESS_OPTIONS} value={readiness} onChange={setReadiness} />
           <span className="text-dim text-xs">«Рабочий» — обычные и debug-запуски. Остальные статусы — только debug. Статус меняется вручную; падение запуска его не меняет.</span>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Режим *</span>
+          <Dropdown mode="single" options={TEST_MODE_OPTIONS} value={testMode} onChange={setTestMode} />
+          <span className="text-dim text-xs">Режим безопасности Astra, под которым тест исполняется. Стенд переключается в этот режим перед прогоном.</span>
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">Свой таймаут выполнения, сек</span>

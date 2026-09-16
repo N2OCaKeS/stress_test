@@ -12,7 +12,7 @@ export interface PublicQueueItem {
 }
 export interface QueueLaunchRequest {
   request_id: string; test_id: string; stand_id: string; os_version_id: string;
-  kernel: string; mode: "orel" | "smolensk"; debug_mode: boolean;
+  kernel: string; debug_mode: boolean;
 }
 export interface QueueItemsQuery {
   kind?: "standalone" | "campaign" | "all";

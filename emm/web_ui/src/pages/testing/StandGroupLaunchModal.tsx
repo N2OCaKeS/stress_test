@@ -18,8 +18,9 @@ const SKIP_LABELS: Record<string, string> = {
 /**
  * Запуск всех тестов, закреплённых через `pinned_stand_id` за одним стендом
  * (§E3/E4 плана 2026-09-11) — аналог `_standN group` из allta_app. Стенд
- * зафиксирован пропом, оператор выбирает только РЦ/ядро/режим, смотрит
- * предпросмотр состава и подтверждает запуск кампании на одном стенде.
+ * зафиксирован пропом, оператор выбирает только РЦ/ядро — режим у каждого
+ * теста свой (фиксирован в каталоге), смотрит предпросмотр состава и
+ * подтверждает запуск кампании на одном стенде.
  */
 export function StandGroupLaunchModal({
   standId,
@@ -36,7 +37,6 @@ export function StandGroupLaunchModal({
   const [rc, setRc] = useState("");
   const [detected, setDetected] = useState<Record<string, string[]>>({});
   const [kernel, setKernel] = useState("");
-  const [mode, setMode] = useState<"orel" | "smolensk">("orel");
   const [final, setFinal] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -58,8 +58,8 @@ export function StandGroupLaunchModal({
 
   const ready = !!rc.trim() && !!kernel.trim();
   const previewQ = useQuery(
-    () => previewTestRun({ os_version_id: rc.trim(), mode, kernel: kernel.trim(), test_run_stands: [standId], final }),
-    [standId, rc, kernel, mode, final],
+    () => previewTestRun({ os_version_id: rc.trim(), kernel: kernel.trim(), test_run_stands: [standId], final }),
+    [standId, rc, kernel, final],
     { enabled: ready },
   );
   const entries = previewQ.data?.entries ?? [];
@@ -69,7 +69,7 @@ export function StandGroupLaunchModal({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (busy || !ready || launchable.length === 0) return;
-    const body = { os_version_id: rc.trim(), kernel: kernel.trim(), mode, test_run_stands: [standId], final };
+    const body = { os_version_id: rc.trim(), kernel: kernel.trim(), test_run_stands: [standId], final };
     const fingerprint = JSON.stringify(body);
     if (request.current.fingerprint !== fingerprint) request.current = { fingerprint, id: crypto.randomUUID() };
     setBusy(true); setError("");
@@ -106,9 +106,6 @@ export function StandGroupLaunchModal({
         <label className="grid gap-1 text-sm">Ядро
           <Dropdown mode="single" placeholder="Выберите ядро" value={kernel} onChange={setKernel} options={(detected[rc] ?? versionsQ.data?.items.find((item) => item.id === rc)?.kernels ?? []).map((value) => ({ value, label: value }))} />
         </label>
-        <label className="grid gap-1 text-sm">Режим
-          <Dropdown mode="single" value={mode} onChange={(value) => setMode(value as "orel" | "smolensk")} options={[{ value: "orel", label: "Орёл" }, { value: "smolensk", label: "Смоленск" }]} />
-        </label>
         <label className="flex items-center gap-2 text-sm"><Checkbox checked={final} onChange={(event) => setFinal(event.target.checked)} />Финальный прогон</label>
 
         {ready && (
@@ -124,7 +121,7 @@ export function StandGroupLaunchModal({
               <ul className="grid gap-1 text-xs">
                 {entries.map((entry) => (
                   <li key={`${entry.test_id}-${entry.kernel}`}>
-                    <span className="font-medium">{entry.test_name}</span> <span className="mono">{entry.test_code}</span> · {entry.kernel} —{" "}
+                    <span className="font-medium">{entry.test_name}</span> <span className="mono">{entry.test_code}</span> · {entry.kernel} · {entry.mode === "smolensk" ? "Смоленск" : "Орёл"} —{" "}
                     {entry.action === "launch"
                       ? <span className="text-ok">будет запущен</span>
                       : <span className="text-dim">{entry.reason ?? SKIP_LABELS[entry.action] ?? "пропущен"}</span>}

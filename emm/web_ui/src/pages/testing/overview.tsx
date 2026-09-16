@@ -543,7 +543,7 @@ function PoolOverviewPanel({
 
   const runOptions: DropdownOption[] = runs.map((r) => ({
     value: r.id,
-    label: `${r.os_version_id} · ${r.kernel} · ${r.mode} · ${r.id.slice(0, 10)}`,
+    label: `${r.os_version_id} · ${r.kernel} · ${r.mode ?? "смешанный режим"} · ${r.id.slice(0, 10)}`,
   }));
 
   return (
@@ -611,7 +611,7 @@ function PoolOverviewPanel({
 
           {overview && context === "run" && overview.test_run && (
             <div className="text-xs text-dim">
-              РЦ {overview.test_run.os_version_id} · ядро {overview.test_run.kernel} · режим {overview.test_run.mode} ·
+              РЦ {overview.test_run.os_version_id} · ядро {overview.test_run.kernel} · режим {overview.test_run.mode ?? "смешанный"} ·
               статус {overview.test_run.status} · id {overview.test_run.id}
             </div>
           )}

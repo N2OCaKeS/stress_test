@@ -128,6 +128,8 @@ export interface TestDefinition {
   category: string | null;
   owner: string | null;
   readiness: string | null;
+  /** Режим безопасности Astra, под которым тест исполняется — фиксирован на тесте. */
+  mode: string;
   department_id: string | null;
   pinned_stand_id: string | null;
   changelog_component: string | null;
@@ -144,6 +146,7 @@ export interface TestDefinitionCreateRequest {
   category?: string | null;
   owner?: string | null;
   readiness?: string | null;
+  mode?: string;
   department_id?: string | null;
   pinned_stand_id?: string | null;
   changelog_component?: string | null;
@@ -157,6 +160,7 @@ export interface TestDefinitionUpdateRequest {
   category?: string | null;
   owner?: string | null;
   readiness?: string | null;
+  mode?: string;
   department_id?: string | null;
   pinned_stand_id?: string | null;
   changelog_component?: string | null;
@@ -375,10 +379,13 @@ export type TestRunStatus =
   | "failed"
   | "partially_failed";
 
-/** Тело `POST /test-runs` (и `POST /test-runs/preview`, где `request_id` игнорируется). */
+/**
+ * Тело `POST /test-runs` (и `POST /test-runs/preview`, где `request_id` игнорируется).
+ * Режима здесь нет — он фиксирован на каждом тесте (`TestDefinition.mode`),
+ * кампания может законно смешивать orel- и smolensk-тесты.
+ */
 export interface TestRunCreateRequest {
   os_version_id: string;
-  mode: string;
   kernel?: string;
   test_run_stands: string[];
   final?: boolean;
@@ -400,6 +407,7 @@ export interface TestRunPreviewEntry {
   test_code: string;
   test_name: string;
   kernel: string;
+  mode: string;
   action: TestRunPreviewAction | string;
   reason: string | null;
 }
@@ -423,7 +431,8 @@ export interface TestRun {
   kernels?: string[];
   id: string;
   os_version_id: string;
-  mode: string;
+  /** Легаси — новые кампании этого не пишут, режим смотрите в entries[].mode. */
+  mode: string | null;
   kernel: string;
   department_id: string;
   test_run_stands: string[];
@@ -460,7 +469,7 @@ export interface TestRunQueueItem {
 /** Ответ `GET /test-runs/{id}` — карточка + все дочерние queue_items. */
 export interface TestRunDetail extends TestRun {
   composition_source?: string;
-  entries?: { id: string; test_run_id: string; stand_id: string; test_id: string; test_code: string; test_name: string; enqueue_error_code: string | null; enqueue_error: string | null }[];
+  entries?: { id: string; test_run_id: string; stand_id: string; test_id: string; test_code: string; test_name: string; mode: string; enqueue_error_code: string | null; enqueue_error: string | null }[];
   progress?: Record<string, number>;
   queue_items: TestRunQueueItem[];
 }
@@ -798,7 +807,8 @@ export interface PoolOverviewTestRun {
   id: string;
   os_version_id: string;
   kernel: string;
-  mode: string;
+  /** Легаси — новые кампании этого не пишут, режим теперь у каждого теста отдельно. */
+  mode: string | null;
   status: string;
   final: boolean;
   created_at: Iso8601;

@@ -177,7 +177,7 @@ function LogFilters({ params, onApply, stands, standsError, versions, tests, run
     {select("stand_id", "Стенд", stands.map((stand) => ({ value: stand.id, label: stand.label })), "Все стенды")}
     {select("state", "Состояние", Object.entries(STATES).map(([id, label]) => ({ value: id, label })), "Все состояния")}
     <details className="text-xs"><summary className="cursor-pointer text-dim">Дополнительно: период, прогон, поиск, debug</summary><div className="grid gap-2 mt-2">
-      {value("kind", "all") !== "standalone" && select("test_run_id", "Прогон", runs.map((run) => ({ value: run.id, label: `${versions.find((v) => v.id === run.os_version_id)?.name ?? (run.os_version_id.startsWith("os_") ? "Имя ОС недоступно" : run.os_version_id)} · ${run.mode} · ${formatMsk(run.created_at)}` })), "Все прогоны")}
+      {value("kind", "all") !== "standalone" && select("test_run_id", "Прогон", runs.map((run) => ({ value: run.id, label: `${versions.find((v) => v.id === run.os_version_id)?.name ?? (run.os_version_id.startsWith("os_") ? "Имя ОС недоступно" : run.os_version_id)} · ${run.mode ?? "смешанный режим"} · ${formatMsk(run.created_at)}` })), "Все прогоны")}
       <label className="text-xs grid gap-1">Поиск по названию или коду теста<input className="input" name="q" defaultValue={params.get("q") ?? ""} /></label>
       <label className="text-xs grid gap-1">Создана с (MSK)<input className="input" type="datetime-local" name="from" defaultValue={params.get("from") ?? ""} /></label>
       <label className="text-xs grid gap-1">Создана до (не включая, MSK)<input className="input" type="datetime-local" name="until" defaultValue={params.get("until") ?? ""} /></label>

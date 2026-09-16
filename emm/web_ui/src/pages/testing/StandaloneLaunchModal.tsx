@@ -22,7 +22,6 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
   const [rc, setRc] = useState("");
   const [detected, setDetected] = useState<Record<string, string[]>>({});
   const [kernel, setKernel] = useState("");
-  const [mode, setMode] = useState<"orel" | "smolensk">("orel");
   const [debug, setDebug] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -44,7 +43,7 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (busy) return;
-    const body = { test_id: testId, stand_id: resolvedStand, os_version_id: rc.trim(), kernel: kernel.trim(), mode, debug_mode: debug };
+    const body = { test_id: testId, stand_id: resolvedStand, os_version_id: rc.trim(), kernel: kernel.trim(), debug_mode: debug };
     const fingerprint = JSON.stringify(body);
     if (request.current.fingerprint !== fingerprint) request.current = { fingerprint, id: crypto.randomUUID() };
     setBusy(true); setError("");
@@ -68,8 +67,8 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
       </label>
       <label className="grid gap-1 text-sm">РЦ<Dropdown mode="single" placeholder="Выберите РЦ" value={rc} onChange={selectVersion} disabled={busy} options={(versionsQ.data?.items ?? []).map((item) => ({ value: item.id, label: item.name }))} /></label>
       <label className="grid gap-1 text-sm">Ядро<Dropdown mode="single" placeholder="Выберите ядро" value={kernel} onChange={setKernel} options={(detected[rc] ?? versionsQ.data?.items.find((item) => item.id === rc)?.kernels ?? []).map((value) => ({ value, label: value }))} /></label>
-      <label className="grid gap-1 text-sm">Режим<Dropdown mode="single" value={mode} onChange={(value) => setMode(value as "orel" | "smolensk")} options={[{ value: "orel", label: "Орёл" }, { value: "smolensk", label: "Смоленск" }]} /></label>
-      <div className="text-xs text-dim">{debug ? "Отладка вне прогона: результат не записывается в СТП и Zephyr." : "Запуск вне прогона: результат записывается в СТП выбранного РЦ, ядра и режима. Тест должен входить в эту СТП."}</div>
+      {test && <div className="text-xs text-dim">Режим: <span className="font-medium">{test.mode === "smolensk" ? "Смоленск" : "Орёл"}</span> — фиксирован на самом тесте.</div>}
+      <div className="text-xs text-dim">{debug ? "Отладка вне прогона: результат не записывается в СТП и Zephyr." : "Запуск вне прогона: результат записывается в СТП выбранного РЦ, ядра и режима теста. Тест должен входить в эту СТП."}</div>
       {unavailable && <div className="text-xs text-warn">Статус теста допускает только debug.</div>}
       {!debug && test && !resolvedStand && <div className="text-xs text-warn">Для обычного запуска привяжите тест к стенду в каталоге.</div>}
       {error && <div role="alert" className="text-xs text-danger">{error}</div>}

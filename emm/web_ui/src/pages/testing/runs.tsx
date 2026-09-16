@@ -304,7 +304,7 @@ function RunListRow({ run, active, onSelect }: { run: TestRun; active: boolean; 
         <Badge kind={meta.badge} className="shrink-0 ml-auto">{meta.label}</Badge>
       </div>
       <div className="mono text-[11px] text-dim truncate">
-        {run.os_version_id} · {MODE_LABELS[run.mode as RunMode] ?? run.mode} · {run.kernel}
+        {run.os_version_id} · {run.mode ? MODE_LABELS[run.mode as RunMode] ?? run.mode : "смешанный режим"} · {run.kernel}
       </div>
       <div className="text-[11px] text-dim flex items-center justify-between gap-2">
         <span>стендов в пуле: {run.test_run_stands.length}</span>
@@ -542,7 +542,6 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
   const toast = useToast();
   const versionsQ = useQuery(() => listOsVersions({ limit: 500 }), []);
   const [rc, setRc] = useState("");
-  const [mode, setMode] = useState<RunMode>("orel");
   const kernelChoices = versionsQ.data?.items.find((v) => v.id === rc)?.kernels ?? [];
   const [final, setFinal] = useState(false);
   const [allStands, setAllStands] = useState(true);
@@ -556,7 +555,7 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
 
   async function handleSubmit() {
     if (!rc || poolIds.length === 0) return;
-    const body: TestRunCreateRequest = { os_version_id: rc, mode, test_run_stands: poolIds, final };
+    const body: TestRunCreateRequest = { os_version_id: rc, test_run_stands: poolIds, final };
     setSubmitting(true);
     try {
       const res = await createTestRun(body);
@@ -613,17 +612,9 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="grid gap-1">
-              <span className="text-xs text-dim">Режим безопасности</span>
-              <Dropdown
-                mode="single"
-                options={RUN_MODES.map((m) => ({ value: m, label: MODE_LABELS[m] }))}
-                value={mode}
-                onChange={(v) => setMode(v as RunMode)}
-              />
-            </label>
-            <div className="text-xs text-dim">Ядра: {kernelChoices.join(", ") || "Будут обнаружены в репозиториях ОС"}. Прогон включает все доступные ядра.</div>
+          <div className="text-xs text-dim">
+            Ядра: {kernelChoices.join(", ") || "Будут обнаружены в репозиториях ОС"}. Прогон включает все доступные ядра.
+            Режим безопасности — свой у каждого теста, кампания может смешивать Орёл и Смоленск.
           </div>
 
           <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">

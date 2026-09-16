@@ -387,7 +387,12 @@ export type TestRunStatus =
 export interface TestRunCreateRequest {
   os_version_id: string;
   kernel?: string;
-  test_run_stands: string[];
+  /**
+   * Явно выбранный пул стендов. Не задан/пуст — состав кампании выводится
+   * из активного состава СТП отдела для `os_version_id` (полный прогон по
+   * РЦ), стенды не выбираются оператором.
+   */
+  test_run_stands?: string[];
   final?: boolean;
   /** Ключ идемпотентности: повтор с тем же значением и тем же телом вернёт ту же кампанию, с другим телом — 409 REQUEST_ID_CONFLICT. */
   request_id?: string;

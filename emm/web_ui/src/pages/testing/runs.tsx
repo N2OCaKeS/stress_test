@@ -1,4 +1,3 @@
-import { listNamedTestStands } from "@/api/testing/standCatalogue";
 /**
  * Раздел «Прогоны» — fleet-wide кампании тестирования.
  *
@@ -542,20 +541,12 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
   const toast = useToast();
   const versionsQ = useQuery(() => listOsVersions({ limit: 500 }), []);
   const [rc, setRc] = useState("");
-  const kernelChoices = versionsQ.data?.items.find((v) => v.id === rc)?.kernels ?? [];
   const [final, setFinal] = useState(false);
-  const [allStands, setAllStands] = useState(true);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
 
-  const standsQ = useQuery(() => listNamedTestStands({ is_active: true, queue_enabled: true }), []);
-  const stands = useMemo(() => standsQ.data ?? [], [standsQ.data]);
-
-  const poolIds = allStands ? stands.map((s) => s.id) : Array.from(selected);
-
   async function handleSubmit() {
-    if (!rc || poolIds.length === 0) return;
-    const body: TestRunCreateRequest = { os_version_id: rc, test_run_stands: poolIds, final };
+    if (!rc) return;
+    const body: TestRunCreateRequest = { os_version_id: rc, final };
     setSubmitting(true);
     try {
       const res = await createTestRun(body);
@@ -564,7 +555,7 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
           `Прогон ${res.id} создан частично: без закреплённого теста — ${res.stands_without_tests.length}, ошибок постановки — ${res.enqueue_errors.length}`,
         );
       } else {
-        toast.success(`Прогон ${res.id} запущен на ${poolIds.length} стендах`);
+        toast.success(`Прогон ${res.id} запущен на ${res.test_run_stands.length} стендах из состава СТП`);
       }
       state.refetch();
       state.setSelectedId(res.id);
@@ -583,7 +574,7 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
         if (!open) onClose();
       }}
       title="Запустить прогон"
-      subtitle="Все привязанные тесты выбранных стендов на всех доступных ядрах ОС"
+      subtitle="Состав определяется активным составом СТП выбранного РЦ — стенды и ядра выводятся автоматически"
       width="md"
       footer={
         <>
@@ -592,7 +583,7 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
             variant="primary"
             type="button"
             onClick={handleSubmit}
-            disabled={submitting || !rc || poolIds.length === 0}
+            disabled={submitting || !rc}
           >
             {submitting ? "Запускаем…" : `Запустить прогон${final ? " (финальный)" : ""}`}
           </Button>
@@ -613,7 +604,7 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
           </label>
 
           <div className="text-xs text-dim">
-            Ядра: {kernelChoices.join(", ") || "Будут обнаружены в репозиториях ОС"}. Прогон включает все доступные ядра.
+            Тесты, стенды и ядра берутся из активного состава СТП этого РЦ отдела — здесь их выбирать не нужно.
             Режим безопасности — свой у каждого теста, кампания может смешивать Орёл и Смоленск.
           </div>
 
@@ -624,32 +615,6 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
               <span className="text-xs text-dim">Блокирует релиз РЦ до получения результата; отображается отдельным флагом в кампаниях</span>
             </span>
           </label>
-
-          <div className="surface-2 border border-token rounded p-3">
-            {standsQ.loading && <div className="text-xs text-dim">Загружаем пул стендов…</div>}
-            {!!standsQ.error && (
-              <div className="text-xs text-danger">{apiErrMsg(standsQ.error, "Стенды не загрузились")}</div>
-            )}
-            {!standsQ.loading && !standsQ.error && (
-              <>
-                <label className="flex items-center gap-2 cursor-pointer mb-2">
-                  <Checkbox checked={allStands} onChange={(e) => setAllStands(e.target.checked)} />
-                  <span className="text-sm font-medium">Все активные стенды пула ({stands.length})</span>
-                </label>
-                {!allStands && (
-                  <Dropdown
-                    mode="multi"
-                    searchable
-                    placeholder="Выберите стенды"
-                    options={stands.map((s) => ({ value: s.id, label: standLabel(s, s.id) }))}
-                    value={selected}
-                    onChange={setSelected}
-                  />
-                )}
-                {!allStands && <div className="text-xs text-dim mt-2">Выбрано стендов: {selected.size}</div>}
-              </>
-            )}
-          </div>
         </div>
     </Modal>
   );

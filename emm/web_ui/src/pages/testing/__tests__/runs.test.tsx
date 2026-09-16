@@ -217,10 +217,11 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     await waitFor(() => expect(getTestRunMock).toHaveBeenCalledWith("run_2"));
   });
 
-  it("создание прогона собирает пул стендов и вызывает createTestRun", async () => {
+  it("создание прогона по РЦ не запрашивает пул стендов и вызывает createTestRun без test_run_stands", async () => {
     const response: TestRunCreateResponse = {
       ...RUN_1,
       id: "run_new",
+      test_run_stands: ["stand_1", "stand_2"],
       stands_without_tests: [],
       enqueue_errors: [],
     };
@@ -230,23 +231,23 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     await screen.findByText("run_1");
 
     fireEvent.click(screen.getByRole("button", { name: "Запустить прогон" }));
-    await screen.findByText("Все привязанные тесты выбранных стендов на всех доступных ядрах ОС");
+    await screen.findByText(
+      "Состав определяется активным составом СТП выбранного РЦ — стенды и ядра выводятся автоматически",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Выберите РЦ" }));
     fireEvent.click(await screen.findByRole("option", { name: "1.7.1.44" }));
-    await waitFor(() => expect(listTestStandsMock).toHaveBeenCalledWith({ is_active: true, queue_enabled: true, limit: 500, offset: 0 }));
 
     const submitButtons = screen.getAllByRole("button", { name: /Запустить прогон/ });
     fireEvent.click(submitButtons[submitButtons.length - 1]);
 
     await waitFor(() =>
-      expect(createTestRunMock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          test_run_stands: ["stand_1", "stand_2"],
-          final: false,
-        }),
-      ),
+      expect(createTestRunMock).toHaveBeenCalledWith({
+        os_version_id: "osv_real",
+        final: false,
+      }),
     );
+    expect(listTestStandsMock).not.toHaveBeenCalled();
   });
 
   it("realtime-таймер: элапсед running queue_item растёт со временем без повторного getTestRun", async () => {

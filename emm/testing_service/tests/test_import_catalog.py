@@ -93,6 +93,22 @@ class TestImportTests:
             assert slots[0].kind == "literal"
             assert slots[2].override_value == "custom"
 
+    async def test_mode_field_wired_and_defaults_to_orel(self, tmp_path):
+        with_mode, without_mode = _code(), _code()
+        path = _write(tmp_path, {
+            "tests": [
+                {"code": with_mode, "full_name": "Смоленск-тест", "mode": "smolensk"},
+                {"code": without_mode, "full_name": "Обычный тест"},
+            ],
+        })
+
+        exit_code = await run(path, bearer_token=None, dry_run=False)
+        assert exit_code == 0
+
+        async with AsyncSessionLocal() as db:
+            assert (await test_definition_repo.get_by_code(db, with_mode)).mode == "smolensk"
+            assert (await test_definition_repo.get_by_code(db, without_mode)).mode == "orel"
+
     async def test_rerun_is_idempotent(self, tmp_path):
         code = _code()
         path = _write(tmp_path, {

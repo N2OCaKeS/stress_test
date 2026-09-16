@@ -67,12 +67,14 @@ class TestCreate:
         assert body["id"].startswith("tdef_")
         assert body["full_name"] == "Мой тест"
         assert body["created_by"]
+        assert body["mode"] == "orel"
 
     async def test_full_payload_persisted(self, client, admin_token):
         payload = _payload(
             category="postgresql",
             owner="ivanov",
             readiness="ready",
+            mode="smolensk",
             department_id="dep_a",
             pinned_stand_id="stand_1",
         )
@@ -82,6 +84,7 @@ class TestCreate:
         assert body["category"] == "postgresql"
         assert body["owner"] == "ivanov"
         assert body["readiness"] == "ready"
+        assert body["mode"] == "smolensk"
         assert body["department_id"] == "dep_a"
         assert body["pinned_stand_id"] == "stand_1"
 
@@ -101,6 +104,10 @@ class TestCreate:
         second = await client.post(BASE, headers=_hdr(admin_token), json=payload)
         assert second.status_code == 409
         assert second.json()["error_code"] == "TEST_DEFINITION_DUPLICATE"
+
+    async def test_invalid_mode_rejected(self, client, admin_token):
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload(mode="invalid"))
+        assert resp.status_code == 422
 
     async def test_invalid_code_rejected(self, client, admin_token):
         resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload(code="  "))
@@ -194,6 +201,22 @@ class TestUpdate:
         body = resp.json()
         assert body["readiness"] == "broken"
         assert body["department_id"] == "dep_b"
+
+    async def test_update_mode(self, client, admin_token):
+        test_id = await self._create(client, admin_token)
+        resp = await client.patch(
+            f"{BASE}/{test_id}", headers=_hdr(admin_token), json={"mode": "smolensk"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["mode"] == "smolensk"
+
+    async def test_update_mode_rejects_null_and_invalid(self, client, admin_token):
+        test_id = await self._create(client, admin_token)
+        for value in (None, "invalid"):
+            resp = await client.patch(
+                f"{BASE}/{test_id}", headers=_hdr(admin_token), json={"mode": value},
+            )
+            assert resp.status_code == 422
 
     async def test_no_role_gets_403(self, client, no_role_token, admin_token):
         test_id = await self._create(client, admin_token)

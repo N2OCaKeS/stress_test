@@ -22,6 +22,11 @@ cycle`), то есть RC и os_version_id в этой кодовой базе �
 не требует предварительно опубликованного состава СТП, финальный
 (официальный, релизный) обязан ему соответствовать, как и одиночный запуск
 вне debug-режима.
+
+Режим безопасности (`MODE` в `launch_context`) больше не общий параметр
+кампании — он читается с каждого теста (`test.mode`) при заведении
+`TestRunEntry`, поэтому один пул стендов может законно смешивать orel- и
+smolensk-тесты в одной кампании, каждый готовится под своим режимом.
 """
 
 from __future__ import annotations
@@ -68,7 +73,6 @@ async def create_test_run(
     identity: Identity,
     *,
     os_version_id: str,
-    mode: str,
     kernel: str | None,
     test_run_stands: list[str],
     final: bool = False,
@@ -105,7 +109,7 @@ async def create_test_run(
     fingerprint = None
     if request_id:
         payload = {
-            "os_version_id": os_version_id, "mode": mode, "kernel": kernel,
+            "os_version_id": os_version_id, "kernel": kernel,
             "test_run_stands": sorted(dict.fromkeys(test_run_stands)), "final": final,
         }
         fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
@@ -133,7 +137,6 @@ async def create_test_run(
     run = await repo.create(db, {
         "id": new_id(),
         "os_version_id": os_version_id,
-        "mode": mode,
         "kernel": kernel,
         "kernels": kernels,
         "department_id": department_id,
@@ -149,6 +152,7 @@ async def create_test_run(
     entries = [TestRunEntry(
         id=f"entry_{uuid4().hex}", test_run_id=run.id, stand_id=test.pinned_stand_id,
         test_id=test.id, test_code=test.code, test_name=test.full_name, kernel=selected_kernel,
+        mode=test.mode,
     ) for selected_kernel in kernels for test in tests]
     db.add_all(entries)
     await db.commit()
@@ -159,7 +163,7 @@ async def create_test_run(
     enqueue_errors: list[TestRunPartialError] = []
     for entry in entries:
         try:
-            ctx = {"RC": os_version_id, "KERNEL": entry.kernel, "MODE": mode}
+            ctx = {"RC": os_version_id, "KERNEL": entry.kernel, "MODE": entry.mode}
             stp = await launch_stp.require_membership(db, entry.test_code, entry.stand_id, ctx) if final else None
             await queue_svc.enqueue(
                 db, identity, entry.test_id, launch_context=ctx,
@@ -187,7 +191,7 @@ async def create_test_run(
         details={
             "department_id": department_id,
             "os_version_id": os_version_id,
-            "mode": mode,
+            "modes": sorted({entry.mode for entry in entries}),
             "kernel": kernel,
             "stand_count": len(test_run_stands),
             "stands_without_tests": stands_without_tests,
@@ -204,7 +208,6 @@ async def preview_test_run(
     identity: Identity,
     *,
     os_version_id: str,
-    mode: str,
     kernel: str | None,
     test_run_stands: list[str],
     final: bool = False,
@@ -248,7 +251,7 @@ async def preview_test_run(
 
             common = {
                 "stand_id": test.pinned_stand_id, "test_id": test.id, "test_code": test.code,
-                "test_name": test.full_name, "kernel": selected_kernel,
+                "test_name": test.full_name, "kernel": selected_kernel, "mode": test.mode,
             }
             if test.readiness != TestReadiness.READY:
                 entries.append(TestRunPreviewEntry(
@@ -262,7 +265,7 @@ async def preview_test_run(
                 ))
                 continue
             if final:
-                ctx = {"RC": os_version_id, "KERNEL": selected_kernel, "MODE": mode}
+                ctx = {"RC": os_version_id, "KERNEL": selected_kernel, "MODE": test.mode}
                 stp = await launch_stp.find_membership(db, test.code, test.pinned_stand_id, ctx)
                 if stp is None:
                     entries.append(TestRunPreviewEntry(

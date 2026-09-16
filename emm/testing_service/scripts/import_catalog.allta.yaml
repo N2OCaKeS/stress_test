@@ -444,6 +444,7 @@ tests:
     category: postgresql
     owner: null
     readiness: draft
+    mode: smolensk
     department_id: null
     pinned_stand_id: null
     starter_suffix: null
@@ -2781,6 +2782,7 @@ tests:
     category: virt
     owner: null
     readiness: draft
+    mode: smolensk
     department_id: null
     pinned_stand_id: null
     starter_suffix: null
@@ -3862,6 +3864,7 @@ tests:
     category: astraevents
     owner: null
     readiness: draft
+    mode: smolensk
     department_id: null
     pinned_stand_id: null
     starter_suffix: null

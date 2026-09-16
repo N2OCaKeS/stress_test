@@ -62,7 +62,7 @@ async def create_test_run(
     """Create кампании. Доступ: `(test_run, *, create)`."""
     run, stands_without_tests, enqueue_errors = await svc.create_test_run(
         db, identity,
-        os_version_id=body.os_version_id, mode=body.mode, kernel=body.kernel,
+        os_version_id=body.os_version_id, kernel=body.kernel,
         test_run_stands=body.test_run_stands, final=body.final,
         request_id=body.request_id,
     )
@@ -93,7 +93,7 @@ async def preview_test_run(
 ) -> TestRunPreviewResponse:
     stands_without_tests, entries = await svc.preview_test_run(
         db, identity,
-        os_version_id=body.os_version_id, mode=body.mode, kernel=body.kernel,
+        os_version_id=body.os_version_id, kernel=body.kernel,
         test_run_stands=body.test_run_stands, final=body.final,
     )
     return TestRunPreviewResponse(stands_without_tests=stands_without_tests, entries=entries)

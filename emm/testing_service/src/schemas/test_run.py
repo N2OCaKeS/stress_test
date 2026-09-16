@@ -1,10 +1,12 @@
 """Pydantic-схемы для /test-runs (§2.4, §6.1 плана миграции).
 
-`TestRunCreate` — вход кампании: РЦ+ядро+режим+явный список стендов пула,
-`final` — официальный/финальный прогон релиза (просто сохраняется, влияние на
-интеграцию со СТП — волна 8). `department_id` в теле нет — кампания
-привязывается к отделу инициатора (`identity.department_id`), не может быть
-подделана в запросе.
+`TestRunCreate` — вход кампании: РЦ+ядро+явный список стендов пула, `final` —
+официальный/финальный прогон релиза (просто сохраняется, влияние на
+интеграцию со СТП — волна 8). Режима здесь нет — он фиксирован на каждом
+тесте (`test_definitions.mode`), кампания может законно смешивать orel- и
+smolensk-тесты, каждый готовится под своим режимом (см. `TestRunEntryResponse.mode`).
+`department_id` в теле нет — кампания привязывается к отделу инициатора
+(`identity.department_id`), не может быть подделана в запросе.
 
 `TestRunCreateResponse` расширяет обычную карточку двумя списками —
 `stands_without_tests` (стенд из пула без единого закреплённого теста, не
@@ -24,10 +26,6 @@ class TestRunCreate(BaseModel):
     os_version_id: str = Field(
         ..., min_length=1, max_length=64,
         description="Id карточки версии ОС в каталоге server_service (кладётся в launch_context.RC как есть).",
-    )
-    mode: str = Field(
-        ..., min_length=1, max_length=16,
-        description="Режим безопасности Astra (`orel`/`smolensk`) — тот же домен, что у launch_context.MODE.",
     )
     kernel: str | None = Field(
         None, min_length=1, max_length=64,
@@ -55,6 +53,7 @@ class TestRunPreviewEntry(BaseModel):
     test_code: str
     test_name: str
     kernel: str
+    mode: str = Field(description="Режим безопасности этого теста (test_definitions.mode).")
     action: str = Field(
         description="launch — будет поставлен в очередь; skip_debug_required/skip_stand_inactive/skip_not_in_stp — будет пропущен.",
     )
@@ -84,7 +83,10 @@ class TestRunResponse(BaseModel):
 
     id: str = Field(description="Test run ID (prefix run_).")
     os_version_id: str
-    mode: str
+    mode: str | None = Field(
+        default=None,
+        description="Легаси, только у кампаний до этого изменения — новые кампании этого не пишут, режим смотрите в entries[].mode.",
+    )
     kernel: str
     kernels: list[str] = Field(default_factory=list)
     department_id: str = Field(description="Отдел-инициатор кампании.")
@@ -138,6 +140,7 @@ class TestRunEntryResponse(BaseModel):
     test_code: str
     test_name: str
     kernel: str | None = None
+    mode: str = Field(description="Режим безопасности теста на момент постановки в очередь.")
     enqueue_error_code: str | None = None
     enqueue_error: str | None = None
 

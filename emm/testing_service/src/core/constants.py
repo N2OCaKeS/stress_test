@@ -11,6 +11,19 @@ class TestReadiness(StrEnum):
     BROKEN = "broken"
     DEVELOPMENT = "development"
 
+
+class TestMode(StrEnum):
+    """Режим безопасности Astra, под которым тест исполняется.
+
+    Фиксируется на карточке теста при заведении в каталог, а не выбирается
+    тем, кто запускает тест или кампанию — какой режим у теста, решает
+    владелец теста заранее. `server_worker` переключает режим стенда на
+    это значение перед прогоном (шаг mode_switch в prepare-for-test).
+    """
+
+    OREL = "orel"
+    SMOLENSK = "smolensk"
+
 # Health/ready paths, исключаемые из rate-limit / audit / introspect.
 HEALTH_PATHS: frozenset[str] = frozenset({
     "/api/testing/v1/health",

@@ -10,7 +10,7 @@ import re
 from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from src.core.constants import TestReadiness
+from src.core.constants import TestMode, TestReadiness
 
 # Код теста: латиница/цифры, `_`/`-`/`.` как разделители, не начинается с
 # разделителя. Формат достаточно свободный, чтобы вместить легаси-имена вида
@@ -44,6 +44,14 @@ class TestDefinitionCreate(BaseModel):
     readiness: TestReadiness = Field(
         default=TestReadiness.DEVELOPMENT,
         description="ready — Рабочий; review — На проверке; broken — Неисправен; development — В разработке. Только ready допускает обычный запуск.",
+    )
+    mode: TestMode = Field(
+        default=TestMode.OREL,
+        description=(
+            "Режим безопасности Astra, под которым тест исполняется — фиксируется "
+            "здесь, не выбирается при запуске/в кампании. server_worker переключает "
+            "на него стенд перед прогоном."
+        ),
     )
     department_id: str | None = Field(
         default=None, description="Отдел-владелец теста. Пусто — платформенный тест.",
@@ -95,6 +103,14 @@ class TestDefinitionUpdate(BaseModel):
         if value is None:
             raise ValueError("readiness cannot be null")
         return value
+    mode: TestMode | None = Field(default=None, description="Сменить режим безопасности теста.")
+
+    @field_validator("mode")
+    @classmethod
+    def _check_mode(cls, value: TestMode | None) -> TestMode:
+        if value is None:
+            raise ValueError("mode cannot be null")
+        return value
     department_id: str | None = Field(default=None, description="Сменить отдел-владелец.")
     pinned_stand_id: str | None = Field(default=None, description="Сменить привязанный стенд.")
     changelog_component: str | None = Field(
@@ -126,6 +142,7 @@ class TestDefinitionResponse(BaseModel):
     category: str | None = Field(default=None, description="Категория теста.")
     owner: str | None = Field(default=None, description="Ответственный за тест.")
     readiness: TestReadiness = Field(description="Ручной статус теста; не зависит от исхода запуска.")
+    mode: TestMode = Field(description="Режим безопасности Astra, под которым тест исполняется.")
     department_id: str | None = Field(default=None, description="Отдел-владелец.")
     pinned_stand_id: str | None = Field(default=None, description="Привязанный стенд.")
     changelog_component: str | None = Field(default=None, description="Компонент changelog-фильтра СТП.")

@@ -236,6 +236,7 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
                 readiness={"draft": "development", "blocked": "broken"}.get(
                     item.get("readiness"), item.get("readiness") or "development",
                 ),
+                mode=item.get("mode") or "orel",
                 department_id=item.get("department_id"),
                 pinned_stand_id=item.get("pinned_stand_id"),
                 changelog_component=item.get("changelog_component"),

@@ -46,7 +46,6 @@ STANDS_BASE = "/api/testing/v1/test-stands"
 def _payload(stand_ids: list[str], **overrides) -> dict:
     body = {
         "os_version_id": "osv_1.8.5",
-        "mode": "orel",
         "kernel": "6.1.0",
         "test_run_stands": stand_ids,
     }
@@ -121,6 +120,33 @@ class TestCreateTestRun:
                 assert item.launch_context["RC"] == "osv_1.8.5"
                 assert item.launch_context["KERNEL"] == "6.1.0"
                 assert item.launch_context["MODE"] == "orel"
+
+    async def test_campaign_can_mix_orel_and_smolensk_tests(
+        self, client, admin_token, mock_server_service,
+    ):
+        """Кампания больше не несёт единый режим — у каждого теста свой (§ mode_switch)."""
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        orel_test = await _create_test_def(client, admin_token, stand_id, mode="orel")
+        smolensk_test = await _create_test_def(client, admin_token, stand_id, mode="smolensk")
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id]))
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["mode"] is None
+
+        detail = await client.get(f"{BASE}/{body['id']}", headers=_hdr(admin_token))
+        entries_by_test = {e["test_id"]: e for e in detail.json()["entries"]}
+        assert entries_by_test[orel_test]["mode"] == "orel"
+        assert entries_by_test[smolensk_test]["mode"] == "smolensk"
+
+        modes_by_test = {}
+        async with AsyncSessionLocal() as db:
+            for i in detail.json()["queue_items"]:
+                item = await queue_repo.get_by_id(db, i["queue_item_id"])
+                modes_by_test[item.test_id] = item.launch_context["MODE"]
+        assert modes_by_test[orel_test] == "orel"
+        assert modes_by_test[smolensk_test] == "smolensk"
 
     async def test_stand_without_pinned_tests_does_not_break_campaign(
         self, client, admin_token, mock_server_service,
@@ -381,7 +407,7 @@ class TestFinalCampaignRequiresStp:
             })
             run = await stp_test_run_repo.create(db, {
                 "id": stp_test_run_id(), "os_version_id": payload["os_version_id"],
-                "mode": payload["mode"], "kernel": payload["kernel"], "stand_id": stand_id,
+                "mode": "orel", "kernel": payload["kernel"], "stand_id": stand_id,
                 "zephyr_test_run_key": "BT-R1", "zephyr_folder_path": "/stress_test",
             })
             await stp_cell_repo.create(db, {
@@ -442,6 +468,7 @@ class TestPreview:
         assert body["stands_without_tests"] == []
         assert len(body["entries"]) == 1
         assert body["entries"][0]["action"] == "launch"
+        assert body["entries"][0]["mode"] == "orel"
 
         listing = await client.get(BASE, headers=_hdr(admin_token), params={"department_id": "dep_a"})
         assert listing.json()["total"] == 0

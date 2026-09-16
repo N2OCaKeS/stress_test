@@ -25,6 +25,7 @@ class TestDefinition(Base):
     __tablename__ = "test_definitions"
     __table_args__ = (
         CheckConstraint("readiness IN ('ready', 'review', 'broken', 'development')", name="ck_test_definitions_readiness"),
+        CheckConstraint("mode IN ('orel', 'smolensk')", name="ck_test_definitions_mode"),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -33,6 +34,13 @@ class TestDefinition(Base):
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
     owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
     readiness: Mapped[str] = mapped_column(String(32), nullable=False, default="development", server_default="development")
+    # Режим безопасности Astra (orel/smolensk), под которым тест всегда
+    # запускается — фиксируется владельцем теста при заведении в каталог, не
+    # выбирается на запуске/в кампании. server_worker переключает стенд на
+    # этот режим перед прогоном (prepare-for-test, шаг mode_switch).
+    # server_default — легаси-конвенция каталога (import_catalog.allta.yaml):
+    # только явно `*.smolensk`/`*_smolensk`-тесты — смоленск, остальное — орёл.
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, default="orel", server_default="orel")
     # Per-department скоуп теста. Nullable — платформенные/демонстрационные
     # тесты без владельца-отдела допустимы, как и у part прочих каталогов.
     department_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

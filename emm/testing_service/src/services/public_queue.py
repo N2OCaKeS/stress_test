@@ -97,7 +97,7 @@ async def launch(db: AsyncSession, identity: Identity, body: QueueLaunchRequest)
             error_code="TEST_STAND_MISMATCH",
             message="Для обычного запуска выберите закреплённый стенд",
         )
-    ctx = {"RC": body.os_version_id, "KERNEL": body.kernel, "MODE": body.mode}
+    ctx = {"RC": body.os_version_id, "KERNEL": body.kernel, "MODE": test.mode}
     stp = (
         None
         if body.debug_mode

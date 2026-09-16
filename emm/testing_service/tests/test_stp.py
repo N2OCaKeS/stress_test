@@ -53,7 +53,7 @@ DIS_BASE = "/api/testing/v1/department-integration-settings"
 
 
 async def _create_test_def_for_dept(
-    client, admin_token, pinned_stand_id: str, department_id: str,
+    client, admin_token, pinned_stand_id: str, department_id: str, *, mode: str = "orel",
 ) -> tuple[str, str]:
     """Как `tests.test_queue._create_test_def`, но с явным `department_id` —
     нужен генерации СТП (`test_definition_repo.list_by_department_pinned`
@@ -65,7 +65,7 @@ async def _create_test_def_for_dept(
         TESTS_BASE, headers=_hdr(admin_token),
         json={
             "code": code, "full_name": "STP test", "department_id": department_id,
-            "readiness": "ready",
+            "readiness": "ready", "mode": mode,
             "pinned_stand_id": pinned_stand_id,
         },
     )
@@ -636,6 +636,48 @@ class TestStpGenerate:
         assert len(body["errors"]) == 1
         assert body["errors"][0]["stand_id"] == stand_broken
         assert body["errors"][0]["error_code"] == "ZEPHYR_CREATE_TEST_RUN_FAILED"
+
+    async def test_full_scope_partitions_tests_by_own_mode(
+        self, client, admin_token, mock_server_service, mock_zephyr, mock_secret_client, dept_a,
+    ):
+        """Смоленск-тест не должен попадать в orel-прогон стенда и наоборот
+        (§ mode is a fixed property of the test, not of the STP run)."""
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token, department_id=dept_a)
+        _orel_id, orel_code = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
+        _smolensk_id, smolensk_code = await _create_test_def_for_dept(
+            client, admin_token, stand_id, dept_a, mode="smolensk",
+        )
+        await _seed_stp_test_case(orel_code, zephyr_id="BT-T1")
+        await _seed_stp_test_case(smolensk_code, zephyr_id="BT-T2")
+        mock_secret_client["cred_x"] = ("jira_bot", "tok123")
+        await _seed_integration_settings(dept_a)
+
+        orel_resp = await client.post(
+            f"{STP_BASE}/generate", headers=_hdr(admin_token),
+            json={"os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0", "scope": "full", "department_id": dept_a},
+        )
+        assert orel_resp.status_code == 200, orel_resp.text
+        orel_body = orel_resp.json()
+        assert orel_body["errors"] == []
+        assert len(orel_body["test_runs"]) == 1
+
+        smolensk_resp = await client.post(
+            f"{STP_BASE}/generate", headers=_hdr(admin_token),
+            json={"os_version_id": "1.8.5.46", "mode": "smolensk", "kernel": "6.1.0", "scope": "full", "department_id": dept_a},
+        )
+        assert smolensk_resp.status_code == 200, smolensk_resp.text
+        smolensk_body = smolensk_resp.json()
+        assert smolensk_body["errors"] == []
+        assert len(smolensk_body["test_runs"]) == 1
+
+        async with AsyncSessionLocal() as db:
+            orel_case = await stp_test_case_repo.get_by_code(db, orel_code)
+            smolensk_case = await stp_test_case_repo.get_by_code(db, smolensk_code)
+            orel_cells = await stp_cell_repo.list_by_run(db, orel_body["test_runs"][0]["id"])
+            smolensk_cells = await stp_cell_repo.list_by_run(db, smolensk_body["test_runs"][0]["id"])
+        assert {c.stp_test_case_id for c in orel_cells} == {orel_case.id}
+        assert {c.stp_test_case_id for c in smolensk_cells} == {smolensk_case.id}
 
     async def test_guest_cannot_generate(self, client, guest_token, dept_a):
         resp = await client.post(

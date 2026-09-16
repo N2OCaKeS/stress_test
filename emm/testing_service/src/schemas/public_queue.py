@@ -1,7 +1,9 @@
-"""Публичные операции запуска принимают только несекретный контекст ОС."""
+"""Публичные операции запуска принимают только несекретный контекст ОС.
+
+`mode` здесь намеренно нет — режим безопасности фиксирован на самом тесте
+(`test_definitions.mode`), запускающий не выбирает его."""
 
 from datetime import datetime
-from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -12,7 +14,6 @@ class QueueLaunchRequest(BaseModel):
     stand_id: str = Field(min_length=1, max_length=64)
     os_version_id: str = Field(min_length=1, max_length=64)
     kernel: str = Field(min_length=1, max_length=64)
-    mode: Literal["orel", "smolensk"]
     debug_mode: bool = False
 
 

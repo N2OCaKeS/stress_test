@@ -144,12 +144,13 @@ async def _create_stand(client, admin_token, department_id="dep_a") -> tuple[str
 
 
 async def _create_test_def(
-    client, admin_token, pinned_stand_id: str | None, *, with_sensitive_arg: bool = False,
+    client, admin_token, pinned_stand_id: str | None, *, with_sensitive_arg: bool = False, mode: str = "orel",
 ) -> str:
     payload = {
         "code": f"queue.test.{uuid.uuid4().hex[:8]}",
         "full_name": "Тест очереди",
         "readiness": "ready",
+        "mode": mode,
     }
     if pinned_stand_id is not None:
         payload["pinned_stand_id"] = pinned_stand_id

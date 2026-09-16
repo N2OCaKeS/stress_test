@@ -16,7 +16,7 @@ async def test_campaign_uses_every_catalog_kernel(client, admin_token, mock_serv
     stand, _ = await _create_stand(client, admin_token)
     await _create_test_def(client, admin_token, stand)
     monkeypatch.setattr(server_client, "get_os_version", AsyncMock(return_value={"kernels": ["6.1.1-1-generic", "6.1.1-1-lowlatency"]}))
-    response = await client.post("/api/testing/v1/test-runs", headers=auth_hdr(admin_token), json={"os_version_id": "osv_test", "mode": "orel", "test_run_stands": [stand]})
+    response = await client.post("/api/testing/v1/test-runs", headers=auth_hdr(admin_token), json={"os_version_id": "osv_test", "test_run_stands": [stand]})
     assert response.status_code == 201, response.text
     run = response.json()
     assert run["kernels"] == ["6.1.1-1-generic", "6.1.1-1-lowlatency"]
@@ -55,13 +55,17 @@ async def test_rotated_log_keeps_attempt_result(client, admin_token, mock_server
 async def test_stp_only_os_discovers_kernels_and_all_modes(
     client, admin_token, dept_a, mock_server_service, monkeypatch,
 ):
+    """Без явного `mode` /stp/generate обходит оба режима — но каждый тест
+    попадает только в прогон своего собственного режима (§ mode fixed on test)."""
     from tests.test_stp import _create_test_def_for_dept, _seed_integration_settings, _seed_stp_test_case
     from src.services import stp, secret_client, zephyr_client
     mock_server_service()
     stand, _ = await _create_stand(client, admin_token, department_id=dept_a)
-    _, code = await _create_test_def_for_dept(client, admin_token, stand, dept_a)
+    _, code_orel = await _create_test_def_for_dept(client, admin_token, stand, dept_a)
+    _, code_smolensk = await _create_test_def_for_dept(client, admin_token, stand, dept_a, mode="smolensk")
     await _seed_integration_settings(dept_a)
-    await _seed_stp_test_case(code)
+    await _seed_stp_test_case(code_orel, zephyr_id="BT-T1")
+    await _seed_stp_test_case(code_smolensk, zephyr_id="BT-T2")
     discover = AsyncMock(return_value=["6.1.1-1-generic", "6.1.1-1-lowlatency"])
     monkeypatch.setattr(server_client, "resolve_os_kernels", discover)
     monkeypatch.setattr(stp, "_filter_by_changelog", AsyncMock(side_effect=lambda db, tests, rc, scope: tests))

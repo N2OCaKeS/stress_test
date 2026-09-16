@@ -22,7 +22,10 @@ class PoolOverviewTestRun(BaseModel):
     id: str
     os_version_id: str
     kernel: str
-    mode: str
+    mode: str | None = Field(
+        default=None,
+        description="Легаси-поле кампании — новые кампании его не пишут (режим теперь у каждого теста отдельно).",
+    )
     status: str
     final: bool
     created_at: datetime

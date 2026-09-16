@@ -1,16 +1,23 @@
 """Прогон — fleet-wide кампания (§2.4, §6.1 плана миграции).
 
-Один `test_run` — это один РЦ (`os_version_id`) + `mode` + `kernel`, запущенный
-сразу на весь выбранный оператором пул стендов (`test_run_stands`) одного
-отдела. Не путать с `stp_test_runs` (Zephyr test-run/execution, §2.5, волна 8)
-— это отдельная сущность на другом уровне, привязка к СТП появится позже.
+Один `test_run` — это один РЦ (`os_version_id`) + `kernel`, запущенный сразу
+на весь выбранный оператором пул стендов (`test_run_stands`) одного отдела.
+Не путать с `stp_test_runs` (Zephyr test-run/execution, §2.5, волна 8) — это
+отдельная сущность на другом уровне, привязка к СТП появится позже.
 
-`os_version_id`/`kernel`/`mode` — те же три ключа, которые `queue.enqueue()`
-требует в `launch_context` под именами `RC`/`KERNEL`/`MODE`. Кампания просто
-раскладывает их по каждому найденному тесту при постановке в очередь (см.
-`services/test_run.py`), без FK — `os_version_id` межсервисная ссылка на
-каталог `server_service`, тем же приёмом, что и у `global_variable`/
-`test_stand`.
+`mode` — легаси-поле, оставленное nullable для обратной совместимости и
+БОЛЬШЕ НЕ ЗАПОЛНЯЕТСЯ новыми кампаниями: режим безопасности — теперь фиксированное
+свойство каждого теста (`test_definitions.mode`), а не кампании целиком,
+поэтому одна кампания легитимно содержит и orel-, и smolensk-тесты
+одновременно (см. `test_run_entries.mode`). Старые кампании, созданные до
+этого изменения, сохраняют исторически записанное значение.
+
+`os_version_id`/`kernel` — те же два ключа, которые `queue.enqueue()`
+требует в `launch_context` под именами `RC`/`KERNEL` (третий, `MODE`, берётся
+из `test_run_entries.mode`). Кампания раскладывает их по каждому найденному
+тесту при постановке в очередь (см. `services/test_run.py`), без FK —
+`os_version_id` межсервисная ссылка на каталог `server_service`, тем же
+приёмом, что и у `global_variable`/`test_stand`.
 
 `test_run_stands` — вход запроса (какие стенды оператор явно выбрал при
 создании кампании), не авто-вычисляется и не обновляется постфактум, поэтому
@@ -44,7 +51,8 @@ class TestRun(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     os_version_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Легаси, nullable — см. docstring модуля. Новые кампании его не пишут.
+    mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
     kernels: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     kernel: Mapped[str] = mapped_column(String(64), nullable=False)
     department_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

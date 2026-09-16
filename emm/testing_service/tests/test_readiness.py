@@ -222,7 +222,6 @@ async def test_campaign_reports_non_working_test_as_enqueue_error(
         headers=auth_hdr(admin_token),
         json={
             "os_version_id": "osv_1",
-            "mode": "orel",
             "kernel": "6.1.0",
             "test_run_stands": [stand_id],
         },

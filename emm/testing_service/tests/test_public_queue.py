@@ -29,13 +29,12 @@ def body(test_id, stand_id, **overrides):
         "stand_id": stand_id,
         "os_version_id": LAUNCH_CTX["RC"],
         "kernel": LAUNCH_CTX["KERNEL"],
-        "mode": LAUNCH_CTX["MODE"],
         "debug_mode": True,
         **overrides,
     }
 
 
-async def seed_stp(test_id, stand_id, rc=LAUNCH_CTX["RC"]):
+async def seed_stp(test_id, stand_id, rc=LAUNCH_CTX["RC"], mode=None):
     async with AsyncSessionLocal() as db:
         test = await db.get(Definition, test_id)
         case = StpTestCase(
@@ -51,7 +50,7 @@ async def seed_stp(test_id, stand_id, rc=LAUNCH_CTX["RC"]):
             stand_id=stand_id,
             os_version_id=rc,
             kernel=LAUNCH_CTX["KERNEL"],
-            mode=LAUNCH_CTX["MODE"],
+            mode=mode or test.mode,
         )
         db.add(run)
         await db.flush()
@@ -245,6 +244,34 @@ async def test_list_separates_campaigns_and_departments(
     )
     response = await client.get(BASE, headers=auth_hdr(other), params={"kind": "all"})
     assert response.json()["total"] == 0
+
+
+async def test_launch_and_retry_use_the_tests_own_mode(
+    client, admin_token, mock_server_service, configure_internal_keys, mock_git_token
+):
+    """MODE в launch_context — свойство теста, не параметр запроса (§ mode_switch)."""
+    mock_server_service()
+    await mock_git_token()
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id, mode="smolensk")
+    await seed_stp(test_id, stand_id)
+
+    response = await client.post(
+        BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id, debug_mode=False)
+    )
+    assert response.status_code == 201, response.text
+    item = await _get_item(response.json()["id"])
+    assert item.launch_context["MODE"] == "smolensk"
+
+    await _drive_to_success(client, item)
+    retry = await client.post(
+        f"{BASE}/{item.id}/retry",
+        headers=auth_hdr(admin_token),
+        json={"request_id": uuid.uuid4().hex},
+    )
+    assert retry.status_code == 201, retry.text
+    retry_item = await _get_item(retry.json()["id"])
+    assert retry_item.launch_context["MODE"] == "smolensk"
 
 
 async def test_campaign_retry_keeps_campaign_and_saved_stand(

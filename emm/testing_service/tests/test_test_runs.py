@@ -45,6 +45,13 @@ from tests.test_queue import (  # noqa: F401 — фикстуры переисп
     SERVER_SECRET,
     WORKER_SECRET,
 )
+from tests.test_stp import (  # noqa: F401 — фикстуры переиспользуются pytest'ом по имени
+    _create_test_def_for_dept,
+    _seed_integration_settings,
+    _seed_stp_test_case,
+    mock_secret_client,
+    mock_zephyr,
+)
 
 BASE = "/api/testing/v1/test-runs"
 STANDS_BASE = "/api/testing/v1/test-stands"
@@ -104,7 +111,7 @@ class TestCreateTestRun:
         test_a = await _create_test_def(client, admin_token, stand_a)
         test_b = await _create_test_def(client, admin_token, stand_b)
 
-        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_a, stand_b]))
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_a, stand_b], debug=True))
         assert resp.status_code == 201, resp.text
         body = resp.json()
         assert body["stands_without_tests"] == []
@@ -137,7 +144,7 @@ class TestCreateTestRun:
         orel_test = await _create_test_def(client, admin_token, stand_id, mode="orel")
         smolensk_test = await _create_test_def(client, admin_token, stand_id, mode="smolensk")
 
-        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id]))
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True))
         assert resp.status_code == 201, resp.text
         body = resp.json()
         assert body["mode"] is None
@@ -164,7 +171,7 @@ class TestCreateTestRun:
         await _create_test_def(client, admin_token, stand_with_test)
 
         resp = await client.post(
-            BASE, headers=_hdr(admin_token), json=_payload([stand_with_test, stand_without_test]),
+            BASE, headers=_hdr(admin_token), json=_payload([stand_with_test, stand_without_test], debug=True),
         )
         assert resp.status_code == 201, resp.text
         body = resp.json()
@@ -202,7 +209,7 @@ class TestCreateTestRun:
         )
         assert patch.status_code == 200, patch.text
 
-        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([good_stand, bad_stand]))
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([good_stand, bad_stand], debug=True))
         assert resp.status_code == 201, resp.text
         body = resp.json()
         assert body["stands_without_tests"] == []
@@ -266,7 +273,7 @@ class TestAggregateStatus:
         stand_id, _ = await _create_stand(client, admin_token)
         await _create_test_def(client, admin_token, stand_id)
 
-        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id]))
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True))
         run_id = resp.json()["id"]
         detail = await client.get(f"{BASE}/{run_id}", headers=_hdr(admin_token))
         item_id = detail.json()["queue_items"][0]["queue_item_id"]
@@ -297,7 +304,7 @@ class TestAggregateStatus:
             })
             await db.commit()
 
-        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_ok, stand_fail]))
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_ok, stand_fail], debug=True))
         run_id = resp.json()["id"]
         detail = await client.get(f"{BASE}/{run_id}", headers=_hdr(admin_token))
         items = {i["stand_id"]: i["queue_item_id"] for i in detail.json()["queue_items"]}
@@ -377,17 +384,21 @@ async def _create_test_def_with_known_code(client, admin_token, pinned_stand_id:
     return resp.json()["id"], code
 
 
-class TestFinalCampaignRequiresStp:
-    """`final=True` — кампания официального релиза, должна соответствовать СТП (§E1)."""
+class TestReleaseGateOnDebugNotFinal:
+    """Допуск по СТП решает `debug`, а не `final` (§E1) — `final` теперь чисто
+    информационная метка, не влияет на постановку в очередь."""
 
-    async def test_non_final_campaign_ignores_stp(self, client, admin_token, mock_server_service):
+    async def test_non_debug_campaign_gates_even_when_not_final(self, client, admin_token, mock_server_service):
         mock_server_service()
         stand_id, _ = await _create_stand(client, admin_token)
         await _create_test_def(client, admin_token, stand_id)
 
-        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id]))
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], final=False))
         assert resp.status_code == 201, resp.text
-        assert resp.json()["enqueue_errors"] == []
+        errors = resp.json()["enqueue_errors"]
+        assert len(errors) == 1
+        # СТП для этого контекста ни разу не генерировалась — случай (b) §E2.
+        assert errors[0]["error_code"] == "STP_RUN_NOT_FOUND"
 
     async def test_final_campaign_without_stp_membership_reports_partial_error(
         self, client, admin_token, mock_server_service,
@@ -400,7 +411,7 @@ class TestFinalCampaignRequiresStp:
         assert resp.status_code == 201, resp.text
         errors = resp.json()["enqueue_errors"]
         assert len(errors) == 1
-        assert errors[0]["error_code"] == "TEST_NOT_IN_STP"
+        assert errors[0]["error_code"] == "STP_RUN_NOT_FOUND"
 
     async def test_final_campaign_with_stp_membership_enqueues(
         self, client, admin_token, mock_server_service,
@@ -427,6 +438,130 @@ class TestFinalCampaignRequiresStp:
         resp = await client.post(BASE, headers=_hdr(admin_token), json=payload)
         assert resp.status_code == 201, resp.text
         assert resp.json()["enqueue_errors"] == []
+
+    async def test_skips_only_non_member_test_without_blocking_the_rest(
+        self, client, admin_token, mock_server_service,
+    ):
+        """Из пула стенда только часть тестов в СТП — остальные запускаются, не-члены пропускаются (§E1)."""
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        member_id, member_code = await _create_test_def_with_known_code(client, admin_token, stand_id)
+        other_id, _other_code = await _create_test_def_with_known_code(client, admin_token, stand_id)
+        payload = _payload([stand_id], final=False)
+
+        async with AsyncSessionLocal() as db:
+            case = await stp_test_case_repo.create(db, {
+                "id": stp_test_case_id(), "code": member_code, "title": member_code, "zephyr_id": "BT-T1",
+            })
+            run = await stp_test_run_repo.create(db, {
+                "id": stp_test_run_id(), "os_version_id": payload["os_version_id"],
+                "mode": "orel", "kernel": payload["kernel"], "stand_id": stand_id,
+                "zephyr_test_run_key": "BT-R1", "zephyr_folder_path": "/stress_test",
+            })
+            await stp_cell_repo.create(db, {
+                "id": stp_cell_id(), "stp_test_case_id": case.id, "stp_test_run_id": run.id,
+            })
+            await db.commit()
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=payload)
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        errors = body["enqueue_errors"]
+        assert len(errors) == 1
+        assert errors[0]["test_id"] == other_id
+        # run уже существует (для member_code), просто other_id в него не входит — случай (a).
+        assert errors[0]["error_code"] == "TEST_NOT_IN_STP"
+
+        detail = await client.get(f"{BASE}/{body['id']}", headers=_hdr(admin_token))
+        items = detail.json()["queue_items"]
+        assert len(items) == 1
+        assert items[0]["test_id"] == member_id
+
+
+class TestDebugCampaign:
+    """`debug=True` — только вместе с явным `test_run_stands` (§E1); снимает и допуск
+    по СТП, и требование готовности теста, весь пул стенда уходит в очередь как есть."""
+
+    async def test_debug_requires_explicit_stands(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json={"os_version_id": "osv_1.8.5", "debug": True},
+        )
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["error_code"] == "TEST_RUN_DEBUG_REQUIRES_STANDS"
+
+    async def test_debug_launches_everything_ignoring_readiness_and_stp(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        ready_id = await _create_test_def(client, admin_token, stand_id)
+        broken_id = await _create_test_def(client, admin_token, stand_id)
+        patch = await client.patch(
+            f"{TESTS_BASE}/{broken_id}", headers=_hdr(admin_token), json={"readiness": "broken"},
+        )
+        assert patch.status_code == 200, patch.text
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True))
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["enqueue_errors"] == []
+
+        detail = await client.get(f"{BASE}/{body['id']}", headers=_hdr(admin_token))
+        items = detail.json()["queue_items"]
+        assert {i["test_id"] for i in items} == {ready_id, broken_id}
+
+        async with AsyncSessionLocal() as db:
+            for i in items:
+                item = await queue_repo.get_by_id(db, i["queue_item_id"])
+                assert item.debug_mode is True
+                assert item.stp_test_run_id is None
+
+
+class TestFullScopeCampaign:
+    """`full=True` — только без `test_run_stands`; синхронизирует СТП (`scope=full`)
+    перед выводом состава, кампания собирается уже из расширенной СТП (§E1/E4)."""
+
+    async def test_full_requires_no_explicit_stands(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], full=True))
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["error_code"] == "TEST_RUN_FULL_REQUIRES_STP_DERIVED"
+
+    async def test_full_syncs_stp_then_launches_widened_composition(
+        self, client, admin_token, mock_server_service, mock_zephyr, mock_secret_client, dept_a,
+    ):
+        mock_server_service()
+        rc = _unique_rc()
+        stand_id, _ = await _create_stand(client, admin_token, department_id=dept_a)
+        _test_id, code = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
+        await _seed_stp_test_case(code, zephyr_id="BT-T1")
+        mock_secret_client["cred_x"] = ("jira_bot", "tok123")
+        await _seed_integration_settings(dept_a)
+
+        # До синхронизации активного состава СТП для этого РЦ ещё нет вовсе.
+        async with AsyncSessionLocal() as db:
+            assert await stp_test_run_repo.list_by_department_and_os_version(db, dept_a, rc) == []
+
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token), json={"os_version_id": rc, "kernel": "6.1.0", "full": True},
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["composition_source"] == "stp_composition"
+        assert body["stp_sync_errors"] == []
+        assert body["enqueue_errors"] == []
+
+        async with AsyncSessionLocal() as db:
+            runs = await stp_test_run_repo.list_by_department_and_os_version(db, dept_a, rc)
+        assert len(runs) == 1
+        assert len(mock_zephyr["create"]) == 1
+
+        detail = await client.get(f"{BASE}/{body['id']}", headers=_hdr(admin_token))
+        entries = detail.json()["entries"]
+        assert {e["test_code"] for e in entries} == {code}
 
 
 class TestRequestIdIdempotency:
@@ -466,12 +601,29 @@ class TestRequestIdIdempotency:
 
 
 class TestPreview:
-    async def test_preview_reports_launch_without_side_effects(self, client, admin_token, mock_server_service):
+    async def test_preview_reports_launch_when_stp_membership_exists(
+        self, client, admin_token, mock_server_service,
+    ):
         mock_server_service()
         stand_id, _ = await _create_stand(client, admin_token)
-        await _create_test_def(client, admin_token, stand_id)
+        _test_id, code = await _create_test_def_with_known_code(client, admin_token, stand_id)
+        payload = _payload([stand_id])
 
-        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json=_payload([stand_id]))
+        async with AsyncSessionLocal() as db:
+            case = await stp_test_case_repo.create(db, {
+                "id": stp_test_case_id(), "code": code, "title": code, "zephyr_id": "BT-T1",
+            })
+            run = await stp_test_run_repo.create(db, {
+                "id": stp_test_run_id(), "os_version_id": payload["os_version_id"],
+                "mode": "orel", "kernel": payload["kernel"], "stand_id": stand_id,
+                "zephyr_test_run_key": "BT-R1", "zephyr_folder_path": "/stress_test",
+            })
+            await stp_cell_repo.create(db, {
+                "id": stp_cell_id(), "stp_test_case_id": case.id, "stp_test_run_id": run.id,
+            })
+            await db.commit()
+
+        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json=payload)
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["stands_without_tests"] == []
@@ -497,16 +649,107 @@ class TestPreview:
         assert len(entries) == 1
         assert entries[0]["action"] == "skip_debug_required"
 
-    async def test_preview_reports_not_in_stp_for_final(self, client, admin_token, mock_server_service):
+    async def test_preview_reports_stp_not_generated_when_no_run_exists(self, client, admin_token, mock_server_service):
+        """Случай (b) §E2: контекст никогда не синхронизировался с СТП — добавлять некуда."""
         mock_server_service()
         stand_id, _ = await _create_stand(client, admin_token)
         await _create_test_def(client, admin_token, stand_id)
 
-        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json=_payload([stand_id], final=True))
+        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json=_payload([stand_id]))
         assert resp.status_code == 200, resp.text
         entries = resp.json()["entries"]
         assert len(entries) == 1
-        assert entries[0]["action"] == "skip_not_in_stp"
+        assert entries[0]["action"] == "skip_stp_not_generated"
+        assert entries[0]["stp_test_run_id"] is None
+
+    async def test_preview_reports_not_in_stp_with_run_id_when_run_exists(
+        self, client, admin_token, mock_server_service,
+    ):
+        """Случай (a) §E2: СТП для контекста уже есть (другой тест того же стенда),
+        просто наш тест в неё не входит — `stp_test_run_id` указывает, куда добавлять."""
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        _member_id, member_code = await _create_test_def_with_known_code(client, admin_token, stand_id)
+        await _create_test_def(client, admin_token, stand_id)
+        payload = _payload([stand_id])
+
+        async with AsyncSessionLocal() as db:
+            case = await stp_test_case_repo.create(db, {
+                "id": stp_test_case_id(), "code": member_code, "title": member_code, "zephyr_id": "BT-T1",
+            })
+            run = await stp_test_run_repo.create(db, {
+                "id": stp_test_run_id(), "os_version_id": payload["os_version_id"],
+                "mode": "orel", "kernel": payload["kernel"], "stand_id": stand_id,
+                "zephyr_test_run_key": "BT-R1", "zephyr_folder_path": "/stress_test",
+            })
+            await stp_cell_repo.create(db, {
+                "id": stp_cell_id(), "stp_test_case_id": case.id, "stp_test_run_id": run.id,
+            })
+            await db.commit()
+
+        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json=payload)
+        assert resp.status_code == 200, resp.text
+        entries = {e["test_code"]: e for e in resp.json()["entries"]}
+        assert entries[member_code]["action"] == "launch"
+        skipped = [e for e in entries.values() if e["test_code"] != member_code][0]
+        assert skipped["action"] == "skip_not_in_stp"
+        assert skipped["stp_test_run_id"] == run.id
+
+    async def test_preview_debug_hides_stp_skip_reasons(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+
+        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json=_payload([stand_id], debug=True))
+        assert resp.status_code == 200, resp.text
+        entries = resp.json()["entries"]
+        assert len(entries) == 1
+        assert entries[0]["action"] == "launch"
+
+    async def test_preview_debug_requires_explicit_stands(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        resp = await client.post(
+            f"{BASE}/preview", headers=_hdr(admin_token),
+            json={"os_version_id": "osv_1.8.5", "debug": True},
+        )
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["error_code"] == "TEST_RUN_DEBUG_REQUIRES_STANDS"
+
+    async def test_preview_full_requires_no_explicit_stands(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json=_payload([stand_id], full=True))
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["error_code"] == "TEST_RUN_FULL_REQUIRES_STP_DERIVED"
+
+    async def test_preview_full_shows_would_launch_without_writing_to_db(
+        self, client, admin_token, mock_server_service, dept_a,
+    ):
+        mock_server_service()
+        rc = _unique_rc()
+        stand_id, _ = await _create_stand(client, admin_token, department_id=dept_a)
+        test_id, _code = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
+
+        async with AsyncSessionLocal() as db:
+            runs_before = await stp_test_run_repo.list_by_department_and_os_version(db, dept_a, rc)
+        assert runs_before == []
+
+        resp = await client.post(
+            f"{BASE}/preview", headers=_hdr(admin_token), json={"os_version_id": rc, "kernel": "6.1.0", "full": True},
+        )
+        assert resp.status_code == 200, resp.text
+        entries = resp.json()["entries"]
+        assert len(entries) == 1
+        assert entries[0]["test_id"] == test_id
+        assert entries[0]["action"] == "launch"
+
+        async with AsyncSessionLocal() as db:
+            runs_after = await stp_test_run_repo.list_by_department_and_os_version(db, dept_a, rc)
+        assert runs_after == []
+
+        listing = await client.get(BASE, headers=_hdr(admin_token), params={"department_id": dept_a})
+        runs_for_rc = [r for r in listing.json()["items"] if r["os_version_id"] == rc]
+        assert runs_for_rc == []
 
 
 async def _seed_stp_cell(

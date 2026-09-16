@@ -16,7 +16,7 @@ async def test_campaign_uses_every_catalog_kernel(client, admin_token, mock_serv
     stand, _ = await _create_stand(client, admin_token)
     await _create_test_def(client, admin_token, stand)
     monkeypatch.setattr(server_client, "get_os_version", AsyncMock(return_value={"kernels": ["6.1.1-1-generic", "6.1.1-1-lowlatency"]}))
-    response = await client.post("/api/testing/v1/test-runs", headers=auth_hdr(admin_token), json={"os_version_id": "osv_test", "test_run_stands": [stand]})
+    response = await client.post("/api/testing/v1/test-runs", headers=auth_hdr(admin_token), json={"os_version_id": "osv_test", "test_run_stands": [stand], "debug": True})
     assert response.status_code == 201, response.text
     run = response.json()
     assert run["kernels"] == ["6.1.1-1-generic", "6.1.1-1-lowlatency"]

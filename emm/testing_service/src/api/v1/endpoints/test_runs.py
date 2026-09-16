@@ -23,6 +23,7 @@ from src.schemas.test_run import (
     TestRunPreviewResponse,
     TestRunQueueItemResponse,
     TestRunResponse,
+    TestRunStpSyncError,
 )
 from src.services import log_availability
 from src.services import run_summary as run_summary_svc
@@ -43,12 +44,18 @@ router = APIRouter(prefix="/test-runs")
         "`test_run_stands` задан явно — прежний путь: все тесты выбранного "
         "пула стендов, закреплённые через `pinned_stand_id`, на всех "
         "доступных ядрах ОС (явный `kernel` сохраняет совместимость с "
-        "запуском на одном ядре). `test_run_stands` не задан — полный прогон "
-        "по РЦ: состав (тесты, стенды, ядра) выводится из активного состава "
-        "СТП отдела для `os_version_id`, оператор их не выбирает. Стенд без "
-        "тестов не рушит кампанию — попадает в `stands_without_tests`. "
-        "Провал постановки одного теста одного стенда — в `enqueue_errors`, "
-        "остальные стенды кампании стартуют независимо."
+        "запуском на одном ядре); только здесь допустим `debug=True` — снимает "
+        "и допуск по СТП, и требование готовности теста. `test_run_stands` не "
+        "задан — полный прогон по РЦ: состав (тесты, стенды, ядра) выводится "
+        "из активного состава СТП отдела для `os_version_id`, оператор их не "
+        "выбирает; только здесь допустим `full=True` — сначала расширяет СТП "
+        "этого РЦ до полного набора (`/stp/generate?scope=full`). Без "
+        "`debug=True` допуск по СТП применяется безусловно (не зависит от "
+        "`final` — тот лишь сохраняемая метка). Стенд без тестов не рушит "
+        "кампанию — попадает в `stands_without_tests`. Провал постановки "
+        "одного теста одного стенда — в `enqueue_errors`, провал синхронизации "
+        "СТП при `full=True` — в `stp_sync_errors`; остальные стенды кампании "
+        "стартуют независимо."
     ),
     responses={
         201: {"description": "Кампания создана (возможно, частично — см. stands_without_tests/enqueue_errors)."},
@@ -56,8 +63,10 @@ router = APIRouter(prefix="/test-runs")
         409: {"description": "`request_id` уже использован с другими параметрами (REQUEST_ID_CONFLICT)."},
         422: {
             "description": (
-                "У вызывающего нет department_id, тело запроса невалидно, либо "
-                "(без явного `test_run_stands`) активный состав СТП для РЦ пуст (STP_COMPOSITION_EMPTY)."
+                "У вызывающего нет department_id, тело запроса невалидно, "
+                "(без явного `test_run_stands`) активный состав СТП для РЦ пуст "
+                "(STP_COMPOSITION_EMPTY), либо `debug`/`full` использован с несовместимым "
+                "`test_run_stands` (TEST_RUN_DEBUG_REQUIRES_STANDS / TEST_RUN_FULL_REQUIRES_STP_DERIVED)."
             ),
         },
     },
@@ -68,15 +77,17 @@ async def create_test_run(
     db: AsyncSession = Depends(get_db),
 ) -> TestRunCreateResponse:
     """Create кампании. Доступ: `(test_run, *, create)`."""
-    run, stands_without_tests, enqueue_errors = await svc.create_test_run(
+    run, stands_without_tests, enqueue_errors, stp_sync_errors = await svc.create_test_run(
         db, identity,
         os_version_id=body.os_version_id, kernel=body.kernel,
         test_run_stands=body.test_run_stands, final=body.final,
+        debug=body.debug, full=body.full,
         request_id=body.request_id,
     )
     response = TestRunCreateResponse.model_validate(run)
     response.stands_without_tests = stands_without_tests
     response.enqueue_errors = enqueue_errors
+    response.stp_sync_errors = [TestRunStpSyncError(**e) for e in stp_sync_errors]
     return response
 
 
@@ -87,7 +98,9 @@ async def create_test_run(
     description=(
         "Без побочных эффектов: показывает, какие тесты будут запущены, а "
         "какие пропущены и почему (не «Рабочий» статус, неактивный стенд, "
-        "отсутствие в активном составе СТП при `final=True`)."
+        "отсутствие в активном составе СТП). `debug`/`full` — те же "
+        "ограничения, что и у создания кампании; `full=True` не вызывает "
+        "`/stp/generate`, состав считается приближённо."
     ),
     responses={
         403: {"description": "Нет роли с `create` на `test_run`."},
@@ -102,7 +115,7 @@ async def preview_test_run(
     stands_without_tests, entries = await svc.preview_test_run(
         db, identity,
         os_version_id=body.os_version_id, kernel=body.kernel,
-        test_run_stands=body.test_run_stands, final=body.final,
+        test_run_stands=body.test_run_stands, debug=body.debug, full=body.full,
     )
     return TestRunPreviewResponse(stands_without_tests=stands_without_tests, entries=entries)
 

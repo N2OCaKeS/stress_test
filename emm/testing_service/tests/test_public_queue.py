@@ -115,7 +115,9 @@ async def test_normal_requires_stp_and_does_not_allow_context_injection(
     payload = body(test_id, stand_id, debug_mode=False)
     response = await client.post(BASE, headers=auth_hdr(admin_token), json=payload)
     assert response.status_code == 422
-    assert response.json()["error_code"] == "TEST_NOT_IN_STP"
+    # СТП для этого стенда/РЦ/ядра/режима ещё не генерировалась вовсе —
+    # добавлять некуда, это отличается от "СТП есть, теста в ней нет" (§E2).
+    assert response.json()["error_code"] == "STP_RUN_NOT_FOUND"
     response = await client.post(
         BASE,
         headers=auth_hdr(admin_token),
@@ -191,6 +193,28 @@ async def test_stp_result_is_updated_only_for_normal_launch(
         cell = await db.get(StpCell, cell_id)
         assert cell.status == ("not_run" if debug else "pass")
         assert (cell.queue_item_id is None) == debug
+
+
+async def test_not_in_stp_carries_existing_run_id_for_add_to_stp_prompt(
+    client, admin_token, mock_server_service
+):
+    """Случай (a) §E2: СТП для этого контекста уже сгенерирована (для другого
+    теста того же стенда), просто наш тест в неё не входит — `details.
+    stp_test_run_id` должен указывать на неё, чтобы UI знал, куда добавлять."""
+    mock_server_service()
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_with_stp = await _create_test_def(client, admin_token, stand_id)
+    test_without_stp = await _create_test_def(client, admin_token, stand_id)
+    run_id, _cell_id = await seed_stp(test_with_stp, stand_id)
+
+    response = await client.post(
+        BASE, headers=auth_hdr(admin_token),
+        json=body(test_without_stp, stand_id, debug_mode=False),
+    )
+    assert response.status_code == 422
+    payload = response.json()
+    assert payload["error_code"] == "TEST_NOT_IN_STP"
+    assert payload["details"]["stp_test_run_id"] == run_id
 
 
 async def test_removed_stp_test_is_not_given_to_worker(

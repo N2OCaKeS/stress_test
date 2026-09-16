@@ -115,11 +115,14 @@ async def enqueue(
 
     entry = await db.get(TestRunEntry, test_run_entry_id) if test_run_entry_id else None
     if test_run_entry_id and (
-        entry is None or entry.test_run_id != test_run_id or entry.test_id != test_id or debug_mode
+        entry is None or entry.test_run_id != test_run_id or entry.test_id != test_id
     ):
         raise DomainValidationError(error_code="TEST_RUN_ENTRY_MISMATCH", message="Invalid campaign entry")
 
     if debug_mode:
+        # Debug-групповой запуск стенда (§E1) тоже заводит TestRunEntry —
+        # test_run_entry_id и debug_mode здесь законно совпадают, стенд
+        # приходит явно от вызывающего, а не через привязку теста/записи.
         if not stand_id:
             raise DomainValidationError(
                 error_code="STAND_ID_REQUIRED_FOR_DEBUG",

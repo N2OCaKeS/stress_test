@@ -8,6 +8,10 @@ from pathlib import Path
 from sqlalchemy import select
 from src.db.session import AsyncSessionLocal
 from src.models import QueueItem
+from src.repositories import stp_cell as stp_cell_repo
+from src.repositories import stp_test_case as stp_test_case_repo
+from src.repositories import stp_test_run as stp_test_run_repo
+from src.utils.ids import stp_cell_id, stp_test_case_id, stp_test_run_id
 from tests.conftest import TEST_DATABASE_URL, auth_hdr
 from tests.test_queue import (
     CALLBACK_BASE,
@@ -22,13 +26,38 @@ from tests.test_queue import (
     mock_server_service as mock_server_service,
     recorded_calls as recorded_calls,
 )
-from tests.test_test_runs import BASE, _payload, _drive_to_success
+from tests.test_test_runs import BASE, _payload, _create_test_def_with_known_code, _drive_to_success
 
 
-async def create_run(client, token, stands):
-    response = await client.post(BASE, headers=auth_hdr(token), json=_payload(stands))
+async def create_run(client, token, stands, *, debug: bool = True):
+    # Тесты этого файла проверяют механику попыток/ретраев/миграции, а не
+    # допуск по СТП — debug снимает гейт, как и раньше снимал final=False.
+    response = await client.post(BASE, headers=auth_hdr(token), json=_payload(stands, debug=debug))
     assert response.status_code == 201, response.text
     return response.json()["id"]
+
+
+async def _seed_stp_membership(
+    stand_id: str, *codes: str, os_version_id="osv_1.8.5", kernel="6.1.0", mode="orel",
+):
+    """Заводит один СТП test-run на `(stand_id, os_version_id, kernel, mode)` и по
+    ячейке на каждый переданный код — на один и тот же ран, а не по одному ран
+    на код (иначе `find_latest_for_context` найдёт только самый свежий из них,
+    и все остальные коды окажутся "не в СТП")."""
+    async with AsyncSessionLocal() as db:
+        run = await stp_test_run_repo.create(db, {
+            "id": stp_test_run_id(), "os_version_id": os_version_id,
+            "mode": mode, "kernel": kernel, "stand_id": stand_id,
+            "zephyr_test_run_key": "BT-R1", "zephyr_folder_path": "/stress_test",
+        })
+        for code in codes:
+            case = await stp_test_case_repo.create(db, {
+                "id": stp_test_case_id(), "code": code, "title": code, "zephyr_id": f"BT-{code}",
+            })
+            await stp_cell_repo.create(db, {
+                "id": stp_cell_id(), "stp_test_case_id": case.id, "stp_test_run_id": run.id,
+            })
+        await db.commit()
 
 
 async def detail(client, token, run_id):
@@ -105,18 +134,22 @@ async def test_manifest_survives_catalog_edits_and_deduplicates_stands(
 async def test_enqueue_error_remains_in_composition_and_prevents_false_success(
     client, admin_token, mock_server_service, configure_internal_keys, mock_git_token
 ):
+    # Не debug — нужен реальный readiness-гейт `queue.enqueue`, поэтому оба
+    # теста заранее заведены в СТП контекста `_payload`, иначе они бы падали
+    # на STP-гейте раньше, чем дойдут до проверки readiness.
     mock_server_service()
     await mock_git_token()
     stand_id, _ = await _create_stand(client, admin_token)
-    await _create_test_def(client, admin_token, stand_id)
-    broken = await _create_test_def(client, admin_token, stand_id)
+    _ready_id, ready_code = await _create_test_def_with_known_code(client, admin_token, stand_id)
+    broken, broken_code = await _create_test_def_with_known_code(client, admin_token, stand_id)
     response = await client.patch(
         f"{TESTS_BASE}/{broken}",
         headers=auth_hdr(admin_token),
         json={"readiness": "broken"},
     )
     assert response.status_code == 200
-    run_id = await create_run(client, admin_token, [stand_id])
+    await _seed_stp_membership(stand_id, ready_code, broken_code)
+    run_id = await create_run(client, admin_token, [stand_id], debug=False)
     initial = await detail(client, admin_token, run_id)
     assert len(initial["entries"]) == 2
     assert initial["progress"]["total"] == 2
@@ -143,10 +176,14 @@ async def test_enqueue_error_remains_in_composition_and_prevents_false_success(
 async def test_migration_preserves_independent_roots_and_retry_context(
     client, admin_token, mock_server_service
 ):
+    # Не debug — ниже вручную заводятся дублирующие queue_items с implicit
+    # debug_mode=False (не скопирован с `first`), группировка по (test_run_id,
+    # test_id, stand_id, debug_mode) должна совпасть с оригинальной записью.
     mock_server_service()
     stand_id, _ = await _create_stand(client, admin_token)
-    await _create_test_def(client, admin_token, stand_id)
-    run_id = await create_run(client, admin_token, [stand_id])
+    _test_id, code = await _create_test_def_with_known_code(client, admin_token, stand_id)
+    await _seed_stp_membership(stand_id, code)
+    run_id = await create_run(client, admin_token, [stand_id], debug=False)
     initial = await detail(client, admin_token, run_id)
     first_id = initial["queue_items"][0]["queue_item_id"]
     async with AsyncSessionLocal() as db:

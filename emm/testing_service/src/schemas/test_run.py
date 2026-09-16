@@ -1,12 +1,14 @@
-"""Pydantic-схемы для /test-runs (§2.4, §6.1 плана миграции).
+"""Pydantic-схемы для /test-runs (§2.4, §6.1, §E1-E5 плана миграции).
 
 `TestRunCreate` — вход кампании: РЦ+ядро, `final` — официальный/финальный
-прогон релиза (влияет на обязательность СТП, `services/test_run.py`).
-Режима здесь нет — он фиксирован на каждом тесте (`test_definitions.mode`),
-кампания может законно смешивать orel- и smolensk-тесты, каждый готовится
-под своим режимом (см. `TestRunEntryResponse.mode`). `department_id` в теле
-нет — кампания привязывается к отделу инициатора (`identity.department_id`),
-не может быть подделана в запросе.
+прогон релиза, чисто информационная метка (сохраняется, ни на что не влияет).
+Допуск по СТП решает отдельный флаг `debug`, а не `final` — см. `debug`/`full`
+ниже и `services/test_run.py`. Режима здесь нет — он фиксирован на каждом
+тесте (`test_definitions.mode`), кампания может законно смешивать orel- и
+smolensk-тесты, каждый готовится под своим режимом (см.
+`TestRunEntryResponse.mode`). `department_id` в теле нет — кампания
+привязывается к отделу инициатора (`identity.department_id`), не может быть
+подделана в запросе.
 
 `test_run_stands` теперь опционален. Заданный явно — прежнее поведение без
 изменений: ровно эти стенды пула, тесты берутся по `pinned_stand_id` (группа
@@ -14,11 +16,24 @@
 состава СТП отдела для этого РЦ (полный прогон по РЦ): какие тесты, значит
 какие стенды и ядра — решает СТП, оператор их не выбирает.
 
-`TestRunCreateResponse` расширяет обычную карточку двумя списками —
+`debug` и `full` — независимые флаги, каждый допустим ровно в одном из двух
+путей сборки состава:
+
+- `debug` — только вместе с явным `test_run_stands` (групповой запуск
+  стенда). Снимает и допуск по СТП, и требование статуса «Рабочий» для
+  каждого теста — весь привязанный к стенду пул уходит в очередь как есть.
+- `full` — только без `test_run_stands` (вывод из СТП). Перед сборкой
+  состава запускает `/stp/generate` со `scope=full` для этого РЦ, поэтому
+  состав кампании получается из уже расширенной СТП, а не только из того,
+  что было сгенерировано раньше.
+
+`TestRunCreateResponse` расширяет обычную карточку тремя списками —
 `stands_without_tests` (стенд из пула без единого закреплённого теста, не
-рушит остальную кампанию) и `enqueue_errors` (частичные провалы постановки в
-очередь одного конкретного теста одного стенда — тоже не рушат остальную
-кампанию, см. `services/test_run.py`).
+рушит остальную кампанию), `enqueue_errors` (частичные провалы постановки в
+очередь одного конкретного теста одного стенда) и `stp_sync_errors`
+(частичные провалы синхронизации СТП при `full=True`, per-стенд, отдельно от
+`enqueue_errors` — то и другое не рушит остальную кампанию, см.
+`services/test_run.py`).
 """
 
 from datetime import datetime
@@ -47,7 +62,21 @@ class TestRunCreate(BaseModel):
     )
     final: bool = Field(
         default=False,
-        description="Официальный/финальный прогон релиза — просто сохраняется, влияние на СТП появится в волне 8.",
+        description="Официальный/финальный прогон релиза — чисто информационная метка, на допуск по СТП не влияет.",
+    )
+    debug: bool = Field(
+        default=False,
+        description=(
+            "Допустим только вместе с явным test_run_stands. Снимает допуск по СТП и требование "
+            "статуса «Рабочий» — весь пул стенда уходит в очередь без проверок."
+        ),
+    )
+    full: bool = Field(
+        default=False,
+        description=(
+            "Допустим только без test_run_stands (вывод из СТП). Перед сборкой состава расширяет "
+            "СТП этого РЦ до полного набора (scope=full), затем запускает уже расширенный состав."
+        ),
     )
     request_id: str | None = Field(
         None, min_length=8, max_length=128,
@@ -65,9 +94,20 @@ class TestRunPreviewEntry(BaseModel):
     kernel: str
     mode: str = Field(description="Режим безопасности этого теста (test_definitions.mode).")
     action: str = Field(
-        description="launch — будет поставлен в очередь; skip_debug_required/skip_stand_inactive/skip_not_in_stp — будет пропущен.",
+        description=(
+            "launch — будет поставлен в очередь; skip_debug_required/skip_stand_inactive/"
+            "skip_not_in_stp/skip_stp_not_generated — будет пропущен."
+        ),
     )
     reason: str | None = None
+    stp_test_run_id: str | None = Field(
+        default=None,
+        description=(
+            "Заполнен только при action=skip_not_in_stp — id уже существующего СТП-прогона этого "
+            "контекста, куда можно добавить тест (POST /stp/test-runs/{id}/add-test). При "
+            "skip_stp_not_generated СТП для этого контекста ещё не генерировалась — добавлять некуда."
+        ),
+    )
 
 
 class TestRunPreviewResponse(BaseModel):
@@ -82,6 +122,15 @@ class TestRunPartialError(BaseModel):
 
     stand_id: str
     test_id: str
+    error_code: str
+    message: str
+
+
+class TestRunStpSyncError(BaseModel):
+    """Один частичный провал синхронизации СТП (`/stp/generate`) при `full=True` —
+    не про постановку в очередь, а про сам расширенный состав СТП стенда."""
+
+    stand_id: str | None = None
     error_code: str
     message: str
 
@@ -130,6 +179,10 @@ class TestRunCreateResponse(TestRunResponse):
     enqueue_errors: list[TestRunPartialError] = Field(
         default_factory=list,
         description="Частичные провалы постановки в очередь отдельных тестов — остальная кампания не пострадала.",
+    )
+    stp_sync_errors: list[TestRunStpSyncError] = Field(
+        default_factory=list,
+        description="Частичные провалы синхронизации СТП (только при full=True) — отдельно от enqueue_errors.",
     )
 
 

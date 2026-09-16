@@ -6,7 +6,11 @@ from sqlalchemy import select
 from src.core.exceptions import DomainValidationError
 from src.db.session import AsyncSessionLocal
 from src.models import QueueItem
+from src.repositories import stp_cell as stp_cell_repo
+from src.repositories import stp_test_case as stp_test_case_repo
+from src.repositories import stp_test_run as stp_test_run_repo
 from src.services import creds_stash, queue as queue_svc
+from src.utils.ids import stp_cell_id, stp_test_case_id, stp_test_run_id
 from tests.conftest import auth_hdr
 from tests.test_queue import (
     CALLBACK_BASE,
@@ -25,6 +29,7 @@ from tests.test_queue import (
     mock_server_service as mock_server_service,
     recorded_calls as recorded_calls,
 )
+from tests.test_test_runs import _create_test_def_with_known_code
 
 
 async def change_status(client, token, test_id, readiness):
@@ -213,10 +218,26 @@ async def test_failure_does_not_change_catalog_status(
 async def test_campaign_reports_non_working_test_as_enqueue_error(
     client, admin_token, mock_server_service
 ):
+    # Не debug — нужен реальный readiness-гейт, поэтому тест заранее заведён в
+    # СТП этого контекста: иначе он упал бы на STP-гейте раньше, чем дойдёт
+    # до проверки readiness внутри `queue.enqueue`.
     mock_server_service()
     stand_id, _ = await _create_stand(client, admin_token)
-    test_id = await _create_test_def(client, admin_token, stand_id)
+    test_id, code = await _create_test_def_with_known_code(client, admin_token, stand_id)
     await change_status(client, admin_token, test_id, "development")
+    async with AsyncSessionLocal() as db:
+        case = await stp_test_case_repo.create(db, {
+            "id": stp_test_case_id(), "code": code, "title": code, "zephyr_id": f"BT-{code}",
+        })
+        run = await stp_test_run_repo.create(db, {
+            "id": stp_test_run_id(), "os_version_id": "osv_1",
+            "mode": "orel", "kernel": "6.1.0", "stand_id": stand_id,
+            "zephyr_test_run_key": f"BT-R-{code}", "zephyr_folder_path": "/stress_test",
+        })
+        await stp_cell_repo.create(db, {
+            "id": stp_cell_id(), "stp_test_case_id": case.id, "stp_test_run_id": run.id,
+        })
+        await db.commit()
     response = await client.post(
         "/api/testing/v1/test-runs",
         headers=auth_hdr(admin_token),

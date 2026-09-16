@@ -388,7 +388,7 @@ class TestQueueTrigger:
         stand_id, _ = await _create_stand(client, admin_token, department_id="dep_a")
         await _create_test_def(client, admin_token, stand_id)
 
-        resp = await client.post(RUNS_BASE, headers=_hdr(admin_token), json=_payload([stand_id]))
+        resp = await client.post(RUNS_BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True))
         assert resp.status_code == 201, resp.text
         run_id = resp.json()["id"]
         detail = await client.get(f"{RUNS_BASE}/{run_id}", headers=_hdr(admin_token))

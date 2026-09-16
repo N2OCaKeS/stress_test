@@ -66,12 +66,14 @@ import {
   updateGlobalVariable,
 } from "@/api/testing/global_variables";
 import { listNamedTestStands, standName } from "@/api/testing/standCatalogue";
+import { createStpTestCase, listStpTestCases, updateStpTestCase } from "@/api/testing/stp";
 import type {
   CommandArgKind,
   GlobalVariable,
   GlobalVariableCreateRequest,
   GlobalVariableSource,
   GlobalVariableValueType,
+  StpTestCase,
   TestCommandArg,
   TestDefinition,
   TestDefinitionCreateRequest,
@@ -183,6 +185,13 @@ export function TestsWorkzone() {
 
   const standsQ = useQuery(() => listNamedTestStands(), []);
 
+  // Номер BT (Zephyr testcase key) хранится в отдельной таблице stp_test_cases
+  // (join по code), не на самом test_definitions — общий список подгружаем
+  // один раз, чтобы форма могла показать/сохранить его прямо в карточке теста
+  // каталога, не отправляя оператора на отдельную страницу СТП.
+  const casesQ = useQuery(async () => (await listStpTestCases({ limit: 500 })).items, []);
+  const cases = casesQ.data ?? [];
+
   // Общий источник каталога переменных — им пользуется и панель управления
   // (эта переменная), и конструктор команды (`CommandConstructorModal`,
   // получает `variables`/`variablesLoading` пропсами). Один `useQuery` на
@@ -225,10 +234,34 @@ export function TestsWorkzone() {
 
   const categories = useMemo(() => Array.from(categoryCounts.keys()).sort(), [categoryCounts]);
 
-  async function handleCreate(body: TestDefinitionCreateRequest) {
+  // Заводит/обновляет/чистит stp_test_case для code теста — тот же join,
+  // которым потом пользуется гейт СТП (`launch_stp.py`) и генерация
+  // (`stp.py`). Пустой ввод при уже существующей записи чистит zephyr_id
+  // (явная отвязка), пустой ввод без записи — no-op, ничего не заводим
+  // впустую под тест, которому Zephyr ещё не нужен.
+  async function syncBtNumber(code: string, fullName: string, btNumber: string) {
+    const trimmed = btNumber.trim();
+    const existing = cases.find((c) => c.code === code);
+    try {
+      if (existing) {
+        if (existing.zephyr_id !== (trimmed || null)) {
+          await updateStpTestCase(existing.id, { zephyr_id: trimmed || null });
+          casesQ.refetch();
+        }
+      } else if (trimmed) {
+        await createStpTestCase({ code, title: fullName, zephyr_id: trimmed });
+        casesQ.refetch();
+      }
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Тест сохранён, но не удалось сохранить номер BT"));
+    }
+  }
+
+  async function handleCreate(body: TestDefinitionCreateRequest, btNumber: string) {
     try {
       const created = await createTestDefinition(body);
       toast.success(`Тест «${body.code}» создан`);
+      await syncBtNumber(body.code, body.full_name, btNumber);
       // Клон "из шаблона" — переносим слоты команды исходного теста один в
       // один (тот же variable_id валиден и у нового теста: global_variables
       // платформенные, не per-test). Порядок не переставляем — create-эндпоинт
@@ -265,10 +298,11 @@ export function TestsWorkzone() {
     }
   }
 
-  async function handleUpdate(test: TestDefinition, body: TestDefinitionCreateRequest) {
+  async function handleUpdate(test: TestDefinition, body: TestDefinitionCreateRequest, btNumber: string) {
     try {
       await updateTestDefinition(test.id, body);
       toast.success(`Тест «${test.code}» обновлён`);
+      await syncBtNumber(body.code, body.full_name, btNumber);
       setFormTarget(null);
       testsQ.refetch();
     } catch (e) {
@@ -457,12 +491,13 @@ export function TestsWorkzone() {
           initial={formTarget === "create" ? undefined : formTarget}
           template={formTarget === "create" ? cloneSource ?? undefined : undefined}
           stands={standsQ.data ?? []}
+          cases={cases}
           onClose={() => {
             setFormTarget(null);
             setCloneSource(null);
           }}
-          onSubmit={(body) =>
-            formTarget === "create" ? handleCreate(body) : handleUpdate(formTarget, body)
+          onSubmit={(body, btNumber) =>
+            formTarget === "create" ? handleCreate(body, btNumber) : handleUpdate(formTarget, body, btNumber)
           }
         />
       )}
@@ -497,6 +532,7 @@ function TestFormModal({
   initial,
   template,
   stands,
+  cases,
   onClose,
   onSubmit,
 }: {
@@ -506,8 +542,10 @@ function TestFormModal({
    * и (в TestsWorkzone.handleCreate) копируются слоты команды — "клонирование". */
   template?: TestDefinition;
   stands: TestStand[];
+  /** Каталог stp_test_cases — источник текущего номера BT по code теста. */
+  cases: StpTestCase[];
   onClose: () => void;
-  onSubmit: (body: TestDefinitionCreateRequest) => void | Promise<void>;
+  onSubmit: (body: TestDefinitionCreateRequest, btNumber: string) => void | Promise<void>;
 }) {
   const [code, setCode] = useState(initial?.code ?? (template ? `${template.code}.copy` : ""));
   const [fullName, setFullName] = useState(initial?.full_name ?? template?.full_name ?? "");
@@ -519,6 +557,12 @@ function TestFormModal({
   );
   const [timeoutSeconds, setTimeoutSeconds] = useState(
     (initial?.timeout_seconds ?? template?.timeout_seconds)?.toString() ?? "",
+  );
+  // Только для реального редактирования — при клонировании ("из шаблона")
+  // номер BT НЕ переносится: у копии будет собственный code, соответственно
+  // должен быть свой Zephyr testcase, а не тот же самый, что у исходного теста.
+  const [btNumber, setBtNumber] = useState(
+    () => (initial ? cases.find((c) => c.code === initial.code)?.zephyr_id ?? "" : ""),
   );
   const [submitting, setSubmitting] = useState(false);
 
@@ -537,7 +581,7 @@ function TestFormModal({
         mode: testMode,
         pinned_stand_id: pinnedStandId || null,
         timeout_seconds: timeoutSeconds.trim() ? Number(timeoutSeconds) : null,
-      });
+      }, btNumber);
     } finally {
       setSubmitting(false);
     }
@@ -597,6 +641,16 @@ function TestFormModal({
           <span className="text-dim text-xs">Режим *</span>
           <Dropdown mode="single" options={TEST_MODE_OPTIONS} value={testMode} onChange={setTestMode} />
           <span className="text-dim text-xs">Режим безопасности Astra, под которым тест исполняется. Стенд переключается в этот режим перед прогоном.</span>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Номер BT (тест-кейс Zephyr)</span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1 mono text-sm"
+            value={btNumber}
+            onChange={(e) => setBtNumber(e.target.value)}
+            placeholder="BT-T1234"
+          />
+          <span className="text-dim text-xs">Ключ тест-кейса в Zephyr Scale — по нему тест ищется в составе СТП. Пусто — тест-кейс ещё не заведён.</span>
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">Свой таймаут выполнения, сек</span>

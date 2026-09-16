@@ -50,6 +50,15 @@ vi.mock("@/api/testing/testStands", () => ({
   listTestStands: (...args: unknown[]) => listTestStandsMock(...args),
 }));
 
+const listStpTestCasesMock = vi.fn();
+const createStpTestCaseMock = vi.fn();
+const updateStpTestCaseMock = vi.fn();
+vi.mock("@/api/testing/stp", () => ({
+  listStpTestCases: (...args: unknown[]) => listStpTestCasesMock(...args),
+  createStpTestCase: (...args: unknown[]) => createStpTestCaseMock(...args),
+  updateStpTestCase: (...args: unknown[]) => updateStpTestCaseMock(...args),
+}));
+
 const listDepartmentsMock = vi.fn();
 vi.mock("@/api/auth/departments", () => ({
   listDepartments: (...args: unknown[]) => listDepartmentsMock(...args),
@@ -160,6 +169,9 @@ beforeEach(() => {
   listTestDefinitionsMock.mockResolvedValue({ items: TESTS, total: TESTS.length, limit: 500, offset: 0 });
   listDepartmentsMock.mockResolvedValue([]);
   listTestStandsMock.mockResolvedValue({ items: [], total: 0, limit: 500, offset: 0 });
+  listStpTestCasesMock.mockResolvedValue({ items: [], total: 0, limit: 500, offset: 0 });
+  createStpTestCaseMock.mockResolvedValue({ id: "case_1", code: "FS-EXT4-FILL", title: "t", zephyr_id: "BT-T1", department_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z", created_by: null });
+  updateStpTestCaseMock.mockResolvedValue({ id: "case_1", code: "FS-EXT4-FILL", title: "t", zephyr_id: "BT-T2", department_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z", created_by: null });
   listTestCommandArgsMock.mockResolvedValue([...SLOTS]);
   copyTestCommandArgsMock.mockReset();
   copyTestCommandArgsMock.mockResolvedValue([...SLOTS]);
@@ -213,6 +225,60 @@ describe("TestsWorkzone — каталог тестов из API", () => {
     );
     // модалка закрылась
     expect(screen.queryByText("Новый тест каталога")).not.toBeInTheDocument();
+  });
+
+  it("номер BT при создании теста заводит stp_test_case через createStpTestCase", async () => {
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+
+    fireEvent.click(screen.getByRole("button", { name: /Добавить тест/ }));
+    fireEvent.change(await screen.findByPlaceholderText("FS-EXT4-FILL"), {
+      target: { value: "NET-IPERF3" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("filesystem / ext4 fill+remove cycle"), {
+      target: { value: "network / iperf3 throughput" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("BT-T1234"), { target: { value: "BT-T999" } });
+    fireEvent.click(screen.getByRole("button", { name: "Создать" }));
+
+    await waitFor(() =>
+      expect(createStpTestCaseMock).toHaveBeenCalledWith({
+        code: "NET-IPERF3", title: "network / iperf3 throughput", zephyr_id: "BT-T999",
+      }),
+    );
+  });
+
+  it("пустой номер BT при создании не заводит stp_test_case", async () => {
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+
+    fireEvent.click(screen.getByRole("button", { name: /Добавить тест/ }));
+    fireEvent.change(await screen.findByPlaceholderText("FS-EXT4-FILL"), {
+      target: { value: "NET-IPERF3" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("filesystem / ext4 fill+remove cycle"), {
+      target: { value: "network / iperf3 throughput" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Создать" }));
+
+    await waitFor(() => expect(createTestDefinitionMock).toHaveBeenCalled());
+    expect(createStpTestCaseMock).not.toHaveBeenCalled();
+  });
+
+  it("редактирование теста с уже заведённым номером BT предзаполняет поле и обновляет его через updateStpTestCase", async () => {
+    listStpTestCasesMock.mockResolvedValue({
+      items: [{ id: "case_1", code: "FS-EXT4-FILL", title: "t", zephyr_id: "BT-T1", department_id: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z", created_by: null }],
+      total: 1, limit: 500, offset: 0,
+    });
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+
+    fireEvent.click(within(screen.getByText("FS-EXT4-FILL").closest("tr")!).getByRole("button", { name: "Изменить тест" }));
+    const btInput = await screen.findByDisplayValue("BT-T1");
+    fireEvent.change(btInput, { target: { value: "BT-T2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => expect(updateStpTestCaseMock).toHaveBeenCalledWith("case_1", { zephyr_id: "BT-T2" }));
   });
 
   it("свой таймаут теста уходит в createTestDefinition числом, пустое поле — null", async () => {

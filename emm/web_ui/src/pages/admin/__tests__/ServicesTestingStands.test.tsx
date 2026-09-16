@@ -220,7 +220,6 @@ describe("ServicesTestingStands — управление стендами пул
     await waitFor(() =>
       expect(previewTestRunMock).toHaveBeenCalledWith({
         os_version_id: "osv_1",
-        mode: "orel",
         kernel: "6.1",
         test_run_stands: ["ts_1"],
         final: false,
@@ -269,10 +268,10 @@ describe("ServicesTestingStands — управление стендами пул
     expect(call).toMatchObject({
       os_version_id: "osv_1",
       kernel: "6.1",
-      mode: "orel",
       test_run_stands: ["ts_1"],
       final: false,
     });
+    expect(call).not.toHaveProperty("mode");
     expect(typeof call.request_id).toBe("string");
     expect(call.request_id.length).toBeGreaterThanOrEqual(8);
 

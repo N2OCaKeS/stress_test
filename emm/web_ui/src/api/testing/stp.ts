@@ -8,6 +8,9 @@
  * full) — не выводится из вида RC. `/stp/composition` — текущий scope+
  * revision пары (отдел, РЦ), чтение открыто. Ячейки — ручной override под
  * `(stp_cell, *, update)`; событийное обновление статуса идёт мимо HTTP.
+ * `/stp/pull-from-life/*` — обратное направление (§D8): прочитать уже
+ * существующие в Zephyr test-run'ы и импортировать/сверить их с EMM, не
+ * публикуя ничего обратно в life.
  *
  * Source of truth: `testing_service/src/api/v1/endpoints/stp.py`.
  */
@@ -23,6 +26,10 @@ import type {
   StpGenerateResponse,
   StpMatrixPublishRequest,
   StpMatrixPublishResponse,
+  StpPullImportRequest,
+  StpPullImportResponse,
+  StpPullPreviewRequest,
+  StpPullPreviewResponse,
   StpTestCase,
   StpTestCaseCreateRequest,
   StpTestCaseUpdateRequest,
@@ -152,6 +159,28 @@ export function addTestToStp(
   body: StpAddTestRequest,
 ): Promise<StpAddTestOperation> {
   return apiPost<StpAddTestOperation>(`${BASE}/stp/test-runs/${runId}/add-test`, body);
+}
+
+// ── pull СТП из life (§D8) ────────────────────────────────────────────────
+
+/**
+ * `POST /stp/pull-from-life/preview` — предпросмотр импорта уже существующих
+ * Zephyr test-run'ов отдела (свои/легаси/заведённые руками). Ни одной записи
+ * в БД. Доступ: `(stp_test_run, *, create)` — тоже дёргает Jira живым
+ * запросом с кредами отдела.
+ */
+export function previewPullFromLife(body: StpPullPreviewRequest): Promise<StpPullPreviewResponse> {
+  return apiPost<StpPullPreviewResponse>(`${BASE}/stp/pull-from-life/preview`, body);
+}
+
+/**
+ * `POST /stp/pull-from-life/import` — импортировать/сверить выбранные (или
+ * все найденные, если `zephyr_keys` не задан) test-run'ы. Идемпотентно —
+ * повтор на тот же ключ не дублирует локальные строки. Локальная ячейка с
+ * расходящимся статусом не перезаписывается — попадает в `conflicts`.
+ */
+export function importPullFromLife(body: StpPullImportRequest): Promise<StpPullImportResponse> {
+  return apiPost<StpPullImportResponse>(`${BASE}/stp/pull-from-life/import`, body);
 }
 
 // ── ячейки: ручной override ─────────────────────────────────────────────

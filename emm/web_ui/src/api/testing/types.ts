@@ -673,6 +673,101 @@ export interface StpAddTestOperation {
   updated_at: Iso8601;
 }
 
+// ── pull СТП из life (§D8) ────────────────────────────────────────────────
+
+/** Тело `POST /stp/pull-from-life/preview`. Чтение — ни одной записи в БД. */
+export interface StpPullPreviewRequest {
+  os_version_id: string;
+  department_id?: string;
+}
+
+/** Сводка состава одного найденного в Zephyr test-run'а. */
+export interface StpPullRunComposition {
+  case_count: number;
+  matched_case_count: number;
+  new_case_count: number;
+}
+
+/** Один найденный в Zephyr test-run — как он будет сопоставлен/импортирован. */
+export interface StpPullPreviewItem {
+  zephyr_key: string;
+  zephyr_link: string | null;
+  name: string;
+  parsed_os_version_id: string | null;
+  parsed_mode: string | null;
+  parsed_kernel: string | null;
+  parsed_stand_token: string | null;
+  stand_id: string | null;
+  needs_manual_mapping: boolean;
+  mapping_issue: string | null;
+  already_imported: boolean;
+  stp_test_run_id: string | null;
+  composition: StpPullRunComposition;
+}
+
+/** Ответ `POST /stp/pull-from-life/preview`. */
+export interface StpPullPreviewResponse {
+  department_id: string;
+  os_version_id: string;
+  folder: string;
+  items: StpPullPreviewItem[];
+  total_found: number;
+  new_count: number;
+  already_imported_count: number;
+  needs_manual_mapping_count: number;
+}
+
+/**
+ * Тело `POST /stp/pull-from-life/import`. `zephyr_keys` пуст/не задан —
+ * импортировать все test-run'ы, найденные сейчас в этой папке.
+ */
+export interface StpPullImportRequest {
+  os_version_id: string;
+  department_id?: string;
+  zephyr_keys?: string[];
+}
+
+/** Ячейка, чей локальный статус разошёлся со статусом Zephyr — не перезаписана. */
+export interface StpPullConflict {
+  zephyr_key: string;
+  test_case_key: string;
+  stp_cell_id: string;
+  local_status: string;
+  zephyr_status: string;
+}
+
+/** Итог обработки одного test-run'а в рамках импорта. */
+export interface StpPullRunResult {
+  zephyr_key: string;
+  status: "succeeded" | "failed" | "skipped_needs_manual_mapping" | string;
+  stp_test_run_id: string | null;
+  created_run: boolean;
+  matched_run: boolean;
+  cases_created: number;
+  cases_matched: number;
+  cells_created: number;
+  cells_matched: number;
+  conflicts: StpPullConflict[];
+  mapping_issue: string | null;
+  error: string | null;
+}
+
+/** Ответ `POST /stp/pull-from-life/import` — итог по каждому test-run'у + агрегаты. */
+export interface StpPullImportResponse {
+  department_id: string;
+  os_version_id: string;
+  results: StpPullRunResult[];
+  created_runs: number;
+  matched_runs: number;
+  cases_created: number;
+  cases_matched: number;
+  cells_created: number;
+  cells_matched: number;
+  conflicts_count: number;
+  skipped_count: number;
+  failed_count: number;
+}
+
 // ── permissions (entity_permissions matrix) ───────────────────────────────
 
 /**

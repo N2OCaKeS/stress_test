@@ -27,6 +27,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  Download,
   FilterX,
   ListChecks,
   Loader2,
@@ -60,10 +61,12 @@ import {
   getStpComposition,
   getStpTestCase,
   getStpTestRun,
+  importPullFromLife,
   listStpTestCases,
   listStpTestRunCells,
   listStpTestRuns,
   overrideStpCell,
+  previewPullFromLife,
   publishStpMatrix,
   updateStpTestCase,
 } from "@/api/testing/stp";
@@ -76,6 +79,8 @@ import type {
   StpGeneratePartialError,
   StpGenerateRequest,
   StpMatrixPublishResponse,
+  StpPullImportResponse,
+  StpPullPreviewResponse,
   StpTestCase,
   StpTestCaseCreateRequest,
   StpTestCaseUpdateRequest,
@@ -343,6 +348,7 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
   const [filters, setFilters] = useState<StpFilters>(emptyFilters());
   const [generateOpen, setGenerateOpen] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
+  const [pullOpen, setPullOpen] = useState(false);
   const [caseFormOpen, setCaseFormOpen] = useState<"create" | StpTestCase | null>(null);
   const [cellTarget, setCellTarget] = useState<{ test: StpTestCase; run: StpTestRun; cell: StpCell } | null>(null);
   const [runTarget, setRunTarget] = useState<StpTestRun | null>(null);
@@ -538,6 +544,15 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
             <Send className="w-3.5 h-3.5" />
             Опубликовать в Confluence
           </Button>
+          <Button
+            type="button"
+            className="inline-flex items-center gap-2"
+            disabled={!version}
+            onClick={() => setPullOpen(true)}
+          >
+            <Download className="w-3.5 h-3.5" />
+            Pull СТП из life
+          </Button>
         </div>
       </div>
 
@@ -605,6 +620,19 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
           version={version}
           departmentId={deptFilter || undefined}
           onClose={() => setPublishOpen(false)}
+        />
+      )}
+
+      {pullOpen && version && (
+        <StpPullFromLifeModal
+          mockMode={mockMode}
+          version={version}
+          departmentId={deptFilter || undefined}
+          onClose={() => setPullOpen(false)}
+          onImported={() => {
+            testRunsQ.refetch();
+            compositionQ.refetch();
+          }}
         />
       )}
 
@@ -1258,6 +1286,242 @@ function StpMatrixPublishModal({
               {MATRIX_STATUS_LABELS[result.status]?.label ?? result.status}
             </div>
             {result.error && <div className="text-xs text-dim">{result.error}</div>}
+            <div className="flex justify-end">
+              <Button type="button" variant="primary" onClick={onClose}>
+                Готово
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ── pull СТП из life (§D8) ───────────────────────────────────────────────────
+
+function StpPullFromLifeModal({
+  mockMode,
+  version,
+  departmentId,
+  onClose,
+  onImported,
+}: {
+  mockMode: boolean;
+  version: OsVersion;
+  departmentId?: string;
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const toast = useToast();
+  const [loading, setLoading] = useState(!mockMode);
+  const [err, setErr] = useState<string | null>(null);
+  const [preview, setPreview] = useState<StpPullPreviewResponse | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<StpPullImportResponse | null>(null);
+
+  useEffect(() => {
+    if (mockMode) {
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
+    previewPullFromLife({ os_version_id: version.id, department_id: departmentId })
+      .then((res) => {
+        if (cancelled) return;
+        setPreview(res);
+        setSelected(new Set(res.items.filter((i) => !i.needs_manual_mapping).map((i) => i.zephyr_key)));
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(apiErrMsg(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mockMode, version.id, departmentId]);
+
+  function toggle(key: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  async function submit() {
+    if (mockMode) {
+      toast.warn("Mock-режим — импорт не отправляется на backend.");
+      onClose();
+      return;
+    }
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await importPullFromLife({
+        os_version_id: version.id, department_id: departmentId, zephyr_keys: Array.from(selected),
+      });
+      setResult(res);
+      onImported();
+      if (res.conflicts_count > 0 || res.failed_count > 0) {
+        toast.warn(`Импорт завершён с расхождениями: конфликтов ${res.conflicts_count}, ошибок ${res.failed_count}`);
+      } else {
+        toast.success(`Импортировано: заведено ${res.created_runs}, сверено ${res.matched_runs} прогонов`);
+      }
+    } catch (e) {
+      const msg = apiErrMsg(e);
+      setErr(msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title="Pull СТП из life"
+      subtitle={version.name}
+    >
+      <div className="grid gap-3">
+        {!result && (
+          <p className="text-sm text-dim">
+            Читает test-run&apos;ы, уже существующие в Zephyr для этой РЦ (свои, легаси или заведённые вручную),
+            и позволяет затянуть их в EMM. Только чтение из life — предпросмотр ничего не пишет, импорт не
+            публикует ничего обратно и не перезаписывает молча локально изменённые ячейки.
+          </p>
+        )}
+
+        {loading && (
+          <div className="flex items-center gap-2 text-sm text-dim">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Ищем test-run&apos;ы в Zephyr…
+          </div>
+        )}
+
+        {err && <div className="alert-danger text-xs">{err}</div>}
+
+        {!loading && preview && !result && (
+          <>
+            <div className="text-xs text-dim">
+              Найдено {preview.total_found} · новых {preview.new_count} · уже импортировано{" "}
+              {preview.already_imported_count} · нужна ручная сверка {preview.needs_manual_mapping_count}
+            </div>
+            {preview.items.length === 0 ? (
+              <div className="text-sm text-dim italic">В папке {preview.folder} ничего не найдено.</div>
+            ) : (
+              <div className="border border-token rounded overflow-auto max-h-80">
+                <table className="w-full text-xs">
+                  <thead className="surface-2 sticky top-0">
+                    <tr>
+                      <th className="p-2 text-left w-8"></th>
+                      <th className="p-2 text-left">Zephyr</th>
+                      <th className="p-2 text-left">Контекст</th>
+                      <th className="p-2 text-left">Состав</th>
+                      <th className="p-2 text-left">Статус</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.items.map((item) => (
+                      <tr key={item.zephyr_key} className="border-t border-token">
+                        <td className="p-2">
+                          <input
+                            type="checkbox"
+                            disabled={item.needs_manual_mapping}
+                            checked={selected.has(item.zephyr_key)}
+                            onChange={() => toggle(item.zephyr_key)}
+                          />
+                        </td>
+                        <td className="p-2 mono">
+                          {item.zephyr_link ? (
+                            <a href={item.zephyr_link} target="_blank" rel="noreferrer" className="link">
+                              {item.zephyr_key}
+                            </a>
+                          ) : (
+                            item.zephyr_key
+                          )}
+                          <div className="text-dim">{item.name}</div>
+                        </td>
+                        <td className="p-2">
+                          {item.parsed_mode ? (
+                            <span>
+                              {item.parsed_mode} · {item.parsed_kernel} ·{" "}
+                              {item.stand_id ?? item.parsed_stand_token ?? "—"}
+                            </span>
+                          ) : (
+                            <span className="text-dim italic">не распознано</span>
+                          )}
+                        </td>
+                        <td className="p-2">
+                          {item.composition.case_count} кейсов, из них новых {item.composition.new_case_count}
+                        </td>
+                        <td className="p-2">
+                          {item.needs_manual_mapping ? (
+                            <Badge kind="warn">ручная сверка: {item.mapping_issue}</Badge>
+                          ) : item.already_imported ? (
+                            <Badge kind="accent">уже импортирован</Badge>
+                          ) : (
+                            <Badge kind="ok">новый</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <Button type="button" onClick={onClose} disabled={busy}>
+                Отмена
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={submit}
+                disabled={busy || selected.size === 0}
+                className="inline-flex items-center gap-2"
+              >
+                {busy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Импортировать выбранные ({selected.size})
+              </Button>
+            </div>
+          </>
+        )}
+
+        {result && (
+          <>
+            <div className="text-sm">
+              Заведено прогонов: {result.created_runs} · сверено: {result.matched_runs} · тест-кейсов заведено:{" "}
+              {result.cases_created} · ячеек заведено: {result.cells_created}
+            </div>
+            {result.conflicts_count > 0 && (
+              <div className="alert-warn text-xs">
+                {result.conflicts_count} ячеек с расходящимся локальным статусом НЕ перезаписаны — сверьте вручную.
+              </div>
+            )}
+            {result.failed_count > 0 && (
+              <div className="alert-danger text-xs">{result.failed_count} прогонов не удалось прочитать из Zephyr.</div>
+            )}
+            {result.skipped_count > 0 && (
+              <div className="alert-warn text-xs">{result.skipped_count} прогонов пропущены — нужна ручная сверка.</div>
+            )}
+            {result.results.some((r) => r.error) && (
+              <ul className="text-xs text-dim list-disc pl-4">
+                {result.results.filter((r) => r.error).map((r) => (
+                  <li key={r.zephyr_key}>{r.zephyr_key}: {r.error}</li>
+                ))}
+              </ul>
+            )}
             <div className="flex justify-end">
               <Button type="button" variant="primary" onClick={onClose}>
                 Готово

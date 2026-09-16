@@ -32,6 +32,8 @@ const listStpTestRunCellsMock = vi.fn();
 const overrideStpCellMock = vi.fn();
 const publishStpMatrixMock = vi.fn();
 const addTestToStpMock = vi.fn();
+const previewPullFromLifeMock = vi.fn();
+const importPullFromLifeMock = vi.fn();
 vi.mock("@/api/testing/stp", () => ({
   listStpTestCases: (...a: unknown[]) => listStpTestCasesMock(...a),
   createStpTestCase: (...a: unknown[]) => createStpTestCaseMock(...a),
@@ -46,6 +48,8 @@ vi.mock("@/api/testing/stp", () => ({
   overrideStpCell: (...a: unknown[]) => overrideStpCellMock(...a),
   publishStpMatrix: (...a: unknown[]) => publishStpMatrixMock(...a),
   addTestToStp: (...a: unknown[]) => addTestToStpMock(...a),
+  previewPullFromLife: (...a: unknown[]) => previewPullFromLifeMock(...a),
+  importPullFromLife: (...a: unknown[]) => importPullFromLifeMock(...a),
 }));
 
 const listTestDefinitionsMock = vi.fn();
@@ -237,6 +241,8 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     overrideStpCellMock.mockReset();
     publishStpMatrixMock.mockReset();
     addTestToStpMock.mockReset();
+    previewPullFromLifeMock.mockReset();
+    importPullFromLifeMock.mockReset();
     listTestDefinitionsMock.mockReset();
 
     listOsVersionsMock.mockResolvedValue({ items: [osVersion()], total: 1, limit: 500, offset: 0 });
@@ -455,5 +461,97 @@ describe("StpMiddlePanel + StpWorkzone", () => {
       expect(addTestToStpMock).toHaveBeenCalledWith("run_1", { test_id: "tdef_1" }),
     );
     expect(await screen.findByText("life")).toBeInTheDocument();
+  });
+
+  it("pull СТП из life — открывает предпросмотр и импортирует выбранные ключи", async () => {
+    previewPullFromLifeMock.mockResolvedValue({
+      department_id: "dep_1",
+      os_version_id: "osv_1",
+      folder: "/stress_test/1.8/1.8.7.46",
+      items: [
+        {
+          zephyr_key: "BT-R9",
+          zephyr_link: "http://jira.example/secure/Tests.jspa#/testPlayer/BT-R9",
+          name: "1.8.7.46_orel_6.12.24-1.el11_stand_1",
+          parsed_os_version_id: "1.8.7.46",
+          parsed_mode: "orel",
+          parsed_kernel: "6.12.24-1.el11",
+          parsed_stand_token: "stand_1",
+          stand_id: "stand_1",
+          needs_manual_mapping: false,
+          mapping_issue: null,
+          already_imported: false,
+          stp_test_run_id: null,
+          composition: { case_count: 2, matched_case_count: 0, new_case_count: 2 },
+        },
+        {
+          zephyr_key: "BT-R10",
+          zephyr_link: null,
+          name: "weird-legacy-name",
+          parsed_os_version_id: null,
+          parsed_mode: null,
+          parsed_kernel: null,
+          parsed_stand_token: null,
+          stand_id: null,
+          needs_manual_mapping: true,
+          mapping_issue: "NAME_NOT_PARSEABLE",
+          already_imported: false,
+          stp_test_run_id: null,
+          composition: { case_count: 0, matched_case_count: 0, new_case_count: 0 },
+        },
+      ],
+      total_found: 2,
+      new_count: 1,
+      already_imported_count: 0,
+      needs_manual_mapping_count: 1,
+    });
+    importPullFromLifeMock.mockResolvedValue({
+      department_id: "dep_1",
+      os_version_id: "osv_1",
+      results: [{
+        zephyr_key: "BT-R9", status: "succeeded", stp_test_run_id: "stpr_1",
+        created_run: true, matched_run: false, cases_created: 2, cases_matched: 0,
+        cells_created: 2, cells_matched: 0, conflicts: [], mapping_issue: null, error: null,
+      }],
+      created_runs: 1, matched_runs: 0, cases_created: 2, cases_matched: 0,
+      cells_created: 2, cells_matched: 0, conflicts_count: 0, skipped_count: 0, failed_count: 0,
+    });
+
+    renderPage();
+
+    await screen.findAllByText("1.8.7.46");
+    const pullButton = await screen.findByRole("button", { name: /Pull СТП из life/ });
+    await waitFor(() => expect(pullButton).toBeEnabled());
+    fireEvent.click(pullButton);
+
+    await waitFor(() =>
+      expect(previewPullFromLifeMock).toHaveBeenCalledWith({ os_version_id: "osv_1", department_id: "dep_1" }),
+    );
+    expect(await screen.findByText("BT-R9")).toBeInTheDocument();
+    expect(screen.getByText("BT-R10")).toBeInTheDocument();
+    expect(screen.getByText(/NAME_NOT_PARSEABLE/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Импортировать выбранные/ }));
+
+    await waitFor(() =>
+      expect(importPullFromLifeMock).toHaveBeenCalledWith({
+        os_version_id: "osv_1", department_id: "dep_1", zephyr_keys: ["BT-R9"],
+      }),
+    );
+    expect(await screen.findByText(/Заведено прогонов: 1/)).toBeInTheDocument();
+  });
+
+  it("pull СТП из life — ошибка предпросмотра отображается, импорт недоступен", async () => {
+    previewPullFromLifeMock.mockRejectedValue(new Error("department_integration_settings not configured"));
+
+    renderPage();
+
+    await screen.findAllByText("1.8.7.46");
+    const pullButton = await screen.findByRole("button", { name: /Pull СТП из life/ });
+    await waitFor(() => expect(pullButton).toBeEnabled());
+    fireEvent.click(pullButton);
+
+    expect(await screen.findByText(/department_integration_settings not configured/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Импортировать выбранные/ })).not.toBeInTheDocument();
   });
 });

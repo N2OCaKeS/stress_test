@@ -116,6 +116,10 @@ def _cleanup_created_variables():
             # безусловно и ПЕРВЫМ: держит RESTRICT FK на test_definitions и
             # stp_test_runs, до её удаления DELETE этих таблиц ниже упадёт.
             conn.execute(text("DELETE FROM stp_add_test_operations"))
+            # stp_pull_operations — тоже целиком в владении этого домена
+            # (§D8), FK на stp_test_runs с SET NULL, порядок относительно
+            # stp_test_runs ниже неважен.
+            conn.execute(text("DELETE FROM stp_pull_operations"))
             # stp_cells/stp_test_runs — целиком в владении этого домена (нет
             # сида, никогда не сеются миграцией), чистим безусловно, до
             # queue_items/test_stands (FK stp_cells.queue_item_id SET NULL,

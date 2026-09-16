@@ -112,3 +112,8 @@ def stp_composition_id() -> str:
 def stp_add_test_operation_id() -> str:
     """`stpadd_<uuid>` — для stp_add_test_operations."""
     return _new_id("stpadd_")
+
+
+def stp_pull_operation_id() -> str:
+    """`stppull_<uuid>` — для stp_pull_operations."""
+    return _new_id("stppull_")

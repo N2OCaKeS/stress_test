@@ -16,6 +16,13 @@ Zephyr test-run, локальную ячейку и переопубликовы
 шагом с retry (см. `services/stp_add_test.py`). Тот же гейт, что у
 `/stp/generate` — это тот же create-жест над `stp_test_run`, только на один
 тест вместо целого состава.
+`/stp/pull-from-life/preview` и `/stp/pull-from-life/import` — обратное
+направление (§D8): прочитать уже существующие в Zephyr test-run'ы отдела
+(свои, легаси или заведённые руками) и импортировать/сверить их с EMM, не
+публикуя ничего обратно в life (см. `services/stp_pull_from_life.py`). Тот же
+гейт `(stp_test_run, *, create)`, что и у остальных админских СТП-операций —
+preview тоже дёргает Jira/Zephyr живым запросом с кредами отдела, поэтому не
+открыт всем подряд, даже будучи чтением.
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -38,9 +45,16 @@ from src.schemas.stp import (
     StpTestRunResponse,
 )
 from src.schemas.stp_add_test import StpAddTestOperationResponse, StpAddTestRequest
+from src.schemas.stp_pull_from_life import (
+    StpPullImportRequest,
+    StpPullImportResponse,
+    StpPullPreviewRequest,
+    StpPullPreviewResponse,
+)
 from src.services import stp as stp_svc
 from src.services import stp_add_test as stp_add_test_svc
 from src.services import stp_matrix as stp_matrix_svc
+from src.services import stp_pull_from_life as stp_pull_svc
 from src.services import stp_status
 from src.services import stp_test_case as stp_test_case_svc
 
@@ -289,6 +303,55 @@ async def add_test_to_stp(
         db, identity, test_id=body.test_id, stp_test_run_id=run_id,
     )
     return StpAddTestOperationResponse.model_validate(op)
+
+
+@router.post(
+    "/pull-from-life/preview",
+    response_model=StpPullPreviewResponse,
+    summary="Предпросмотр импорта СТП из уже существующих Zephyr test-run'ов",
+    description=(
+        "§D8: ищет test-run'ы отдела в той же папке Zephyr, что и /stp/generate, "
+        "парсит их имена той же конвенцией, что EMM использует для своих собственных "
+        "прогонов, и показывает, что случится при импорте — без единой записи в БД."
+    ),
+    responses={403: {"description": "Нет роли с `create`."}},
+)
+async def preview_pull_from_life(
+    body: StpPullPreviewRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> StpPullPreviewResponse:
+    return await stp_pull_svc.preview_pull_from_life(
+        db, identity,
+        department_id=body.department_id or identity.department_id,
+        os_version_id=body.os_version_id,
+    )
+
+
+@router.post(
+    "/pull-from-life/import",
+    response_model=StpPullImportResponse,
+    summary="Импортировать/сверить выбранные Zephyr test-run'ы в СТП EMM",
+    description=(
+        "§D8: заводит/переиспользует локальные stp_test_run/stp_test_case/stp_cell "
+        "для выбранных (или всех найденных, если `zephyr_keys` пуст) test-run'ов. "
+        "Идемпотентно — повтор на тот же ключ находит уже существующие строки, не "
+        "дублирует их. Локальная ячейка с расходящимся статусом не перезаписывается "
+        "молча — попадает в `conflicts` соответствующего результата."
+    ),
+    responses={403: {"description": "Нет роли с `create`."}},
+)
+async def import_pull_from_life(
+    body: StpPullImportRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> StpPullImportResponse:
+    return await stp_pull_svc.import_pull_from_life(
+        db, identity,
+        department_id=body.department_id or identity.department_id,
+        os_version_id=body.os_version_id,
+        zephyr_keys=body.zephyr_keys,
+    )
 
 
 # ── Ячейки: ручной override ─────────────────────────────────────────────────────

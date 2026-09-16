@@ -11,6 +11,21 @@ async def get_by_id(db: AsyncSession, run_id: str) -> StpTestRun | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_by_zephyr_key(db: AsyncSession, zephyr_test_run_key: str) -> StpTestRun | None:
+    """Локальный прогон, уже привязанный к этому Zephyr test-run — точка
+    идемпотентности `services/stp_pull_from_life.py` (§D8): повторный импорт
+    находит существующую строку вместо дубля. `zephyr_test_run_key` не несёт
+    UNIQUE на уровне схемы (см. docstring модели), поэтому при неожиданном
+    дубле забирается самый свежий."""
+    stmt = (
+        select(StpTestRun)
+        .where(StpTestRun.zephyr_test_run_key == zephyr_test_run_key)
+        .order_by(StpTestRun.created_at.desc())
+        .limit(1)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def find_latest_for_context(
     db: AsyncSession, *, stand_id: str, os_version_id: str, mode: str, kernel: str,
 ) -> StpTestRun | None:

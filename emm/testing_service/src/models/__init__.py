@@ -15,6 +15,7 @@ from src.models.stp_add_test_operation import StpAddTestOperation
 from src.models.stp_cell import StpCell
 from src.models.stp_composition import StpComposition
 from src.models.stp_matrix_publication import StpMatrixPublication
+from src.models.stp_pull_operation import StpPullOperation
 from src.models.stp_test_case import StpTestCase
 from src.models.stp_test_run import StpTestRun
 from src.models.test_command_arg import TestCommandArg
@@ -42,6 +43,7 @@ __all__ = [
     "StpCell",
     "StpComposition",
     "StpMatrixPublication",
+    "StpPullOperation",
     "StpTestCase",
     "StpTestRun",
     "TestCommandArg",

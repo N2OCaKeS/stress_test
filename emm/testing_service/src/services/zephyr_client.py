@@ -40,6 +40,20 @@
   документации Zephyr Scale ATM, не по работающему легаси-коду (в легаси для
   этого эндпоинта не нашлось эквивалента на `rest/atm/1.0`). Перед реальным
   end-to-end использованием стоит свериться вручную с актуальной Jira.
+* `search_test_runs`/`get_test_run` — §D8 (pull СТП из life,
+  `services/stp_pull_from_life.py`): найти ранее заведённые test-run'ы в
+  папке и прочитать состав+статус одного из них. Ни в легаси, ни в этой
+  кодовой базе прежде такого запроса не делали — легаси только писал в
+  Zephyr, никогда не читал обратно. `search_test_runs` бьёт в
+  `GET /rest/atm/1.0/testrun/search?query=...` (TQL, тот же стиль поиска,
+  что и `/testcase/search` в документации Zephyr Scale ATM); `get_test_run`
+  — в `GET /rest/atm/1.0/testrun/{key}`. **Контракт обоих не проверен против
+  живой Jira** — тот же класс оговорки, что у `add_test_cases_to_run`/
+  `create_test_case`/`update_test_result`. Форма ответа особенно
+  неопределённая часть: код принимает и голый JSON-массив, и обёртку
+  `{"results": [...]}` (paginated-стиль, которым отвечают другие
+  Atlassian-эндпоинты этого же сервиса, см. `confluence_client.py`) — какая
+  из них у search-эндпоинта настоящей Jira, не проверялось.
 """
 
 from __future__ import annotations
@@ -51,7 +65,7 @@ import httpx
 
 from src.core.config import get_settings
 from src.core.constants import StpCellStatus
-from src.core.exceptions import ServiceUnavailableError
+from src.core.exceptions import NotFoundError, ServiceUnavailableError
 from src.core.http import bearer_header
 
 logger = logging.getLogger("testing_service.zephyr_client")
@@ -83,6 +97,22 @@ def build_client(timeout: float) -> httpx.AsyncClient:
 def map_status(status: str) -> str:
     """`StpCellStatus` → строка статуса Zephyr ATM."""
     return _STATUS_MAP.get(status, "Not Executed")
+
+
+_REVERSE_STATUS_MAP: dict[str, str] = {zephyr: local for local, zephyr in _STATUS_MAP.items()}
+
+
+def map_status_from_zephyr(zephyr_status: str | None) -> str:
+    """Обратное к `map_status` — статус Zephyr ATM → `StpCellStatus` (§D8).
+
+    Пустое или незнакомое значение — безопасный дефолт `not_run`, а не
+    исключение: чтение из Zephyr не должно падать на экзотическом статусе
+    (например, "Blocked", которого нет среди четырёх локальных), лучше
+    заметно занизить его до "не запускался", чем уронить весь импорт.
+    """
+    if not zephyr_status:
+        return StpCellStatus.NOT_RUN
+    return _REVERSE_STATUS_MAP.get(zephyr_status, StpCellStatus.NOT_RUN)
 
 
 def _base(base_url: str) -> str:
@@ -359,3 +389,162 @@ async def update_test_result(
             error_code="ZEPHYR_UPDATE_RESULT_FAILED",
             message=f"Zephyr returned {response.status_code} updating the test result",
         )
+
+
+@dataclass(frozen=True)
+class ZephyrTestRunSummary:
+    """Один результат `search_test_runs` — сводная карточка найденного test-run'а,
+    без состава (за составом+статусами — отдельный `get_test_run`)."""
+
+    key: str
+    name: str
+    folder: str | None = None
+
+
+@dataclass(frozen=True)
+class ZephyrTestRunResultItem:
+    """Один тест-кейс внутри test-run'а с его ТЕКУЩИМ статусом (`get_test_run`).
+
+    `status` уже переведён в `StpCellStatus` через `map_status_from_zephyr` —
+    вызывающему коду не нужно знать вокабуляр Zephyr.
+    """
+
+    test_case_key: str
+    status: str
+    environment: str | None = None
+    test_case_name: str | None = None
+
+
+@dataclass(frozen=True)
+class ZephyrTestRunDetail:
+    """Полная карточка test-run'а — `get_test_run`: имя/папка + состав с текущими статусами."""
+
+    key: str
+    name: str
+    folder: str | None
+    items: list[ZephyrTestRunResultItem]
+
+
+async def search_test_runs(
+    *, base_url: str, bearer_token: str, folder: str, project_key: str = "BT",
+) -> list[ZephyrTestRunSummary]:
+    """`GET /rest/atm/1.0/testrun/search?query=...` — test-run'ы в конкретной папке (§D8).
+
+    Используется «Pull СТП из life» (`services/stp_pull_from_life.py`), чтобы
+    найти ранее заведённые Zephyr test-run'ы этой РЦ — своей публикацией EMM
+    или легаси-системой, или вручную — без ограничения по тому, кто их
+    создал. TQL-запрос `testRun.folder = "..." AND testRun.projectKey = "..."`
+    — тот же стиль, что документация Zephyr Scale ATM описывает для
+    `/testcase/search`; для `/testrun/search` отдельного прецедента (ни в
+    легаси, ни в этой кодовой базе) нет. **Контракт не проверен против живой
+    Jira** — см. module docstring. Форма ответа принимается в двух видах:
+    голый JSON-массив ИЛИ `{"results": [...]}` — какая из них настоящая,
+    выяснится при первом реальном вызове.
+    """
+    settings = get_settings()
+    query = f'testRun.folder = "{folder}" AND testRun.projectKey = "{project_key}"'
+    url = f"{_base(base_url)}/rest/atm/1.0/testrun/search"
+    async with build_client(settings.zephyr_request_timeout_seconds) as client:
+        try:
+            response = await client.get(
+                url, params={"query": query}, headers=bearer_header(bearer_token),
+            )
+        except httpx.HTTPError as exc:
+            raise ServiceUnavailableError(
+                error_code="ZEPHYR_UNREACHABLE",
+                message=f"Unable to reach Jira/Zephyr: {type(exc).__name__}",
+            ) from exc
+
+    if response.status_code != 200:
+        logger.warning(
+            "zephyr: search_test_runs(%s) failed status=%s body=%s",
+            folder, response.status_code, response.text[:500],
+        )
+        raise ServiceUnavailableError(
+            error_code="ZEPHYR_SEARCH_TEST_RUNS_FAILED",
+            message=f"Zephyr returned {response.status_code} searching test runs",
+        )
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ServiceUnavailableError(
+            error_code="ZEPHYR_ERROR",
+            message="Zephyr returned a non-JSON body searching test runs",
+        ) from exc
+
+    raw_items = payload if isinstance(payload, list) else (payload.get("results") or [])
+    results: list[ZephyrTestRunSummary] = []
+    for raw in raw_items:
+        key = raw.get("key")
+        if not key:
+            continue
+        results.append(ZephyrTestRunSummary(key=key, name=raw.get("name") or "", folder=raw.get("folder")))
+    return results
+
+
+async def get_test_run(
+    *, base_url: str, bearer_token: str, test_run_key: str,
+) -> ZephyrTestRunDetail:
+    """`GET /rest/atm/1.0/testrun/{key}` — детали test-run'а: имя, папка, состав
+    тест-кейсов с их ТЕКУЩИМ статусом (§D8).
+
+    Используется после `search_test_runs`, чтобы прочитать, что именно нужно
+    завести/сверить локально для одного найденного рана. **Контракт не
+    проверен против живой Jira** — см. module docstring. Имя тест-кейса
+    ищется в нескольких правдоподобных местах ответа (`testCaseName` на
+    самом элементе либо вложенный `testCase.name`) — какое из них
+    настоящее, не проверялось; при отсутствии обоих используется сам ключ.
+    """
+    settings = get_settings()
+    url = f"{_base(base_url)}/rest/atm/1.0/testrun/{test_run_key}"
+    async with build_client(settings.zephyr_request_timeout_seconds) as client:
+        try:
+            response = await client.get(url, headers=bearer_header(bearer_token))
+        except httpx.HTTPError as exc:
+            raise ServiceUnavailableError(
+                error_code="ZEPHYR_UNREACHABLE",
+                message=f"Unable to reach Jira/Zephyr: {type(exc).__name__}",
+            ) from exc
+
+    if response.status_code == 404:
+        raise NotFoundError(
+            error_code="ZEPHYR_TEST_RUN_NOT_FOUND",
+            message=f"Zephyr test run {test_run_key} not found",
+        )
+    if response.status_code != 200:
+        logger.warning(
+            "zephyr: get_test_run(%s) failed status=%s body=%s",
+            test_run_key, response.status_code, response.text[:500],
+        )
+        raise ServiceUnavailableError(
+            error_code="ZEPHYR_GET_TEST_RUN_FAILED",
+            message=f"Zephyr returned {response.status_code} reading the test run",
+        )
+
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise ServiceUnavailableError(
+            error_code="ZEPHYR_ERROR",
+            message="Zephyr returned a non-JSON body reading the test run",
+        ) from exc
+
+    items: list[ZephyrTestRunResultItem] = []
+    for raw in body.get("items") or []:
+        case_key = raw.get("testCaseKey") or (raw.get("testCase") or {}).get("key")
+        if not case_key:
+            continue
+        name = raw.get("testCaseName") or (raw.get("testCase") or {}).get("name")
+        items.append(ZephyrTestRunResultItem(
+            test_case_key=case_key,
+            status=map_status_from_zephyr(raw.get("status")),
+            environment=raw.get("environment"),
+            test_case_name=name,
+        ))
+    return ZephyrTestRunDetail(
+        key=body.get("key") or test_run_key,
+        name=body.get("name") or "",
+        folder=body.get("folder"),
+        items=items,
+    )

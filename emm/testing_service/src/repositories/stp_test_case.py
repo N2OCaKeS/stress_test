@@ -24,6 +24,25 @@ async def list_by_codes(db: AsyncSession, codes: list[str]) -> list[StpTestCase]
     return list((await db.execute(stmt)).scalars())
 
 
+async def get_by_zephyr_id(db: AsyncSession, zephyr_id: str) -> StpTestCase | None:
+    """Обратный к `get_by_code` поиск — по Zephyr-ключу, а не по `code`. Нужен
+    §D8 (`services/stp_pull_from_life.py`): импорт из Zephyr знает только
+    `testCaseKey`, локального `test_definitions.code` у него может не быть
+    вовсе (тест заведён вне EMM). `zephyr_id` не UNIQUE на уровне схемы —
+    при дубле забирается первая найденная строка."""
+    stmt = select(StpTestCase).where(StpTestCase.zephyr_id == zephyr_id)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def list_by_zephyr_ids(db: AsyncSession, zephyr_ids: list[str]) -> list[StpTestCase]:
+    """Batch-версия `get_by_zephyr_id` — используется предпросмотром импорта
+    (§D8), чтобы не гонять по одному запросу на тест-кейс Zephyr-рана."""
+    if not zephyr_ids:
+        return []
+    stmt = select(StpTestCase).where(StpTestCase.zephyr_id.in_(zephyr_ids))
+    return list((await db.execute(stmt)).scalars())
+
+
 async def list_by_ids(db: AsyncSession, ids: list[str]) -> list[StpTestCase]:
     """Batch-выборка по id — используется публикацией СТП-матрицы, где связка
     известна через `stp_cells.stp_test_case_id`, не через `code`."""

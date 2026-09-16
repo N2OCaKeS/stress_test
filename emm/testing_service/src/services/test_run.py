@@ -1,14 +1,28 @@
 """Прогоны — fleet-wide кампании (§2.4, §6.1 плана миграции).
 
 `create_test_run()` разворачивает один запрос в независимые постановки в
-очередь по каждому стенду пула: для каждого `stand_id` из `test_run_stands`
-берутся все `test_definitions` с `pinned_stand_id == stand_id` (тест
-"принадлежит" ровно одному стенду по конструкции §2.2/§5.5) и каждый ставится
-в очередь через уже существующий `queue.enqueue()`. Между стендами — никакой
-общей транзакции: стенд без закреплённых тестов или провал постановки одного
-конкретного теста не должны рушить остальную кампанию (§5.5 "между стендами —
-параллельно", ошибка не глушит очередь стенда — тот же принцип применяется и
-здесь на уровень выше, между стендами кампании).
+очередь. Два способа собрать состав, в зависимости от того, задан ли
+`test_run_stands`:
+
+- **Явный пул** (`test_run_stands` не пуст) — прежнее поведение, вход E3
+  (запуск всех тестов стенда). Для каждого `stand_id` берутся все
+  `test_definitions` с `pinned_stand_id == stand_id` (тест "принадлежит"
+  ровно одному стенду по конструкции §2.2/§5.5).
+- **Вывод из активного состава СТП** (`test_run_stands` не задан/пуст) —
+  полный прогон по РЦ: оператор выбирает только `os_version_id`, а какие
+  тесты, значит какие стенды и ядра — решает активный состав СТП отдела для
+  этой РЦ (`_derive_stp_entries`). Стенды и ядра не выбираются оператором,
+  они выводятся из `stp_test_runs`/`stp_cells` (только `is_active=True`
+  ячейки — неактивные исключены текущим составом, но сохранены как история).
+  `stp_composition_id`/`stp_revision` кампании фиксируют, из какого снэпшота
+  состава она собрана — последующее переключение состава СТП не должно
+  незаметно переинтерпретировать уже начатую кампанию.
+
+Между постановками в очередь — никакой общей транзакции: стенд/тест без
+покрытия или провал постановки одного конкретного теста не должны рушить
+остальную кампанию (§5.5 "между стендами — параллельно", ошибка не глушит
+очередь стенда — тот же принцип применяется и здесь на уровень выше, между
+стендами кампании).
 
 `RC` в `launch_context` — тот же `os_version_id`, что передан в запросе, без
 дополнительного резолва в человекочитаемый номер релиза: `services/queue.py`
@@ -21,12 +35,20 @@ cycle`), то есть RC и os_version_id в этой кодовой базе �
 кампании только при `final=True` — обычный/пробный прогон пула по-прежнему
 не требует предварительно опубликованного состава СТП, финальный
 (официальный, релизный) обязан ему соответствовать, как и одиночный запуск
-вне debug-режима.
+вне debug-режима. Для выведенного из СТП состава этот гейт по конструкции
+всегда проходит (каждая запись и так взята из активной ячейки СТП) — вызов
+не убран ради единообразия обоих путей и на случай гонки (состав СТП
+поменялся между чтением и постановкой в очередь одной кампании).
 
 Режим безопасности (`MODE` в `launch_context`) больше не общий параметр
 кампании — он читается с каждого теста (`test.mode`) при заведении
 `TestRunEntry`, поэтому один пул стендов может законно смешивать orel- и
 smolensk-тесты в одной кампании, каждый готовится под своим режимом.
+Источник истины для режима записи — всегда `test.mode`, а не `StpTestRun.
+mode` того прогона СТП, откуда взята ячейка: по конструкции они должны
+совпадать (СТП-генерация делит тесты по их собственному режиму), но если
+где-то разошлись — это рассинхронизация данных, а не повод класть в очередь
+режим, которого у теста уже нет.
 """
 
 from __future__ import annotations
@@ -41,8 +63,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.constants import Action, EntityType, TestReadiness, TestRunStatus
 from src.core.exceptions import AppException, AuthorizationError, ConflictError, DomainValidationError, NotFoundError
 from src.dependencies.auth import Identity
-from src.models import TestRun, TestRunEntry
+from src.models import TestDefinition, TestRun, TestRunEntry
 from src.repositories import queue_item as queue_item_repo
+from src.repositories import stp_cell as stp_cell_repo
+from src.repositories import stp_composition as stp_composition_repo
+from src.repositories import stp_test_case as stp_test_case_repo
+from src.repositories import stp_test_run as stp_test_run_repo
 from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_run as repo
 from src.repositories import test_run_entry as test_run_entry_repo
@@ -52,6 +78,92 @@ from src.services import audit_service, launch_stp, permissions, queue as queue_
 from src.utils.ids import test_run_id as new_id
 
 logger = logging.getLogger(__name__)
+
+
+class _EntrySpec:
+    """Одна будущая запись кампании до постановки в очередь — общий вид для обоих путей сборки состава."""
+
+    __slots__ = ("stand_id", "kernel", "mode", "test", "stp_test_run_id")
+
+    def __init__(self, *, stand_id: str, kernel: str, mode: str, test: TestDefinition, stp_test_run_id: str | None):
+        self.stand_id = stand_id
+        self.kernel = kernel
+        self.mode = mode
+        self.test = test
+        self.stp_test_run_id = stp_test_run_id
+
+
+async def _explicit_stand_entries(
+    db: AsyncSession, *, test_run_stands: list[str], kernels: list[str],
+) -> list[_EntrySpec]:
+    """Прежний путь §6.1 — все тесты, закреплённые за каждым стендом явного пула."""
+    tests = await test_definition_repo.list_by_pinned_stands(db, test_run_stands)
+    return [
+        _EntrySpec(stand_id=test.pinned_stand_id, kernel=selected_kernel, mode=test.mode, test=test, stp_test_run_id=None)
+        for selected_kernel in kernels for test in tests
+    ]
+
+
+async def _derive_stp_entries(
+    db: AsyncSession, *, department_id: str, os_version_id: str, kernel: str | None,
+) -> tuple[list[_EntrySpec], list[str]]:
+    """Разворачивает активный состав СТП отдела для РЦ в плоский список записей кампании.
+
+    Источник — тот же, что у публикации СТП-матрицы (`services/stp_matrix.py`
+    ::publish_stp_matrix): `stp_test_run_repo.list_by_department_and_os_version`
+    + `stp_cell_repo.list_by_runs`. Здесь дополнительно фильтруется
+    `is_active` (неактивные ячейки — исключённая, но сохранённая история, не
+    часть текущего состава) и разрешается `stp_test_case.code → test_definition`,
+    которого прогон в очередь и требует.
+
+    `kernel`, если задан явно вызывающим, сужает состав до записей именно с
+    этим ядром (override, а не фильтр каталога ОС — ядра здесь и так уже
+    зафиксированы составом СТП per-запись, дополнительного резолва через
+    `server_client` не нужно).
+
+    Возвращает `(specs, candidate_stands)` — `candidate_stands` включает
+    стенды всех активных ячеек, подходящих под `kernel`-фильтр, даже если по
+    ним не нашлось валидной записи (например, тест-кейс без соответствующего
+    `test_definition`) — нужно `create_test_run`/`preview_test_run`, чтобы
+    корректно посчитать `stands_without_tests`.
+    """
+    runs = await stp_test_run_repo.list_by_department_and_os_version(db, department_id, os_version_id)
+    if not runs:
+        return [], []
+    run_by_id = {r.id: r for r in runs}
+
+    cells = await stp_cell_repo.list_by_runs(db, [r.id for r in runs])
+    active_cells = [c for c in cells if c.is_active and (kernel is None or run_by_id[c.stp_test_run_id].kernel == kernel)]
+    if not active_cells:
+        return [], []
+
+    case_ids = sorted({c.stp_test_case_id for c in active_cells})
+    cases_by_id = {c.id: c for c in await stp_test_case_repo.list_by_ids(db, case_ids)}
+    codes = sorted({case.code for case in cases_by_id.values()})
+    tests_by_code = {t.code: t for t in await test_definition_repo.list_by_codes(db, codes)}
+
+    candidate_stands = sorted({run_by_id[c.stp_test_run_id].stand_id for c in active_cells})
+
+    specs: list[_EntrySpec] = []
+    for cell in active_cells:
+        run = run_by_id[cell.stp_test_run_id]
+        case = cases_by_id.get(cell.stp_test_case_id)
+        if case is None:
+            continue
+        test = tests_by_code.get(case.code)
+        if test is None:
+            logger.warning(
+                "test_run: stp cell %s (case=%s code=%s) has no matching test_definition, skipping",
+                cell.id, case.id, case.code,
+            )
+            continue
+        if test.mode != run.mode:
+            logger.warning(
+                "test_run: test %s mode=%s disagrees with its stp run %s mode=%s, using test.mode",
+                test.code, test.mode, run.id, run.mode,
+            )
+        specs.append(_EntrySpec(stand_id=run.stand_id, kernel=run.kernel, mode=test.mode, test=test, stp_test_run_id=run.id))
+    return specs, candidate_stands
 
 
 def _replay_result(run: TestRun, entries: list[TestRunEntry]) -> tuple[TestRun, list[str], list[TestRunPartialError]]:
@@ -74,11 +186,16 @@ async def create_test_run(
     *,
     os_version_id: str,
     kernel: str | None,
-    test_run_stands: list[str],
+    test_run_stands: list[str] | None = None,
     final: bool = False,
     request_id: str | None = None,
 ) -> tuple[TestRun, list[str], list[TestRunPartialError]]:
-    """Завести кампанию + поставить в очередь все закреплённые тесты каждого стенда пула.
+    """Завести кампанию + поставить в очередь её состав.
+
+    `test_run_stands` заданный явно — прежний путь §6.1 (пул выбран
+    оператором). Пустой/не заданный — состав выводится из активного состава
+    СТП отдела для `os_version_id` (см. `_derive_stp_entries`), стенды и ядра
+    оператор не выбирает.
 
     Возвращает `(test_run, stands_without_tests, enqueue_errors)` — оба
     списка могут быть непустыми одновременно с успешно созданной кампанией:
@@ -106,11 +223,13 @@ async def create_test_run(
             message="Caller has no department_id to attribute this test run to",
         )
 
+    requested_stands = list(dict.fromkeys(test_run_stands)) if test_run_stands else []
+
     fingerprint = None
     if request_id:
         payload = {
             "os_version_id": os_version_id, "kernel": kernel,
-            "test_run_stands": sorted(dict.fromkeys(test_run_stands)), "final": final,
+            "test_run_stands": sorted(requested_stands), "final": final,
         }
         fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         await repo.lock_request(db, identity.user_id, request_id)
@@ -124,16 +243,39 @@ async def create_test_run(
             entries = await test_run_entry_repo.list_for_run(db, existing.id)
             return _replay_result(existing, entries)
 
-    from src.services import server_client
-    if kernel:
-        kernels = [kernel]
+    stp_composition_id: str | None = None
+    stp_revision: int | None = None
+
+    if requested_stands:
+        from src.services import server_client
+        if kernel:
+            kernels = [kernel]
+        else:
+            version = await server_client.get_os_version(os_version_id)
+            kernels = list(dict.fromkeys(version.get("kernels") or []))
+            if not kernels:
+                kernels = await server_client.resolve_os_kernels(os_version_id)
+        test_run_stands = requested_stands
+        composition_source = "pinned_catalog"
+        entry_specs = await _explicit_stand_entries(db, test_run_stands=test_run_stands, kernels=kernels)
     else:
-        version = await server_client.get_os_version(os_version_id)
-        kernels = list(dict.fromkeys(version.get("kernels") or []))
-        if not kernels:
-            kernels = await server_client.resolve_os_kernels(os_version_id)
+        entry_specs, _candidate_stands = await _derive_stp_entries(
+            db, department_id=department_id, os_version_id=os_version_id, kernel=kernel,
+        )
+        if not entry_specs:
+            raise DomainValidationError(
+                error_code="STP_COMPOSITION_EMPTY",
+                message="Активный состав СТП для этого РЦ пуст — запускать нечего",
+            )
+        test_run_stands = sorted({spec.stand_id for spec in entry_specs})
+        kernels = sorted({spec.kernel for spec in entry_specs})
+        composition_source = "stp_composition"
+        composition_row = await stp_composition_repo.get_by_department_and_os_version(db, department_id, os_version_id)
+        if composition_row is not None:
+            stp_composition_id = composition_row.id
+            stp_revision = composition_row.revision
     kernel = kernels[0]
-    test_run_stands = list(dict.fromkeys(test_run_stands))
+
     run = await repo.create(db, {
         "id": new_id(),
         "os_version_id": os_version_id,
@@ -143,17 +285,18 @@ async def create_test_run(
         "test_run_stands": list(test_run_stands),
         "status": TestRunStatus.QUEUED,
         "final": final,
-        "composition_source": "pinned_catalog",
+        "composition_source": composition_source,
+        "stp_composition_id": stp_composition_id,
+        "stp_revision": stp_revision,
         "created_by": identity.user_id,
         "client_request_id": request_id,
         "request_fingerprint": fingerprint,
     })
-    tests = await test_definition_repo.list_by_pinned_stands(db, test_run_stands)
     entries = [TestRunEntry(
-        id=f"entry_{uuid4().hex}", test_run_id=run.id, stand_id=test.pinned_stand_id,
-        test_id=test.id, test_code=test.code, test_name=test.full_name, kernel=selected_kernel,
-        mode=test.mode,
-    ) for selected_kernel in kernels for test in tests]
+        id=f"entry_{uuid4().hex}", test_run_id=run.id, stand_id=spec.stand_id,
+        test_id=spec.test.id, test_code=spec.test.code, test_name=spec.test.full_name,
+        kernel=spec.kernel, mode=spec.mode,
+    ) for spec in entry_specs]
     db.add_all(entries)
     await db.commit()
     await db.refresh(run)
@@ -161,10 +304,13 @@ async def create_test_run(
     populated_stands = {entry.stand_id for entry in entries}
     stands_without_tests = [stand_id for stand_id in test_run_stands if stand_id not in populated_stands]
     enqueue_errors: list[TestRunPartialError] = []
-    for entry in entries:
+    for entry, spec in zip(entries, entry_specs):
         try:
             ctx = {"RC": os_version_id, "KERNEL": entry.kernel, "MODE": entry.mode}
-            stp = await launch_stp.require_membership(db, entry.test_code, entry.stand_id, ctx) if final else None
+            stp = (
+                await launch_stp.require_membership(db, entry.test_code, entry.stand_id, ctx, run_id=spec.stp_test_run_id)
+                if final else None
+            )
             await queue_svc.enqueue(
                 db, identity, entry.test_id, launch_context=ctx,
                 debug_mode=False, test_run_id=run.id, test_run_entry_id=entry.id,
@@ -198,6 +344,8 @@ async def create_test_run(
             "enqueue_error_count": len(enqueue_errors),
             "status": new_status,
             "final": final,
+            "composition_source": composition_source,
+            "stp_composition_id": stp_composition_id,
         },
     )
     return run, stands_without_tests, enqueue_errors
@@ -209,14 +357,20 @@ async def preview_test_run(
     *,
     os_version_id: str,
     kernel: str | None,
-    test_run_stands: list[str],
+    test_run_stands: list[str] | None = None,
     final: bool = False,
 ) -> tuple[list[str], list[TestRunPreviewEntry]]:
     """Состав кампании без побочных эффектов — что будет запущено/пропущено и почему (§E4).
 
-    Проверяет ровно те причины пропуска, которые `create_test_run` умеет
-    обрабатывать частично (readiness, активность стенда, СТП при `final`) —
-    без создания `test_run`/`test_run_entry` и без постановки в очередь.
+    Тот же выбор источника состава, что и `create_test_run`: явный
+    `test_run_stands` — прежний пул стендов; пусто/не задано — активный
+    состав СТП отдела для `os_version_id`. Проверяет ровно те причины
+    пропуска, которые `create_test_run` умеет обрабатывать частично
+    (readiness, активность стенда, СТП при `final`) — без создания
+    `test_run`/`test_run_entry` и без постановки в очередь. В отличие от
+    `create_test_run`, пустой выведенный состав здесь не ошибка — превью
+    просто вернёт пустые списки, чтобы UI мог показать "запускать нечего" без
+    исключения.
     """
     await permissions.require_action(db, identity, EntityType.TEST_RUN, Action.CREATE)
 
@@ -225,55 +379,63 @@ async def preview_test_run(
             error_code="TEST_RUN_DEPARTMENT_REQUIRED",
             message="Caller has no department_id to attribute this test run to",
         )
+    department_id = identity.department_id
 
-    from src.services import server_client
-    if kernel:
-        kernels = [kernel]
+    requested_stands = list(dict.fromkeys(test_run_stands)) if test_run_stands else []
+
+    if requested_stands:
+        from src.services import server_client
+        if kernel:
+            kernels = [kernel]
+        else:
+            version = await server_client.get_os_version(os_version_id)
+            kernels = list(dict.fromkeys(version.get("kernels") or []))
+            if not kernels:
+                kernels = await server_client.resolve_os_kernels(os_version_id)
+        entry_specs = await _explicit_stand_entries(db, test_run_stands=requested_stands, kernels=kernels)
+        populated_stands = {spec.stand_id for spec in entry_specs}
+        stands_without_tests = [stand_id for stand_id in requested_stands if stand_id not in populated_stands]
     else:
-        version = await server_client.get_os_version(os_version_id)
-        kernels = list(dict.fromkeys(version.get("kernels") or []))
-        if not kernels:
-            kernels = await server_client.resolve_os_kernels(os_version_id)
-
-    test_run_stands = list(dict.fromkeys(test_run_stands))
-    tests = await test_definition_repo.list_by_pinned_stands(db, test_run_stands)
-    populated_stands = {test.pinned_stand_id for test in tests}
-    stands_without_tests = [stand_id for stand_id in test_run_stands if stand_id not in populated_stands]
+        entry_specs, candidate_stands = await _derive_stp_entries(
+            db, department_id=department_id, os_version_id=os_version_id, kernel=kernel,
+        )
+        populated_stands = {spec.stand_id for spec in entry_specs}
+        stands_without_tests = [stand_id for stand_id in candidate_stands if stand_id not in populated_stands]
 
     stands: dict[str, object] = {}
     entries: list[TestRunPreviewEntry] = []
-    for selected_kernel in kernels:
-        for test in tests:
-            stand = stands.get(test.pinned_stand_id)
-            if stand is None and test.pinned_stand_id not in stands:
-                stand = await test_stand_repo.get_by_id(db, test.pinned_stand_id)
-                stands[test.pinned_stand_id] = stand
+    for spec in entry_specs:
+        test = spec.test
+        stand = stands.get(spec.stand_id)
+        if stand is None and spec.stand_id not in stands:
+            stand = await test_stand_repo.get_by_id(db, spec.stand_id)
+            stands[spec.stand_id] = stand
 
-            common = {
-                "stand_id": test.pinned_stand_id, "test_id": test.id, "test_code": test.code,
-                "test_name": test.full_name, "kernel": selected_kernel, "mode": test.mode,
-            }
-            if test.readiness != TestReadiness.READY:
+        common = {
+            "stand_id": spec.stand_id, "test_id": test.id, "test_code": test.code,
+            "test_name": test.full_name, "kernel": spec.kernel, "mode": spec.mode,
+        }
+        if test.readiness != TestReadiness.READY:
+            entries.append(TestRunPreviewEntry(
+                **common, action="skip_debug_required",
+                reason="Тест не в статусе «Рабочий» — обычный запуск недоступен",
+            ))
+            continue
+        if stand is None or not stand.is_active:
+            entries.append(TestRunPreviewEntry(
+                **common, action="skip_stand_inactive", reason="Стенд не активен",
+            ))
+            continue
+        if final:
+            ctx = {"RC": os_version_id, "KERNEL": spec.kernel, "MODE": spec.mode}
+            stp = await launch_stp.find_membership(db, test.code, spec.stand_id, ctx, run_id=spec.stp_test_run_id)
+            if stp is None:
                 entries.append(TestRunPreviewEntry(
-                    **common, action="skip_debug_required",
-                    reason="Тест не в статусе «Рабочий» — обычный запуск недоступен",
+                    **common, action="skip_not_in_stp",
+                    reason="Тест отсутствует в активном составе СТП",
                 ))
                 continue
-            if stand is None or not stand.is_active:
-                entries.append(TestRunPreviewEntry(
-                    **common, action="skip_stand_inactive", reason="Стенд не активен",
-                ))
-                continue
-            if final:
-                ctx = {"RC": os_version_id, "KERNEL": selected_kernel, "MODE": test.mode}
-                stp = await launch_stp.find_membership(db, test.code, test.pinned_stand_id, ctx)
-                if stp is None:
-                    entries.append(TestRunPreviewEntry(
-                        **common, action="skip_not_in_stp",
-                        reason="Тест отсутствует в активном составе СТП",
-                    ))
-                    continue
-            entries.append(TestRunPreviewEntry(**common, action="launch"))
+        entries.append(TestRunPreviewEntry(**common, action="launch"))
 
     return stands_without_tests, entries
 

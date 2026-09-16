@@ -120,3 +120,11 @@ async def list_by_pinned_stands(db: AsyncSession, stand_ids: list[str]) -> list[
     stmt = (select(TestDefinition).where(TestDefinition.pinned_stand_id.in_(stand_ids))
             .order_by(TestDefinition.pinned_stand_id, TestDefinition.code, TestDefinition.id))
     return list((await db.execute(stmt)).scalars())
+
+
+async def list_by_codes(db: AsyncSession, codes: list[str]) -> list[TestDefinition]:
+    """Batch-выборка по списку кодов — используется выводом состава кампании из активной СТП (§B2)."""
+    if not codes:
+        return []
+    stmt = select(TestDefinition).where(TestDefinition.code.in_(codes))
+    return list((await db.execute(stmt)).scalars())

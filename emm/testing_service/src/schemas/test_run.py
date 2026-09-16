@@ -1,12 +1,18 @@
 """Pydantic-схемы для /test-runs (§2.4, §6.1 плана миграции).
 
-`TestRunCreate` — вход кампании: РЦ+ядро+явный список стендов пула, `final` —
-официальный/финальный прогон релиза (просто сохраняется, влияние на
-интеграцию со СТП — волна 8). Режима здесь нет — он фиксирован на каждом
-тесте (`test_definitions.mode`), кампания может законно смешивать orel- и
-smolensk-тесты, каждый готовится под своим режимом (см. `TestRunEntryResponse.mode`).
-`department_id` в теле нет — кампания привязывается к отделу инициатора
-(`identity.department_id`), не может быть подделана в запросе.
+`TestRunCreate` — вход кампании: РЦ+ядро, `final` — официальный/финальный
+прогон релиза (влияет на обязательность СТП, `services/test_run.py`).
+Режима здесь нет — он фиксирован на каждом тесте (`test_definitions.mode`),
+кампания может законно смешивать orel- и smolensk-тесты, каждый готовится
+под своим режимом (см. `TestRunEntryResponse.mode`). `department_id` в теле
+нет — кампания привязывается к отделу инициатора (`identity.department_id`),
+не может быть подделана в запросе.
+
+`test_run_stands` теперь опционален. Заданный явно — прежнее поведение без
+изменений: ровно эти стенды пула, тесты берутся по `pinned_stand_id` (группа
+стенда, E3). Пустой/не заданный — состав кампании выводится из активного
+состава СТП отдела для этого РЦ (полный прогон по РЦ): какие тесты, значит
+какие стенды и ядра — решает СТП, оператор их не выбирает.
 
 `TestRunCreateResponse` расширяет обычную карточку двумя списками —
 `stands_without_tests` (стенд из пула без единого закреплённого теста, не
@@ -31,9 +37,13 @@ class TestRunCreate(BaseModel):
         None, min_length=1, max_length=64,
         description="Версия ядра, кладётся в launch_context.KERNEL.",
     )
-    test_run_stands: list[str] = Field(
-        ..., min_length=1,
-        description="Явно выбранный оператором пул стендов (test_stands.id) — вход запроса, не авто-вычисляется.",
+    test_run_stands: list[str] | None = Field(
+        default=None,
+        description=(
+            "Явно выбранный оператором пул стендов (test_stands.id). Пусто/не "
+            "задано — состав выводится из активного состава СТП этого РЦ для "
+            "отдела вызывающего, стенды не выбираются оператором."
+        ),
     )
     final: bool = Field(
         default=False,
@@ -90,10 +100,21 @@ class TestRunResponse(BaseModel):
     kernel: str
     kernels: list[str] = Field(default_factory=list)
     department_id: str = Field(description="Отдел-инициатор кампании.")
-    test_run_stands: list[str] = Field(description="Пул стендов, выбранный при создании.")
+    test_run_stands: list[str] = Field(description="Пул стендов кампании — явно выбранный либо выведенный из состава СТП, см. composition_source.")
     status: str = Field(description="Агрегатный статус: queued/running/succeeded/failed/partially_failed.")
     final: bool
-    composition_source: str = "legacy_queue"
+    composition_source: str = Field(
+        default="legacy_queue",
+        description="pinned_catalog — явный test_run_stands; stp_composition — состав выведен из активной СТП; legacy_queue — до этого разделения.",
+    )
+    stp_composition_id: str | None = Field(
+        default=None,
+        description="Снэпшот stp_compositions.id, из которого выведен состав (только composition_source=stp_composition).",
+    )
+    stp_revision: int | None = Field(
+        default=None,
+        description="Ревизия состава СТП на момент создания кампании — последующее переключение состава не переписывает уже начатую кампанию.",
+    )
     created_at: datetime
     updated_at: datetime
     created_by: str | None = None

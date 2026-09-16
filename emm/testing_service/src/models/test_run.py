@@ -32,11 +32,22 @@
 привязку теста к стенду (§5.5), а кампания по построению работает только по
 `pinned_stand_id` каждого стенда пула; поле, которое всегда `false`, не несёт
 информации. Подробное обоснование — в отчёте волны.
+
+`stp_composition_id`/`stp_revision` — снэпшот того, из какого состава СТП
+выведена кампания, когда `test_run_stands` не задан явно (`composition_source
+== "stp_composition"`, см. `services/test_run.py`). Соft-ref на
+`stp_compositions.id`, тем же приёмом, что `os_version_id` — межсервисной FK
+здесь тоже нет, а внутрисервисной не заводили специально: более позднее
+переключение состава СТП не должно незаметно переинтерпретировать уже
+начатую кампанию, поэтому связь фиксируется числом/id на момент создания, а
+не живой ссылкой. Оба поля `NULL` для явного `test_run_stands` (СТП не
+участвует) и для кампаний, созданных до появления `stp_compositions` для
+этой РЦ.
 """
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -59,6 +70,9 @@ class TestRun(Base):
     test_run_stands: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     status: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
     composition_source: Mapped[str] = mapped_column(String(32), nullable=False, default="legacy_queue", server_default="legacy_queue")
+    # Soft-ref на stp_compositions.id, см. docstring модуля. NULL — явный test_run_stands или СТП ещё не генерировалась.
+    stp_composition_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stp_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     final: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Soft-FK на auth_service identity (`usr_<hex>`/`bot_<hex>`).
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)

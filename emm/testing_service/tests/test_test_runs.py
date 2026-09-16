@@ -20,9 +20,16 @@ from src.db.session import AsyncSessionLocal
 from src.repositories import department_test_settings as dts_repo
 from src.repositories import queue_item as queue_repo
 from src.repositories import stp_cell as stp_cell_repo
+from src.repositories import stp_composition as stp_composition_repo
 from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
-from src.utils.ids import department_test_settings_id, stp_cell_id, stp_test_case_id, stp_test_run_id
+from src.utils.ids import (
+    department_test_settings_id,
+    stp_cell_id,
+    stp_composition_id as new_stp_composition_id,
+    stp_test_case_id,
+    stp_test_run_id,
+)
 from tests.conftest import auth_hdr as _hdr
 from tests.test_queue import (  # noqa: F401 — фикстуры переиспользуются pytest'ом по имени
     CALLBACK_BASE,
@@ -239,9 +246,11 @@ class TestCreateTestRun:
         assert resp.status_code == 422, resp.text
         assert resp.json()["error_code"] == "TEST_RUN_DEPARTMENT_REQUIRED"
 
-    async def test_empty_stand_list_rejected(self, client, admin_token):
+    async def test_empty_stand_list_with_no_stp_composition_rejected(self, client, admin_token):
+        """Пусто/не задано — путь вывода из СТП; без единой активной ячейки СТП запускать нечего."""
         resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([]))
         assert resp.status_code == 422, resp.text
+        assert resp.json()["error_code"] == "STP_COMPOSITION_EMPTY"
 
     async def test_requires_auth(self, client):
         resp = await client.post(BASE, json=_payload(["stand_x"]))
@@ -498,3 +507,196 @@ class TestPreview:
         entries = resp.json()["entries"]
         assert len(entries) == 1
         assert entries[0]["action"] == "skip_not_in_stp"
+
+
+async def _seed_stp_cell(
+    db, *, stand_id: str, os_version_id: str, kernel: str, mode: str, code: str, is_active: bool = True,
+):
+    case = await stp_test_case_repo.create(db, {
+        "id": stp_test_case_id(), "code": code, "title": code, "zephyr_id": f"BT-{code}",
+    })
+    run = await stp_test_run_repo.create(db, {
+        "id": stp_test_run_id(), "os_version_id": os_version_id,
+        "mode": mode, "kernel": kernel, "stand_id": stand_id,
+        "zephyr_test_run_key": f"BT-R-{code}", "zephyr_folder_path": "/stress_test",
+    })
+    cell = await stp_cell_repo.create(db, {
+        "id": stp_cell_id(), "stp_test_case_id": case.id, "stp_test_run_id": run.id, "is_active": is_active,
+    })
+    return case, run, cell
+
+
+def _unique_rc() -> str:
+    """`stp_compositions`/`stp_test_runs` не чистятся автоматической фикстурой между тестами
+    (домен вне её ведения, см. `_cleanup_created_variables`) — каждый тест этого класса
+    берёт свой РЦ, тем же приёмом, что и `tests/test_stp_composition.py`."""
+    return f"osv_1.8.5.{uuid.uuid4().hex[:6]}"
+
+
+class TestStpDerivedComposition:
+    """`test_run_stands` не задан — полный прогон по РЦ, состав выводится из активной СТП (§B2/E1)."""
+
+    async def test_derives_stands_tests_kernels_from_active_cells_only(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service()
+        rc = _unique_rc()
+        stand_active, _ = await _create_stand(client, admin_token)
+        stand_inactive_cell, _ = await _create_stand(client, admin_token)
+        stand_no_stp, _ = await _create_stand(client, admin_token)
+        _test_active_id, code_active = await _create_test_def_with_known_code(client, admin_token, stand_active)
+        _test_inactive_id, code_inactive = await _create_test_def_with_known_code(client, admin_token, stand_inactive_cell)
+        await _create_test_def_with_known_code(client, admin_token, stand_no_stp)
+
+        async with AsyncSessionLocal() as db:
+            await _seed_stp_cell(
+                db, stand_id=stand_active, os_version_id=rc, kernel="6.1.0", mode="orel",
+                code=code_active, is_active=True,
+            )
+            await _seed_stp_cell(
+                db, stand_id=stand_inactive_cell, os_version_id=rc, kernel="6.1.0", mode="orel",
+                code=code_inactive, is_active=False,
+            )
+            await db.commit()
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json={"os_version_id": rc})
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["test_run_stands"] == [stand_active]
+        assert body["composition_source"] == "stp_composition"
+        assert body["kernel"] == "6.1.0"
+
+        detail = await client.get(f"{BASE}/{body['id']}", headers=_hdr(admin_token))
+        entries = detail.json()["entries"]
+        assert {e["test_code"] for e in entries} == {code_active}
+        assert entries[0]["kernel"] == "6.1.0"
+        assert entries[0]["mode"] == "orel"
+
+    async def test_kernel_override_filters_derived_composition(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        rc = _unique_rc()
+        stand_id, _ = await _create_stand(client, admin_token)
+        _test_a_id, code_a = await _create_test_def_with_known_code(client, admin_token, stand_id)
+        test_b_id, code_b = await _create_test_def_with_known_code(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            await _seed_stp_cell(db, stand_id=stand_id, os_version_id=rc, kernel="6.1.0", mode="orel", code=code_a)
+            await _seed_stp_cell(db, stand_id=stand_id, os_version_id=rc, kernel="6.2.0", mode="orel", code=code_b)
+            await db.commit()
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json={"os_version_id": rc, "kernel": "6.2.0"})
+        assert resp.status_code == 201, resp.text
+
+        detail = await client.get(f"{BASE}/{resp.json()['id']}", headers=_hdr(admin_token))
+        entries = detail.json()["entries"]
+        assert {e["test_id"] for e in entries} == {test_b_id}
+        assert entries[0]["kernel"] == "6.2.0"
+
+    async def test_mode_mismatch_between_test_and_stp_run_prefers_test_mode(
+        self, client, admin_token, mock_server_service,
+    ):
+        """Рассинхронизация данных (тест сменил режим после генерации СТП) — `test.mode` побеждает, не `StpTestRun.mode`."""
+        mock_server_service()
+        rc = _unique_rc()
+        stand_id, _ = await _create_stand(client, admin_token)
+        _test_id, code = await _create_test_def_with_known_code(client, admin_token, stand_id)  # mode по умолчанию orel
+
+        async with AsyncSessionLocal() as db:
+            await _seed_stp_cell(db, stand_id=stand_id, os_version_id=rc, kernel="6.1.0", mode="smolensk", code=code)
+            await db.commit()
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json={"os_version_id": rc})
+        assert resp.status_code == 201, resp.text
+
+        detail = await client.get(f"{BASE}/{resp.json()['id']}", headers=_hdr(admin_token))
+        entries = detail.json()["entries"]
+        assert entries[0]["mode"] == "orel"
+
+    async def test_records_stp_composition_snapshot(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        rc = _unique_rc()
+        stand_id, _ = await _create_stand(client, admin_token)
+        _test_id, code = await _create_test_def_with_known_code(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            await _seed_stp_cell(db, stand_id=stand_id, os_version_id=rc, kernel="6.1.0", mode="orel", code=code)
+            composition = await stp_composition_repo.create(db, {
+                "id": new_stp_composition_id(), "department_id": "dep_a", "os_version_id": rc,
+                "scope": "full", "revision": 3,
+            })
+            await db.commit()
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json={"os_version_id": rc})
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["stp_composition_id"] == composition.id
+        assert body["stp_revision"] == 3
+
+    async def test_no_stp_composition_row_leaves_snapshot_fields_null(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        rc = _unique_rc()
+        stand_id, _ = await _create_stand(client, admin_token)
+        _test_id, code = await _create_test_def_with_known_code(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            await _seed_stp_cell(db, stand_id=stand_id, os_version_id=rc, kernel="6.1.0", mode="orel", code=code)
+            await db.commit()
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json={"os_version_id": rc})
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["stp_composition_id"] is None
+        assert body["stp_revision"] is None
+
+    async def test_explicit_stands_path_ignores_stp_composition(self, client, admin_token, mock_server_service):
+        """Явный `test_run_stands` — прежнее поведение без изменений, СТП не участвует, даже если её состав есть."""
+        mock_server_service()
+        rc = _unique_rc()
+        stand_id, _ = await _create_stand(client, admin_token)
+        _test_id, code = await _create_test_def_with_known_code(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            await _seed_stp_cell(db, stand_id=stand_id, os_version_id=rc, kernel="6.1.0", mode="orel", code=code)
+            await stp_composition_repo.create(db, {
+                "id": new_stp_composition_id(), "department_id": "dep_a", "os_version_id": rc,
+                "scope": "full", "revision": 5,
+            })
+            await db.commit()
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], os_version_id=rc))
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["composition_source"] == "pinned_catalog"
+        assert body["stp_composition_id"] is None
+        assert body["stp_revision"] is None
+
+    async def test_preview_derives_composition_too(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        rc = _unique_rc()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id, code = await _create_test_def_with_known_code(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            await _seed_stp_cell(db, stand_id=stand_id, os_version_id=rc, kernel="6.1.0", mode="orel", code=code)
+            await db.commit()
+
+        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json={"os_version_id": rc})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert len(body["entries"]) == 1
+        assert body["entries"][0]["action"] == "launch"
+        assert body["entries"][0]["test_id"] == test_id
+
+        listing = await client.get(BASE, headers=_hdr(admin_token), params={"department_id": "dep_a"})
+        runs_for_rc = [r for r in listing.json()["items"] if r["os_version_id"] == rc]
+        assert runs_for_rc == []
+
+    async def test_preview_empty_derived_composition_returns_empty_not_error(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service()
+        resp = await client.post(f"{BASE}/preview", headers=_hdr(admin_token), json={"os_version_id": "osv_nowhere"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["entries"] == []
+        assert body["stands_without_tests"] == []

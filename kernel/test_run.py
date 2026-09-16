@@ -3,8 +3,8 @@ from allta import UploaderZC, SystemCommands
 from datetime import datetime
 
 from libs.lib_kernel import get_duration
-from libs.libtests import Sigmentation_fault, XFSMemoryLeak
-from libs.libpublic import kernel_publisher, xfs_memory_leak_publisher
+from libs.libtests import Sigmentation_fault, XFSMemoryLeak, UsageOSResources
+from libs.libpublic import kernel_publisher, xfs_memory_leak_publisher, usage_os_publisher
 
 from kernel_conf import BASE_PATH, SEGMENTATION_FAULT_VM_COUNT, SEGMENTATION_FAULT_VCPU, SEGMENTATION_FAULT_RAM
 
@@ -166,6 +166,31 @@ elif args.TESTNAME == 'xfs_memory_leak':
         lead_time=lead_time,
         test_cycle_version=args.TCV,
     )
+
+elif args.TESTNAME == 'usage_os':
+    time_start_script = datetime.now()
+    usage_os = UsageOSResources(rc_name=args.TCV, testdir=BASE_PATH)
+    
+    usage_os.prepare()
+    usage_os.start_test()
+    status = usage_os.results_processing()
+    if status == False:
+        uzs.upload_test_cycle_status(zefir_status='pass')
+    else:
+        uzs.upload_test_cycle_status(zefir_status='fail')
+
+    lead_time = get_duration((datetime.now() - time_start_script).total_seconds())
+    
+    publisher = usage_os_publisher(
+        username=args.USER,
+        token=args.TOKEN,
+        space=args.SPACE,
+        parent_title=args.PPAGE,
+        title=args.NPAGE,
+        stand_number=args.STAND,
+        lead_time=lead_time,
+        test_cycle_version=args.TCV,
+    )    
 
 
 

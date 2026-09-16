@@ -1,10 +1,11 @@
+import csv
 import json
 
 from time import sleep
 from pathlib import Path
 from analyze_ram_usage import analyze_ram_usage
 
-from allta import Libvirt, LibvirtManager, SystemCommands
+from allta import Libvirt, LibvirtManager, MathModel, SystemCommands
 
 from kernel_conf import (
     USERNAME,
@@ -13,7 +14,10 @@ from kernel_conf import (
     BASE_PATH,
     VM_TEST1_OUTPUT,
     VM_TEST2_OUTPUT,
-    RESULTS_FILE
+    RESULTS_FILE,
+    USAGE_OS_LOAD_CSV,
+    USAGE_OS_MATH_MODEL_FILE,
+    USAGE_OS_MATH_MODEL_METRICS,
     # IOF_OFF_PATH,
     # IOF_ON_PATH,
     # IOF_ON_NAME,
@@ -245,13 +249,13 @@ class Sigmentation_fault(CreateVM):
             "testvm1": [
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/fill.c', 
-                    "path_vm": '/home/u/fill.c', 
+                    "path_host": f'{BASE_PATH}/fill.c',
+                    "path_vm": '/home/u/fill.c',
                 },
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/test1.c', 
-                    "path_vm": '/home/u/test1.c', 
+                    "path_host": f'{BASE_PATH}/test1.c',
+                    "path_vm": '/home/u/test1.c',
                 },
                 {
                     "mode": "push",
@@ -340,7 +344,7 @@ class Sigmentation_fault(CreateVM):
 
 
         print("Перенос тестовых файлов")
-        self.provider.scp(scp_settings=scp_test_files, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)         
+        self.provider.scp(scp_settings=scp_test_files, vms_dates=self.vms_data, vms_groups=self.vms_group, username=USERNAME, password=PASSWORD)
         print("\n\n\nПодготовка завершена\n\n\n")
         print("\n\n\nЗапускаем тест\n\n\n")
 
@@ -387,7 +391,7 @@ class Sigmentation_fault(CreateVM):
         print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
         print("\n\n\nОбработка результатов\n\n\n")
         # Обработка результатов
-        
+
         status_test1_bug = False
         with open(VM_TEST1_OUTPUT, 'r') as test1_file:
             test1_output = test1_file.readlines()
@@ -403,7 +407,7 @@ class Sigmentation_fault(CreateVM):
                 if "Ошибка сегментирования" in line:
                     status_test2_bug = True
                     break
-        
+
         result = {
             'status_test1': status_test1_bug,
             'status_test2': status_test2_bug
@@ -414,7 +418,7 @@ class Sigmentation_fault(CreateVM):
         print("\n\n\n Результаты обработаны\n\n\n")
 
         return status_test1_bug and status_test2_bug
-            
+
 
 class XFSMemoryLeak(CreateVM):
     def start_test(self):
@@ -422,18 +426,18 @@ class XFSMemoryLeak(CreateVM):
             "testvm1": [
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/provision/copy_files.sh', 
-                    "path_vm": '/home/u/copy_files.sh', 
+                    "path_host": f'{BASE_PATH}/provision/copy_files.sh',
+                    "path_vm": '/home/u/copy_files.sh',
                 },
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/get_info.py', 
-                    "path_vm": '/home/u/get_info.py', 
+                    "path_host": f'{BASE_PATH}/get_info.py',
+                    "path_vm": '/home/u/get_info.py',
                 },
                 {
                     "mode": "push",
-                    "path_host": f'{BASE_PATH}/start_xfs_test.py', 
-                    "path_vm": '/home/u/start_xfs_test.py', 
+                    "path_host": f'{BASE_PATH}/start_xfs_test.py',
+                    "path_vm": '/home/u/start_xfs_test.py',
                 },
             ]
         }
@@ -498,9 +502,94 @@ class XFSMemoryLeak(CreateVM):
         )
         print("\n\n\nДанные о ОС с ВМ собраны\n\n\n")
         print("\n\n\nОбработка результатов\n\n\n")
-        
+
         status = analyze_ram_usage(f"{BASE_PATH}/ram_usage_log.txt")
         if status == "Отсутствует":
             return False
         else:
             return True
+
+class UsageOSResources:
+    # Baseline (idle, эталонный прогон без нагрузки) — геометрическое среднее по каждой
+    # метрике из USAGE_OS_MATH_MODEL_METRICS. Зафиксирован здесь константой, а не читается
+    # из idle_os.csv, так как results/ не попадает в репозиторий.
+    BASELINE = {
+        "cpu_used_pct": 1.9579586429316966,
+        "mem_used_pct": 1.15,
+        "load_1m": 0.0006157791947664172,
+        "context_switches_per_sec": 675.3770252778268,
+        "interrupts_per_sec": 996.3088825826435,
+    }
+
+    # zero_floor для критериев с околонулевым baseline (см. add_criterion в allta.MathModel) —
+    # без него ratio почти всегда упирается в cap и критерий теряет чувствительность.
+    ZERO_FLOOR = {
+        "load_1m": 1.0,
+    }
+
+    def __init__(self, rc_name: str = "", testdir: str = ""):
+        self.rc = rc_name
+        self.testdir = testdir
+
+    def prepare(self):
+        print("\n\n\nПодготовка к тесту\n\n\n")
+        SystemCommands.check_output_command("sudo apt-get update && sudo apt-get install -y netcat-openbsd")
+        SystemCommands.check_output_command("sudo chmod +x /home/u/git/stress_test/kernel/provision/usage_os_resources.sh")
+        print("\n\n\nПодготовка завершена\n\n\n")
+
+
+
+    def start_test(self):
+        print("\n\n\nНачинаем выполнение теста\n\n\n")
+        print("\n\n\nСбор метрик без нагрузки\n\n\n")
+        SystemCommands.check_output_command(f"cd /home/u/git/stress_test/kernel/provision/ && sudo bash ./usage_os_resources.sh idle {self.testdir}/results")
+        print("\n\n\nСбор метрик с нагрузкой\n\n\n")
+        SystemCommands.check_output_command(f"cd /home/u/git/stress_test/kernel/provision/ && sudo bash ./usage_os_resources.sh load {self.testdir}/results")
+        print("\n\n\nТест завершен\n\n\n")
+
+
+    def results_processing(self):
+        print("\n\n\nОбработка результатов\n\n\n")
+
+        with open(USAGE_OS_LOAD_CSV, newline='') as load_file:
+            load_rows = list(csv.DictReader(load_file))
+
+        sample_count = len(load_rows)
+        iterations = list(range(1, sample_count + 1))
+
+        weight = 1.0 / len(USAGE_OS_MATH_MODEL_METRICS)
+
+        model = MathModel(type="ratio")
+        for column in USAGE_OS_MATH_MODEL_METRICS:
+            model.add_criterion(
+                name=column,
+                iterations=iterations,
+                values=[float(row[column]) for row in load_rows],
+                weight=weight,
+                negative=True,
+                reference=self.BASELINE[column],
+                zero_floor=self.ZERO_FLOOR.get(column, 0.0),
+            )
+
+        rating, criteria = model.total_rating(scale=100.0)
+
+        result = {
+            "rating": rating,
+            "criteria": {
+                column: {
+                    "label": USAGE_OS_MATH_MODEL_METRICS[column],
+                    "baseline": crit["baseline"],
+                    "result": crit["result"],
+                    "ratio": crit["ratio"],
+                    "weight": crit["weight"],
+                }
+                for column, crit in criteria.items()
+            },
+        }
+
+        with open(USAGE_OS_MATH_MODEL_FILE, "w") as result_file:
+            json.dump(result, result_file, indent=2, ensure_ascii=False)
+
+        print("\n\n\n Результаты обработаны\n\n\n")
+
+        return False

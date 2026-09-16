@@ -542,14 +542,18 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
   const versionsQ = useQuery(() => listOsVersions({ limit: 500 }), []);
   const [rc, setRc] = useState("");
   const [final, setFinal] = useState(false);
+  const [full, setFull] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit() {
     if (!rc) return;
-    const body: TestRunCreateRequest = { os_version_id: rc, final };
+    const body: TestRunCreateRequest = { os_version_id: rc, final, full };
     setSubmitting(true);
     try {
       const res = await createTestRun(body);
+      if (res.stp_sync_errors.length > 0) {
+        toast.info(`Синхронизация СТП частична: ошибок — ${res.stp_sync_errors.length}. Прогон ${res.id} всё равно создан на доступном составе.`);
+      }
       if (res.stands_without_tests.length > 0 || res.enqueue_errors.length > 0) {
         toast.info(
           `Прогон ${res.id} создан частично: без закреплённого теста — ${res.stands_without_tests.length}, ошибок постановки — ${res.enqueue_errors.length}`,
@@ -613,6 +617,14 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
             <span>
               <span className="text-sm font-medium block">Финальный прогон</span>
               <span className="text-xs text-dim">Блокирует релиз РЦ до получения результата; отображается отдельным флагом в кампаниях</span>
+            </span>
+          </label>
+
+          <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
+            <Checkbox checked={full} onChange={(e) => setFull(e.target.checked)} className="mt-0.5" />
+            <span>
+              <span className="text-sm font-medium block">Полный прогон</span>
+              <span className="text-xs text-dim">Перед запуском добавит в СТП все тесты каталога со статусом «Рабочий» (scope=full) и обновит её, затем запустит уже расширенный состав.</span>
             </span>
           </label>
         </div>

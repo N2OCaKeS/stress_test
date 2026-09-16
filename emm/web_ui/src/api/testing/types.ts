@@ -393,7 +393,18 @@ export interface TestRunCreateRequest {
    * РЦ), стенды не выбираются оператором.
    */
   test_run_stands?: string[];
+  /** Официальный/финальный прогон релиза — чисто информационная метка, на допуск по СТП не влияет. */
   final?: boolean;
+  /**
+   * Только вместе с `test_run_stands`. Снимает и допуск по СТП, и требование
+   * готовности теста — весь пул стенда уходит в очередь как есть.
+   */
+  debug?: boolean;
+  /**
+   * Только без `test_run_stands`. Перед сборкой состава расширяет СТП этого
+   * РЦ до полного набора (`scope=full`), затем запускает уже расширенный состав.
+   */
+  full?: boolean;
   /** Ключ идемпотентности: повтор с тем же значением и тем же телом вернёт ту же кампанию, с другим телом — 409 REQUEST_ID_CONFLICT. */
   request_id?: string;
 }
@@ -403,7 +414,8 @@ export type TestRunPreviewAction =
   | "launch"
   | "skip_debug_required"
   | "skip_stand_inactive"
-  | "skip_not_in_stp";
+  | "skip_not_in_stp"
+  | "skip_stp_not_generated";
 
 /** Один тест кампании до постановки в очередь — ответ `POST /test-runs/preview`. */
 export interface TestRunPreviewEntry {
@@ -415,6 +427,13 @@ export interface TestRunPreviewEntry {
   mode: string;
   action: TestRunPreviewAction | string;
   reason: string | null;
+  /**
+   * Заполнен только при `action=skip_not_in_stp` — id уже существующего
+   * СТП-прогона этого контекста, куда можно добавить тест
+   * (`POST /stp/test-runs/{id}/add-test`). При `skip_stp_not_generated` СТП
+   * для этого контекста ещё не генерировалась — добавлять некуда.
+   */
+  stp_test_run_id?: string | null;
 }
 
 /** Ответ `POST /test-runs/preview` — состав кампании без побочных эффектов. */
@@ -448,10 +467,18 @@ export interface TestRun {
   created_by: string | null;
 }
 
+/** Один частичный провал синхронизации СТП (`full=True`) — не про постановку в очередь. */
+export interface TestRunStpSyncError {
+  stand_id: string | null;
+  error_code: string;
+  message: string;
+}
+
 /** Ответ `POST /test-runs` — карточка + отчёт о частичных провалах постановки. */
 export interface TestRunCreateResponse extends TestRun {
   stands_without_tests: string[];
   enqueue_errors: TestRunPartialError[];
+  stp_sync_errors: TestRunStpSyncError[];
 }
 
 /** Один дочерний queue_item в детальной карточке кампании. */

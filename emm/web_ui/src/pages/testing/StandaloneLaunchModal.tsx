@@ -4,11 +4,21 @@ import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { useQuery } from "@/api/auth/useQuery";
-import { apiErrMsg } from "@/api/client";
+import { apiErrMsg, ApiError } from "@/api/client";
 import { listOsVersions, resolveOsKernels } from "@/api/server/osVersions";
 import { listTestDefinitions } from "@/api/testing/testDefinitions";
 import { listTestStands, getTestStand } from "@/api/testing/testStands";
 import { launchQueueItem } from "@/api/testing/queueItems";
+import { addTestToStp } from "@/api/testing/stp";
+
+/**
+ * Подсказка §E2 при отказе `TEST_NOT_IN_STP`/`STP_RUN_NOT_FOUND`: различает
+ * случай (a) — СТП для контекста уже есть, просто наш тест не в ней (можно
+ * добавить, `runId` указывает куда) — от случая (b) — СТП для этого
+ * стенда/РЦ/ядра/режима не генерировалась вовсе (добавлять некуда, нужна
+ * сперва генерация). См. `launch_stp.py::require_membership`.
+ */
+type StpPrompt = { kind: "add"; runId: string } | { kind: "not_generated" };
 
 export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => void; onLaunched: (id: string) => void }) {
   const versionsQ = useQuery(() => listOsVersions({ limit: 500 }), []);
@@ -25,6 +35,8 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
   const [debug, setDebug] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [stpPrompt, setStpPrompt] = useState<StpPrompt | null>(null);
+  const [addBusy, setAddBusy] = useState(false);
   const request = useRef({ fingerprint: "", id: "" });
   const test = testsQ.data?.items.find((item) => item.id === testId);
   const resolvedStand = debug ? standId : test?.pinned_stand_id ?? "";
@@ -40,16 +52,42 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
     } catch (error) { setError(apiErrMsg(error, "Не удалось обнаружить ядра ОС")); }
     finally { setBusy(false); }
   }
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    if (busy) return;
+  async function attemptLaunch() {
     const body = { test_id: testId, stand_id: resolvedStand, os_version_id: rc.trim(), kernel: kernel.trim(), debug_mode: debug };
     const fingerprint = JSON.stringify(body);
     if (request.current.fingerprint !== fingerprint) request.current = { fingerprint, id: crypto.randomUUID() };
-    setBusy(true); setError("");
-    try { onLaunched((await launchQueueItem({ ...body, request_id: request.current.id })).id); }
-    catch (error) { setError(apiErrMsg(error, "Не удалось запустить тест")); }
-    finally { setBusy(false); }
+    setBusy(true); setError(""); setStpPrompt(null);
+    try {
+      onLaunched((await launchQueueItem({ ...body, request_id: request.current.id })).id);
+    } catch (err) {
+      const runId = err instanceof ApiError && err.errorCode === "TEST_NOT_IN_STP" ? err.details?.stp_test_run_id : undefined;
+      if (typeof runId === "string") {
+        setStpPrompt({ kind: "add", runId });
+      } else if (err instanceof ApiError && err.errorCode === "STP_RUN_NOT_FOUND") {
+        setStpPrompt({ kind: "not_generated" });
+      } else {
+        setError(apiErrMsg(err, "Не удалось запустить тест"));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    await attemptLaunch();
+  }
+  async function addToStpAndRetry(runId: string) {
+    setAddBusy(true);
+    try {
+      const op = await addTestToStp(runId, { test_id: testId });
+      if (op.status === "succeeded") { await attemptLaunch(); }
+      else { setStpPrompt(null); setError(`Добавление в СТП: ${op.status}${op.last_error ? " — " + op.last_error : ""}`); }
+    } catch (err) {
+      setError(apiErrMsg(err, "Не удалось добавить тест в СТП"));
+    } finally {
+      setAddBusy(false);
+    }
   }
   const unavailable = !debug && test && test.readiness !== "ready";
   return <Modal open onOpenChange={(open) => { if (!open && !busy) onClose(); }} title="Одиночный запуск" width="md">
@@ -71,6 +109,19 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
       <div className="text-xs text-dim">{debug ? "Отладка вне прогона: результат не записывается в СТП и Zephyr." : "Запуск вне прогона: результат записывается в СТП выбранного РЦ, ядра и режима теста. Тест должен входить в эту СТП."}</div>
       {unavailable && <div className="text-xs text-warn">Статус теста допускает только debug.</div>}
       {!debug && test && !resolvedStand && <div className="text-xs text-warn">Для обычного запуска привяжите тест к стенду в каталоге.</div>}
+      {stpPrompt?.kind === "add" && (
+        <div className="text-xs grid gap-2 surface-2 border border-token rounded p-2">
+          <div className="text-warn">Тест отсутствует в выбранной СТП.</div>
+          <Button type="button" size="sm" variant="primary" disabled={addBusy} onClick={() => addToStpAndRetry(stpPrompt.runId)}>
+            {addBusy ? "Добавляем…" : "Добавить в СТП и запустить"}
+          </Button>
+        </div>
+      )}
+      {stpPrompt?.kind === "not_generated" && (
+        <div className="text-xs text-warn">
+          Для этого стенда/РЦ/ядра/режима ещё не сгенерирована СТП — сначала выполните генерацию в разделе «Тестирование → СТП».
+        </div>
+      )}
       {error && <div role="alert" className="text-xs text-danger">{error}</div>}
       <Button type="submit" variant="primary" disabled={busy || !testId || !resolvedStand || !rc.trim() || !kernel.trim() || !!unavailable}>{busy ? "Постановка в очередь…" : "Запустить тест"}</Button>
     </form>

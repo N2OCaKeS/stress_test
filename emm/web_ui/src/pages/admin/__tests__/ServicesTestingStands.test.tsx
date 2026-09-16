@@ -223,6 +223,7 @@ describe("ServicesTestingStands — управление стендами пул
         kernel: "6.1",
         test_run_stands: ["ts_1"],
         final: false,
+        debug: false,
       }),
     );
     expect(await screen.findByText("будет запущен")).toBeInTheDocument();

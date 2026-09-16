@@ -224,6 +224,7 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
       test_run_stands: ["stand_1", "stand_2"],
       stands_without_tests: [],
       enqueue_errors: [],
+      stp_sync_errors: [],
     };
     createTestRunMock.mockResolvedValue(response);
 
@@ -245,9 +246,45 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
       expect(createTestRunMock).toHaveBeenCalledWith({
         os_version_id: "osv_real",
         final: false,
+        full: false,
       }),
     );
     expect(listTestStandsMock).not.toHaveBeenCalled();
+  });
+
+  it("«Полный прогон» вызывает createTestRun с full=true", async () => {
+    const response: TestRunCreateResponse = {
+      ...RUN_1,
+      id: "run_full",
+      test_run_stands: ["stand_1"],
+      stands_without_tests: [],
+      enqueue_errors: [],
+      stp_sync_errors: [],
+    };
+    createTestRunMock.mockResolvedValue(response);
+
+    renderHarness();
+    await screen.findByText("run_1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Запустить прогон" }));
+    await screen.findByText(
+      "Состав определяется активным составом СТП выбранного РЦ — стенды и ядра выводятся автоматически",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Выберите РЦ" }));
+    fireEvent.click(await screen.findByRole("option", { name: "1.7.1.44" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Полный прогон/ }));
+
+    const submitButtons = screen.getAllByRole("button", { name: /Запустить прогон/ });
+    fireEvent.click(submitButtons[submitButtons.length - 1]);
+
+    await waitFor(() =>
+      expect(createTestRunMock).toHaveBeenCalledWith({
+        os_version_id: "osv_real",
+        final: false,
+        full: true,
+      }),
+    );
   });
 
   it("realtime-таймер: элапсед running queue_item растёт со временем без повторного getTestRun", async () => {

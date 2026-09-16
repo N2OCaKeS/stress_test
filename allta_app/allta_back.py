@@ -95,7 +95,8 @@ TEST_FLAGS: dict[str, str] = {
     # -kernel (dest='KERNELTEST')
     'SegFault': '-kernel segfault',
     'XFS mem leak': '-kernel xfs_memory_leak',
-    
+    'OS usage': '-kernel usage_os',
+
     # -olap (dest='PSQL_OLAP')
     'PSQL OLAP-hq': '-olap heavy_queries',
 

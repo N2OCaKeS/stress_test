@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
 import { ToastProvider } from "@/contexts/ToastContext";
+import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import { Testing } from "@/pages/testing/Testing";
 
 function renderTesting(path = "/testing") {
@@ -11,11 +12,13 @@ function renderTesting(path = "/testing") {
     <MemoryRouter initialEntries={[path]}>
       <ThemeProvider>
         <ToastProvider>
-          <PersonaProvider>
-            <Routes>
-              <Route path="/testing/:section?" element={<Testing />} />
-            </Routes>
-          </PersonaProvider>
+          <ConfirmProvider>
+            <PersonaProvider>
+              <Routes>
+                <Route path="/testing/:section?" element={<Testing />} />
+              </Routes>
+            </PersonaProvider>
+          </ConfirmProvider>
         </ToastProvider>
       </ThemeProvider>
     </MemoryRouter>,

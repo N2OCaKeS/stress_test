@@ -26,13 +26,21 @@ async def list_by_run(db: AsyncSession, stp_test_run_id: str) -> list[StpCell]:
     return list((await db.execute(stmt)).scalars())
 
 
-async def list_by_runs(db: AsyncSession, stp_test_run_ids: list[str]) -> list[StpCell]:
+async def list_by_runs(
+    db: AsyncSession, stp_test_run_ids: list[str], *, is_active: bool | None = None,
+) -> list[StpCell]:
     """Batch-выборка ячеек сразу нескольких прогонов — используется публикацией
-    СТП-матрицы (`services/stp_matrix.py`), чтобы не гонять по одному запросу
-    на прогон."""
+    СТП-матрицы (`services/stp_matrix.py`) и составом кампании
+    (`services/test_run.py`), чтобы не гонять по одному запросу на прогон.
+
+    `is_active=None` (дефолт) — без фильтра, как было; `True`/`False` —
+    только активные/только деактивированные ячейки на уровне SQL, а не
+    Python-фильтром у вызывающего."""
     if not stp_test_run_ids:
         return []
     stmt = select(StpCell).where(StpCell.stp_test_run_id.in_(stp_test_run_ids))
+    if is_active is not None:
+        stmt = stmt.where(StpCell.is_active == is_active)
     return list((await db.execute(stmt)).scalars())
 
 

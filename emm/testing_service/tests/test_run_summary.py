@@ -386,6 +386,19 @@ class TestPostRunSummary:
         assert "Нагрузочное тестирование" in calls["add_comment"][0]
         assert len(calls["update_comment"]) == 0
 
+    async def test_comment_link_text_quotes_the_blog_title(self, mock_confluence, mock_secret_client):
+        """Легаси: `Добавлены результаты для "{заголовок блога}"` — не голый URL."""
+        calls, _state = mock_confluence
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+        run_id = await _seed_test_run(department_id="dep_link_text")
+        await _seed_integration_settings("dep_link_text")
+
+        async with AsyncSessionLocal() as db:
+            await run_summary_svc.post_run_summary(db, run_id)
+
+        body = calls["add_comment"][0]
+        assert 'Добавлены результаты для "RC-test оперативного обновления Astra Linux SE 1.8.5"' in body
+
     async def test_unchanged_body_is_a_noop(self, mock_confluence, mock_secret_client):
         calls, state = mock_confluence
         mock_secret_client["cred_x"] = ("bot", "tok123")

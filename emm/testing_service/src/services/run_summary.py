@@ -92,12 +92,19 @@ def render_titles(version: str, rc_label: str, *, is_urgent_update: bool = False
     return stp_title, blog_title
 
 
-def _render_body(stp_page_url: str) -> str:
+def _render_body(stp_page_url: str, blog_title: str) -> str:
+    """Легаси-текст ссылки (`libconfluence.py::_get_load_page_statistics_url`):
+    `Добавлены результаты для "{blog_title}"` — цитирует заголовок ЭТОГО ЖЕ
+    блог-поста, а не голый URL."""
     return (
         f"<p><strong>{_COMMENT_TITLE}</strong></p>"
-        f'<p><a href="{stp_page_url}">{stp_page_url}</a></p>'
+        f'<p><a href="{stp_page_url}">Добавлены результаты для "{_escape_html(blog_title)}"</a></p>'
         f"<p><em>this comment was automatically created</em></p>"
     )
+
+
+def _escape_html(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 
 async def _resolve_confluence_bearer(db: AsyncSession, department_id: str) -> tuple[str, str] | None:
@@ -193,7 +200,7 @@ async def _do_post_run_summary(
         )
 
     stp_page_url = f"{base_url}/pages/viewpage.action?pageId={stp_page_id}"
-    body_html = _render_body(stp_page_url)
+    body_html = _render_body(stp_page_url, blog_title)
 
     if existing is not None and existing.confluence_comment_id and existing.body_snapshot == body_html:
         # Ничего не изменилось с прошлого прогона того же RC — Confluence не дёргаем.

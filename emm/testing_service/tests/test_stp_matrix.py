@@ -64,11 +64,11 @@ async def _seed_run(*, os_version_id: str, mode: str, kernel: str, stand_id: str
         return run.id
 
 
-async def _seed_cell(*, case_id: str, run_id: str, status: str) -> str:
+async def _seed_cell(*, case_id: str, run_id: str, status: str, is_active: bool = True) -> str:
     async with AsyncSessionLocal() as db:
         cell = await stp_cell_repo.create(db, {
             "id": stp_cell_id(), "stp_test_case_id": case_id, "stp_test_run_id": run_id,
-            "status": status,
+            "status": status, "is_active": is_active,
         })
         await db.commit()
         return cell.id
@@ -337,6 +337,31 @@ class TestPublishStpMatrix:
             "Состав тестового прогона", "STRESS_stp ⬝ 1.8.5", "1.8.5.46",
         ]
         assert pages[result.confluence_page_id]["parent_id"] == result.confluence_parent_page_id
+
+    async def test_deactivated_cells_are_excluded_from_matrix(
+        self, dept_a, mock_secret_client, mock_confluence_pages,
+    ):
+        """Деактивированная ячейка — исключённая из состава, но сохранённая
+        история; в публикуемую матрицу попадать не должна."""
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+        await _seed_integration_settings(dept_a)
+        stand_id = await _seed_stand(dept_a)
+        active_case = await _seed_case("pg", "PostgreSQL")
+        inactive_case = await _seed_case("fio", "fio")
+        run_id = await _seed_run(os_version_id="1.8.5.46", mode="orel", kernel="6.1.0", stand_id=stand_id)
+        await _seed_cell(case_id=active_case, run_id=run_id, status="pass")
+        await _seed_cell(case_id=inactive_case, run_id=run_id, status="pass", is_active=False)
+
+        async with AsyncSessionLocal() as db:
+            from tests.test_queue import _identity
+            result = await stp_matrix_svc.publish_stp_matrix(
+                db, _identity(department_id=dept_a),
+                department_id=dept_a, os_version_id="1.8.5.46",
+            )
+
+        assert result.status == StpMatrixPublicationStatus.POSTED
+        assert "PostgreSQL" in result.body_snapshot
+        assert "fio" not in result.body_snapshot
 
     async def test_catalog_id_is_resolved_to_the_version_string(
         self, dept_a, mock_secret_client, mock_confluence_pages, mock_os_version_catalog,

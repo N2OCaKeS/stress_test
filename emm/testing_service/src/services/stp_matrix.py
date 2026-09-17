@@ -366,7 +366,7 @@ async def publish_stp_matrix(
             status=StpMatrixPublicationStatus.FAILED, identity=identity, error=exc.message[:1024],
         )
 
-    cells = await stp_cell_repo.list_by_runs(db, [r.id for r in runs])
+    cells = await stp_cell_repo.list_by_runs(db, [r.id for r in runs], is_active=True)
     case_ids = sorted({c.stp_test_case_id for c in cells})
     cases = await stp_test_case_repo.list_by_ids(db, case_ids)
 

@@ -18,7 +18,7 @@ import { Modal } from "@/components/ui/Modal";
 
 export type BadgeKind = "ok" | "warn" | "danger" | "accent" | "info";
 export type StandStatus = "testing" | "manual" | "idle" | "offline";
-export type QueueState = "running" | "pending" | "done" | "failed";
+export type QueueState = "running" | "pending" | "done" | "failed" | "skipped" | "paused";
 
 export interface KnownIssue {
   ticket: string;
@@ -31,6 +31,31 @@ export interface QueueItem {
   meta: string;
   log?: string;
   knownIssue?: KnownIssue;
+  /** id реального `queue_item` — есть только у живых данных testing_service. */
+  itemId?: string;
+  /** Состояние из ответа API как есть, до маппинга в `QueueState`. */
+  rawState?: string;
+  /** Доступность текста лога этой попытки (`PublicQueueItem.log_status`). */
+  logStatus?: string;
+  /** Заказанное прерывание, пока его не подтвердил воркер. */
+  interruptAction?: "skip" | "pause" | null;
+  /** Терминальная попытка, для которой доступен ретрай. */
+  canRetry?: boolean;
+}
+
+/**
+ * Привязка презентационного стенда к реальным сущностям testing_service.
+ * Есть только в живом режиме — demo-стенды `STANDS` её не несут, поэтому
+ * управление очередью в mock-режиме просто не показывается.
+ */
+export interface StandLive {
+  standId: string;
+  /** Активный item (`queued`/`preparing`/`ready`/`running`), если он есть. */
+  activeItemId: string | null;
+  activeState: string | null;
+  /** Остановленный item стенда — стенд стоит, пока его не продолжат. */
+  pausedItemId: string | null;
+  interruptAction: "skip" | "pause" | null;
 }
 
 export interface StandMetrics {
@@ -57,6 +82,8 @@ export interface Stand {
   queue: QueueItem[];
   /** физический стенд по умолчанию (undefined); "virtual" — ВМ на vms_hub, доступна только в dev-режиме запуска теста */
   kind?: "physical" | "virtual";
+  /** Реальные id стенда и его очереди — только в живом режиме. */
+  live?: StandLive;
 }
 
 export const STATUS_META: Record<StandStatus, { label: string; icon: LucideIcon; badge: BadgeKind }> = {
@@ -71,6 +98,8 @@ export const QUEUE_TEXT: Record<QueueState, string> = {
   pending: "Ожидает",
   done: "Выполнено",
   failed: "Провалено",
+  skipped: "Пропущено",
+  paused: "Остановлено",
 };
 
 type QueueTuple = [string, QueueState, string, string?, KnownIssue?];
@@ -248,7 +277,7 @@ export function queueStats(queue: QueueItem[]) {
       acc[item.state] += 1;
       return acc;
     },
-    { done: 0, failed: 0, pending: 0, running: 0 } satisfies Record<QueueState, number>,
+    { done: 0, failed: 0, pending: 0, running: 0, skipped: 0, paused: 0 } satisfies Record<QueueState, number>,
   );
 }
 
@@ -256,12 +285,14 @@ export function queueBadge(state: QueueState): BadgeKind {
   if (state === "done") return "ok";
   if (state === "failed") return "danger";
   if (state === "running") return "accent";
+  if (state === "skipped") return "info";
   return "warn";
 }
 
 export function currentQueueItem(stand: Stand) {
   return (
     stand.queue.find((item) => item.state === "running") ??
+    stand.queue.find((item) => item.state === "paused") ??
     stand.queue.find((item) => item.state === "failed") ??
     stand.queue[0]
   );

@@ -37,14 +37,22 @@ export interface TestStandSummary {
   is_active: boolean;
 }
 
-/** Состояние элемента очереди (`src/core/constants.py::QueueItemState`). */
+/**
+ * Состояние элемента очереди (`src/core/constants.py::QueueItemState`).
+ *
+ * `skipped` — терминальное, тест прерван без исхода и слот стенда освобождён.
+ * `paused` — не терминальное: тест прерван, стенд остаётся занятым и стоит,
+ * пока не позовут `POST /test-stands/{id}/resume-queue`.
+ */
 export type QueueItemState =
   | "queued"
   | "preparing"
   | "ready"
   | "running"
   | "succeeded"
-  | "failed";
+  | "failed"
+  | "skipped"
+  | "paused";
 
 /**
  * Ответ `GET /test-stands/{id}/current-queue-item` — активный (не терминальный)
@@ -55,6 +63,8 @@ export interface QueueItemSummary {
   state: QueueItemState | string;
   test_id: string;
   started_at: Iso8601 | null;
+  /** Заказанное, но ещё не подтверждённое воркером прерывание. */
+  interrupt_action?: "skip" | "pause" | null;
 }
 
 // ── global-variables ──────────────────────────────────────────────────────

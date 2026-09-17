@@ -1,24 +1,26 @@
 /**
  * «Рабочая зона» тестирования — обзор пула (§F плана 2026-09-11) + список
- * стендов + панель prepare/testenv. Три визуальных концепта одного и того же
- * списка стендов (карточки/полоски/очереди) сохранены как есть — это
+ * стендов + управление очередью стенда. Три визуальных концепта одного и того
+ * же списка стендов (карточки/полоски/очереди) сохранены как есть — это
  * материал для согласования с руководителем, какой вид удобнее для
- * повседневной работы; окончательный выбор владелец сделает позже.
+ * повседневной работы; по умолчанию открываются «Полоски».
  *
  * Обзор пула (`PoolOverviewPanel`) — реальные агрегаты `testing_service`
  * (`GET /pool-overview`): очередь/исходы по последней попытке логического
  * теста и статусы стендов (восстановление/недоступность/тест/готовность) из
- * живого ping/busy server_service. Заменяет прежний синтетический
- * `FleetDashboard` (детерминированные CPU/RAM-заглушки, `placeholderMetrics`)
- * — тот остаётся только под список стендов ниже, у которого своя телеметрия
- * пока не появилась.
+ * живого ping/busy server_service.
  *
  * Источник стендов ниже — `testing_service` (`listTestStands`/`getTestStand`,
  * живая карточка сервера приходит вложенной в ответ `getTestStand`); очередь
- * стенда строится из единственного активного элемента
- * (`getCurrentQueueItem`), а не полной истории. В mock-режиме
- * (`VITE_USE_MOCK_AUTH=true`) страница по-прежнему работает на demo-данных
- * `_shared.tsx`, как и раньше.
+ * стенда — реальные элементы `GET /queue-items`, сгруппированные по стенду.
+ * Управление очередью («Пропустить»/«Остановить»/«Продолжить») ходит в
+ * `POST /queue-items/{id}/skip|pause` и `POST /test-stands/{id}/resume-queue`.
+ * Пока прерывание не подтвердил воркер, активный item несёт
+ * `interrupt_action` — кнопки на это время дизейблятся.
+ *
+ * В mock-режиме (`VITE_USE_MOCK_AUTH=true`) страница по-прежнему работает на
+ * demo-данных `_shared.tsx`; управление очередью там не показывается — за ним
+ * нет ни реальных id, ни бэкенда.
  */
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -36,13 +38,13 @@ import {
   LayoutGrid,
   ListChecks,
   ListTree,
+  Pause,
   Play,
   RefreshCcw,
   RotateCw,
   Server,
-  Square,
+  SkipForward,
   Thermometer,
-  Trash2,
 } from "lucide-react";
 import { LaunchRunModal, type RunsState } from "./runs";
 import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
@@ -54,7 +56,7 @@ import {
   LoadMeter,
   LogViewerModal,
   MetaRow,
-  OS_VERSION_IDS as RC_IDS,
+  OS_VERSIONS,
   Stat,
   StatusBadge,
   STANDS,
@@ -70,22 +72,26 @@ import {
   type StandMetrics,
   type StandStatus,
 } from "./_shared";
+import { AttemptLogViewer } from "./AttemptLogViewer";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Modal } from "@/components/ui/Modal";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
+import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
+import { getTestStand, listTestStands } from "@/api/testing/testStands";
 import {
-  getCurrentQueueItem,
-  getTestStand,
-  listTestStands,
-} from "@/api/testing/testStands";
-import type {
-  QueueItemSummary,
-  TestRun,
-  TestStand,
-} from "@/api/testing/types";
+  launchQueueItem,
+  listQueueItems,
+  pauseQueueItem,
+  resumeStandQueue,
+  retryQueueItem,
+  skipQueueItem,
+  type PublicQueueItem,
+} from "@/api/testing/queueItems";
+import { listTestDefinitions } from "@/api/testing/testDefinitions";
+import type { TestDefinition, TestRun, TestStand } from "@/api/testing/types";
 import { listOsVersions } from "@/api/server/osVersions";
 import { getPoolOverview } from "@/api/testing/poolOverview";
 import type {
@@ -101,6 +107,21 @@ type StandFilter = "all" | "testing" | "busy";
 interface LogTarget {
   stand: Stand;
   item?: QueueItem;
+}
+
+/** Опция выпадашки РЦ вместе с ядрами, которые на ней доступны. */
+interface RcOption {
+  value: string;
+  label: string;
+  kernels: string[];
+}
+
+/** Тест, доступный для постановки в очередь: реальный каталог или demo-список. */
+interface LaunchableTest {
+  id: string;
+  label: string;
+  /** Стенд, за которым тест закреплён (`pinned_stand_id`), если закреплён. */
+  standKey: string | null;
 }
 
 // ── живые данные testing_service ────────────────────────────────────────────
@@ -153,28 +174,108 @@ function placeholderMetrics(seed: number, status: StandStatus): StandMetrics {
 function mapQueueItemState(state: string): QueueState {
   if (state === "succeeded") return "done";
   if (state === "failed") return "failed";
+  if (state === "skipped") return "skipped";
+  if (state === "paused") return "paused";
   if (state === "queued") return "pending";
   return "running"; // preparing | ready | running
 }
 
-interface LiveStandData {
-  stand: TestStand;
-  current: QueueItemSummary | null;
+const QUEUE_STATE_NOTE: Record<string, string> = {
+  queued: "ожидает своей очереди",
+  preparing: "стенд готовится к тесту",
+  ready: "стенд готов, ждём воркер",
+  running: "выполняется на стенде",
+  paused: "остановлен, ждёт продолжения очереди",
+  skipped: "пропущен",
+  succeeded: "завершён успешно",
+  failed: "завершён с ошибкой",
+};
+
+/** Состояния, в которых item считается активной работой стенда. */
+const ACTIVE_QUEUE_STATES = ["queued", "preparing", "ready", "running"];
+
+const TERMINAL_QUEUE_STATES = ["succeeded", "failed", "skipped"];
+
+function itemTitle(item: PublicQueueItem): string {
+  return item.test_code || item.test_name || item.test_id;
 }
 
-/** Загружает список стендов + живую карточку сервера + текущий элемент очереди на каждый. */
-async function fetchLiveStands(): Promise<LiveStandData[]> {
+/** `PublicQueueItem` → презентационный элемент очереди. */
+function toQueueItem(item: PublicQueueItem): QueueItem {
+  const note = QUEUE_STATE_NOTE[item.state] ?? item.state;
+  const interrupt = item.interrupt_action ?? null;
+  return {
+    title: itemTitle(item),
+    state: mapQueueItemState(item.state),
+    meta: interrupt
+      ? interrupt === "skip"
+        ? "прерывается, будет пропущен"
+        : "прерывается, встанет на паузу"
+      : item.error
+        ? `${note} · ${item.error}`
+        : note,
+    itemId: item.id,
+    rawState: item.state,
+    logStatus: item.log_status,
+    interruptAction: interrupt,
+    canRetry: TERMINAL_QUEUE_STATES.includes(item.state) && item.is_current !== false,
+  };
+}
+
+interface StandQueue {
+  active: PublicQueueItem | null;
+  paused: PublicQueueItem | null;
+}
+
+/** Загружает список стендов + живую карточку сервера на каждый. */
+async function fetchLiveStands(): Promise<TestStand[]> {
   const list = await listTestStands({ limit: 500 });
-  const detailed = await Promise.all(list.items.map((item) => getTestStand(item.id)));
-  const current = await Promise.all(
-    detailed.map((stand) => getCurrentQueueItem(stand.id).catch(() => null)),
-  );
-  return detailed.map((stand, index) => ({ stand, current: current[index] }));
+  return Promise.all(list.items.map((item) => getTestStand(item.id)));
+}
+
+/**
+ * Активный и остановленный элементы очереди каждого стенда — двумя списочными
+ * запросами на весь пул, а не поштучным `current-queue-item` на стенд.
+ * `current-queue-item` отдаёт урезанную сводку без `interrupt_action`, а он
+ * здесь нужен: пока прерывание не подтверждено воркером, кнопки дизейблятся.
+ *
+ * Фильтр по `paused` отваливается на бэкенде, который ещё не знает этого
+ * состояния — тогда считаем, что остановленных элементов нет, и не роняем
+ * всю страницу.
+ */
+async function fetchStandQueues(): Promise<Map<string, StandQueue>> {
+  const [activePage, pausedPage] = await Promise.all([
+    listQueueItems({ kind: "all", states: ACTIVE_QUEUE_STATES, order: "asc", limit: 500 }),
+    listQueueItems({ kind: "all", states: ["paused"], order: "asc", limit: 500 }).catch(() => null),
+  ]);
+  const byStand = new Map<string, StandQueue>();
+  const slot = (standId: string): StandQueue => {
+    const existing = byStand.get(standId);
+    if (existing) return existing;
+    const fresh: StandQueue = { active: null, paused: null };
+    byStand.set(standId, fresh);
+    return fresh;
+  };
+  for (const item of activePage.items) {
+    const entry = slot(item.stand_id);
+    // Список отсортирован по created_at asc — первым идёт тот, что раньше
+    // поставлен в очередь; running всегда выигрывает у ждущих.
+    if (!entry.active || item.state === "running") entry.active = item;
+  }
+  for (const item of pausedPage?.items ?? []) {
+    const entry = slot(item.stand_id);
+    if (!entry.paused) entry.paused = item;
+  }
+  return byStand;
 }
 
 /** Строит `Stand[]` (совместимый с demo-типом из `_shared.tsx`) из живых данных testing_service. */
-function mapLiveStands(data: LiveStandData[], osNameById: Map<string, string>): Stand[] {
-  return data.map(({ stand, current }, index) => {
+function mapLiveStands(
+  data: TestStand[],
+  queues: Map<string, StandQueue>,
+  osNameById: Map<string, string>,
+): Stand[] {
+  return data.map((stand, index) => {
     const server = asServerCard(stand.server);
     const unavailable = stand.server_unavailable || !server;
     const busy = server?.busy_state ?? null;
@@ -188,65 +289,200 @@ function mapLiveStands(data: LiveStandData[], osNameById: Map<string, string>): 
     const name = server?.display_name || server?.hostname || stand.server_id;
     const ip = server?.ip_address || "—";
     const os = server?.os_version_id ? osNameById.get(server.os_version_id) ?? "—" : "—";
-    const currentTitle = current
-      ? `тест ${current.test_id.slice(0, 8)}`
+    const standQueue = queues.get(stand.id) ?? { active: null, paused: null };
+    const primary = standQueue.active ?? standQueue.paused;
+    const queue: QueueItem[] = [standQueue.paused, standQueue.active]
+      .filter((item): item is PublicQueueItem => item !== null)
+      .map(toQueueItem);
+    const currentTitle = primary
+      ? itemTitle(primary)
       : status === "manual"
         ? server?.busy_note || "ручная работа"
         : "Нет активной работы";
-    const currentMeta = current
-      ? `${current.state} · занято testing_service`
+    const currentMeta = primary
+      ? queue.find((item) => item.itemId === primary.id)?.meta ?? primary.state
       : status === "offline"
         ? "стенд недоступен"
         : status === "manual"
           ? "занят вне testing_service"
           : "стенд свободен";
-    const queue: QueueItem[] = current
-      ? [{ title: currentTitle, state: mapQueueItemState(current.state), meta: currentMeta }]
-      : [];
     return {
       id: index + 1,
       name,
       ip,
       status,
       os,
-      kernel: "—",
+      kernel: primary?.kernel || "—",
       currentTitle,
       currentMeta,
       metrics: placeholderMetrics(hashSeed(stand.id), status),
       queue,
+      live: {
+        standId: stand.id,
+        activeItemId: standQueue.active?.id ?? null,
+        activeState: standQueue.active?.state ?? null,
+        pausedItemId: standQueue.paused?.id ?? null,
+        interruptAction: standQueue.active?.interrupt_action ?? null,
+      },
     };
   });
 }
 
+/** Ключ, по которому тест считается закреплённым за стендом. */
+function standKey(stand: Stand): string {
+  return stand.live?.standId ?? String(stand.id);
+}
+
+// ── управление очередью стенда ──────────────────────────────────────────────
+
+interface QueueControls {
+  /** Стенд, по которому сейчас летит запрос — его кнопки заблокированы. */
+  pendingStandId: string | null;
+  skip: (stand: Stand) => void;
+  pause: (stand: Stand) => void;
+  resume: (stand: Stand) => void;
+}
+
+/**
+ * Кнопки управления очередью стенда. Показываются только на живых данных:
+ * demo-стенды не несут реальных id, управлять там нечем.
+ */
+function StandQueueActions({
+  stand,
+  controls,
+  swallowEvents,
+  scope = "all",
+}: {
+  stand: Stand;
+  controls: QueueControls;
+  /** Кнопки внутри `<summary>` — клик не должен схлопывать/раскрывать полоску. */
+  swallowEvents?: boolean;
+  /** Ограничить набор кнопок одним элементом очереди — нужно в списке очереди. */
+  scope?: "all" | "active" | "paused";
+}) {
+  const live = stand.live;
+  if (!live || (!live.activeItemId && !live.pausedItemId)) return null;
+  const showActive = scope !== "paused" && live.activeItemId !== null;
+  const showPaused = scope !== "active" && live.pausedItemId !== null;
+  const busy = controls.pendingStandId === live.standId;
+  const interrupting = live.interruptAction !== null;
+  const guard = (action: () => void) => (event: React.MouseEvent) => {
+    if (swallowEvents) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    action();
+  };
+  return (
+    <>
+      {interrupting && showActive && <span className="text-xs text-warn whitespace-nowrap">Останавливается…</span>}
+      {showActive && (
+        <>
+          <Button
+            size="sm"
+            type="button"
+            className="inline-flex items-center gap-1"
+            disabled={busy || interrupting}
+            onClick={guard(() => controls.skip(stand))}
+            title="Прервать текущий тест и перейти к следующему в очереди стенда"
+          >
+            <SkipForward className="w-3.5 h-3.5" />
+            Пропустить
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            type="button"
+            className="inline-flex items-center gap-1"
+            disabled={busy || interrupting}
+            onClick={guard(() => controls.pause(stand))}
+            title="Прервать текущий тест без исхода — стенд встанет до «Продолжить»"
+          >
+            <Pause className="w-3.5 h-3.5" />
+            Остановить
+          </Button>
+        </>
+      )}
+      {showPaused && (
+        <Button
+          variant="primary"
+          size="sm"
+          type="button"
+          className="inline-flex items-center gap-1"
+          disabled={busy}
+          onClick={guard(() => controls.resume(stand))}
+          title="Вернуть остановленный тест в конец очереди и продолжить работу стенда"
+        >
+          <Play className="w-3.5 h-3.5" />
+          Продолжить
+        </Button>
+      )}
+    </>
+  );
+}
+
 export function TestingOverview({ runsState }: { runsState: RunsState }) {
   const mockMode = useMockMode();
-  const [concept, setConcept] = useState<ConceptId>("cards");
+  const toast = useToast();
+  const [concept, setConcept] = useState<ConceptId>("strips");
   const [filter, setFilter] = useState<StandFilter>("all");
-  const [stands, setStands] = useState<Stand[]>(() => (mockMode ? STANDS : []));
   const [queueStandId, setQueueStandId] = useState<number | null>(null);
   const [launchModal, setLaunchModal] = useState<LaunchModal>(null);
   const [logTarget, setLogTarget] = useState<LogTarget | null>(null);
   const [dashboardOpen, setDashboardOpen] = useState(true);
+  const [pendingStandId, setPendingStandId] = useState<string | null>(null);
 
   const liveStandsQuery = useQuery(fetchLiveStands, [], { enabled: !mockMode });
+  const queuesQuery = useQuery(fetchStandQueues, [], { enabled: !mockMode, keepPreviousDataOnError: true });
   const osVersionsQuery = useQuery(() => listOsVersions({ limit: 200 }), [], { enabled: !mockMode });
+  const testsQuery = useQuery(() => listTestDefinitions({ limit: 500 }), [], { enabled: !mockMode });
+
+  // Очередь меняет не только эта страница: прерывание подтверждает воркер,
+  // следующий item подхватывает сам сервис — состояние опрашивается.
+  const refetchQueues = queuesQuery.refetch;
+  useEffect(() => {
+    if (mockMode) return;
+    const timer = setInterval(refetchQueues, 5000);
+    return () => clearInterval(timer);
+  }, [mockMode, refetchQueues]);
 
   const osNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const version of osVersionsQuery.data?.items ?? []) map.set(version.id, version.name);
     return map;
   }, [osVersionsQuery.data]);
-  const rcOptions = mockMode ? RC_IDS : (osVersionsQuery.data?.items.map((v) => v.name) ?? []);
 
-  // Живые стенды подгружаются один раз при первом ответе — дальше страница
-  // управляет ими локально (та же модель, что и demo-режим), чтобы не сбивать
-  // локальные изменения очереди случайным рефетчем.
-  const [liveLoaded, setLiveLoaded] = useState(false);
-  useEffect(() => {
-    if (mockMode || liveLoaded || !liveStandsQuery.data) return;
-    setStands(mapLiveStands(liveStandsQuery.data, osNameById));
-    setLiveLoaded(true);
-  }, [mockMode, liveLoaded, liveStandsQuery.data, osNameById]);
+  const rcOptions = useMemo<RcOption[]>(
+    () =>
+      mockMode
+        ? OS_VERSIONS.map((version) => ({ value: version.id, label: version.id, kernels: version.kernels }))
+        : (osVersionsQuery.data?.items ?? []).map((version) => ({
+            value: version.id,
+            label: version.name,
+            kernels: version.kernels ?? [],
+          })),
+    [mockMode, osVersionsQuery.data],
+  );
+
+  const launchableTests = useMemo<LaunchableTest[]>(
+    () =>
+      mockMode
+        ? TEST_CATALOG.map((entry) => ({ id: entry.name, label: entry.name, standKey: String(entry.homeStandId) }))
+        : (testsQuery.data?.items ?? []).map((test: TestDefinition) => ({
+            id: test.id,
+            label: `${test.full_name} · ${test.code}`,
+            standKey: test.pinned_stand_id,
+          })),
+    [mockMode, testsQuery.data],
+  );
+
+  const stands = useMemo<Stand[]>(
+    () =>
+      mockMode
+        ? STANDS
+        : mapLiveStands(liveStandsQuery.data ?? [], queuesQuery.data ?? new Map<string, StandQueue>(), osNameById),
+    [mockMode, liveStandsQuery.data, queuesQuery.data, osNameById],
+  );
 
   const filteredStands = useMemo(() => {
     return stands.filter((stand) => {
@@ -267,52 +503,95 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
   );
   const queueStand = stands.find((stand) => stand.id === queueStandId) ?? null;
 
-  const updateQueue = (standId: number, nextQueue: QueueItem[]) => {
-    setStands((current) =>
-      current.map((stand) =>
-        stand.id === standId ? { ...stand, queue: nextQueue } : stand,
-      ),
-    );
+  async function runQueueAction(
+    standId: string,
+    action: () => Promise<unknown>,
+    okMessage: string,
+    failMessage: string,
+  ) {
+    if (pendingStandId) return;
+    setPendingStandId(standId);
+    try {
+      await action();
+      toast.success(okMessage);
+      refetchQueues();
+    } catch (error) {
+      toast.error(apiErrMsg(error, failMessage));
+    } finally {
+      setPendingStandId(null);
+    }
+  }
+
+  const queueControls: QueueControls = {
+    pendingStandId,
+    skip: (stand) => {
+      const live = stand.live;
+      if (!live?.activeItemId) return;
+      const itemId = live.activeItemId;
+      void runQueueAction(
+        live.standId,
+        () => skipQueueItem(itemId),
+        "Тест пропускается — стенд перейдёт к следующему элементу очереди",
+        "Не удалось пропустить тест",
+      );
+    },
+    pause: (stand) => {
+      const live = stand.live;
+      if (!live?.activeItemId) return;
+      const itemId = live.activeItemId;
+      void runQueueAction(
+        live.standId,
+        () => pauseQueueItem(itemId),
+        "Тест останавливается — стенд встанет до «Продолжить»",
+        "Не удалось остановить тест",
+      );
+    },
+    resume: (stand) => {
+      const live = stand.live;
+      if (!live?.pausedItemId) return;
+      void runQueueAction(
+        live.standId,
+        () => resumeStandQueue(live.standId),
+        "Очередь стенда продолжена — остановленный тест встал в её конец",
+        "Не удалось продолжить очередь стенда",
+      );
+    },
   };
-  const setStandTesting = (standId: number, testing: boolean) => {
-    setStands((current) =>
-      current.map((stand) =>
-        stand.id === standId
-          ? {
-              ...stand,
-              status: testing ? "testing" : "idle",
-              currentTitle: testing
-                ? currentQueueItem(stand)?.title ?? stand.currentTitle
-                : "Нет активной работы",
-              currentMeta: testing ? "запущено из очереди · demo" : "стенд свободен",
-            }
-          : stand,
-      ),
-    );
-  };
-  const addTestsToQueue = (standId: number, tests: string[], prepareEnv: boolean, debugMode: boolean) => {
-    setStands((current) =>
-      current.map((stand) => {
-        if (stand.id !== standId) return stand;
-        const prepItem: QueueItem[] = prepareEnv
-          ? [{ title: "Подготовка окружения", state: "pending", meta: "testenv prepare перед запуском выбранных тестов" }]
-          : [];
-        const testItems = tests.map<QueueItem>((title) => ({
-          title,
-          state: "pending",
-          meta: debugMode ? "запустить тест · debug mode" : "запустить тест",
-        }));
-        const added = [...prepItem, ...testItems];
-        return {
-          ...stand,
-          queue: [...stand.queue, ...added],
-          status: "testing",
-          currentTitle: added[0]?.title ?? stand.currentTitle,
-          currentMeta: "добавлено в очередь запуска · demo",
-        };
-      }),
-    );
-  };
+
+  async function launchTests(
+    stand: Stand,
+    testIds: string[],
+    osVersionId: string,
+    kernel: string,
+    debugMode: boolean,
+  ) {
+    const live = stand.live;
+    if (!live) {
+      setLaunchModal(null);
+      return;
+    }
+    // Backend принимает один тест за запрос — ставим выбранные по одному,
+    // чтобы частичный успех остался частичным успехом, а не откатом всего.
+    const failed: string[] = [];
+    for (const testId of testIds) {
+      try {
+        await launchQueueItem({
+          request_id: crypto.randomUUID(),
+          test_id: testId,
+          stand_id: live.standId,
+          os_version_id: osVersionId,
+          kernel,
+          debug_mode: debugMode,
+        });
+      } catch (error) {
+        failed.push(apiErrMsg(error, testId));
+      }
+    }
+    if (failed.length) toast.error(`Не поставлено в очередь: ${failed.length} из ${testIds.length}. ${failed[0]}`);
+    else toast.success(`Поставлено в очередь тестов: ${testIds.length}`);
+    refetchQueues();
+    setLaunchModal(null);
+  }
 
   return (
     <div className="grid gap-4">
@@ -398,26 +677,27 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
       {concept === "cards" && (
         <CardsConcept
           stands={filteredStands}
+          controls={queueControls}
           onOpenQueue={setQueueStandId}
-          onSetTesting={setStandTesting}
           onOpenLog={(stand, item) => setLogTarget({ stand, item })}
         />
       )}
       {concept === "strips" && (
         <StripsConcept
           stands={filteredStands}
+          controls={queueControls}
           onOpenQueue={setQueueStandId}
-          onSetTesting={setStandTesting}
           onOpenLog={(stand, item) => setLogTarget({ stand, item })}
         />
       )}
-      {concept === "queue" && <QueueConcept stands={filteredStands} />}
+      {concept === "queue" && <QueueConcept stands={filteredStands} controls={queueControls} />}
 
       {queueStand && (
         <QueueModal
           stand={queueStand}
+          controls={queueControls}
           onClose={() => setQueueStandId(null)}
-          onChange={(nextQueue) => updateQueue(queueStand.id, nextQueue)}
+          onChanged={refetchQueues}
           onOpenLog={(item) => setLogTarget({ stand: queueStand, item })}
         />
       )}
@@ -425,16 +705,22 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
         <LaunchTestModal
           stands={stands}
           rcOptions={rcOptions}
+          tests={launchableTests}
+          live={!mockMode}
           onClose={() => setLaunchModal(null)}
-          onSubmit={(standId, tests, prepareEnv, debugMode) => {
-            addTestsToQueue(standId, tests, prepareEnv, debugMode);
-            setLaunchModal(null);
-          }}
+          onSubmit={launchTests}
         />
       )}
       {launchModal === "run" && <LaunchRunModal state={runsState} onClose={() => setLaunchModal(null)} />}
-      {logTarget && (
-        <LogViewerModal stand={logTarget.stand} item={logTarget.item} onClose={() => setLogTarget(null)} />
+      {logTarget?.item?.itemId ? (
+        <AttemptLogModal
+          stand={logTarget.stand}
+          item={logTarget.item}
+          queueItemId={logTarget.item.itemId}
+          onClose={() => setLogTarget(null)}
+        />
+      ) : (
+        logTarget && <LogViewerModal stand={logTarget.stand} item={logTarget.item} onClose={() => setLogTarget(null)} />
       )}
     </div>
   );
@@ -658,13 +944,13 @@ function PoolOverviewPanel({
 
 function CardsConcept({
   stands,
+  controls,
   onOpenQueue,
-  onSetTesting,
   onOpenLog,
 }: {
   stands: Stand[];
+  controls: QueueControls;
   onOpenQueue: (standId: number) => void;
-  onSetTesting: (standId: number, testing: boolean) => void;
   onOpenLog: (stand: Stand, item?: QueueItem) => void;
 }) {
   if (!stands.length) return <EmptySearch />;
@@ -674,8 +960,8 @@ function CardsConcept({
         <StandCard
           key={stand.id}
           stand={stand}
+          controls={controls}
           onOpenQueue={onOpenQueue}
-          onSetTesting={onSetTesting}
           onOpenLog={onOpenLog}
         />
       ))}
@@ -685,13 +971,13 @@ function CardsConcept({
 
 function StripsConcept({
   stands,
+  controls,
   onOpenQueue,
-  onSetTesting,
   onOpenLog,
 }: {
   stands: Stand[];
+  controls: QueueControls;
   onOpenQueue: (standId: number) => void;
-  onSetTesting: (standId: number, testing: boolean) => void;
   onOpenLog: (stand: Stand, item?: QueueItem) => void;
 }) {
   if (!stands.length) return <EmptySearch />;
@@ -730,35 +1016,12 @@ function StripsConcept({
                   <span>всего {stand.queue.length}</span>
                   <span className="text-ok">ok {stats.done}</span>
                   <span className="text-danger">fail {stats.failed}</span>
-                  <span className="text-warn">осталось {stats.pending + stats.running}</span>
+                  <span className="text-warn">осталось {stats.pending + stats.running + stats.paused}</span>
                 </div>
                 <QueueBar queue={stand.queue} />
               </div>
               <div className="flex items-center gap-1 flex-wrap">
-                <Button size="sm"
-                  type="button"
-                  className="inline-flex items-center gap-1"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onSetTesting(stand.id, true);
-                  }}
-                >
-                  <Play className="w-3.5 h-3.5" />
-                  Старт
-                </Button>
-                <Button variant="danger" size="sm"
-                  type="button"
-                  className="inline-flex items-center gap-1"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    onSetTesting(stand.id, false);
-                  }}
-                >
-                  <Square className="w-3.5 h-3.5" />
-                  Стоп
-                </Button>
+                <StandQueueActions stand={stand} controls={controls} swallowEvents />
                 <Button size="sm"
                   type="button"
                   className="inline-flex items-center gap-1"
@@ -785,20 +1048,7 @@ function StripsConcept({
                 <div className="text-xs text-dim mb-2">Подробная информация</div>
                 <div className="text-sm">{stand.currentMeta}</div>
               </div>
-              <div className="surface-2 border border-token rounded overflow-hidden">
-                <div className="border-b border-token px-3 py-2 text-xs text-dim">Лог текущего теста</div>
-                <pre className="mono text-xs p-3 overflow-auto max-h-44 whitespace-pre-wrap">{demoQueueLog(stand, current)}</pre>
-                <div className="border-t border-token p-2 flex justify-end">
-                  <Button size="sm"
-                    type="button"
-                    className="inline-flex items-center gap-1"
-                    onClick={() => onOpenLog(stand, current)}
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Открыть журнал целиком
-                  </Button>
-                </div>
-              </div>
+              <StandLogPreview stand={stand} item={current} onOpen={onOpenLog} maxHeight="max-h-44" />
             </div>
           </details>
         );
@@ -828,32 +1078,138 @@ function StandMetricsGrid({ stand }: { stand: Stand }) {
   );
 }
 
+/**
+ * Превью лога текущего теста стенда. На живых данных текст лога не тянется
+ * прямо в список (это WS-поток на каждый стенд) — превью показывает состояние
+ * попытки, а сам журнал открывается в модалке по кнопке. Demo-режим
+ * по-прежнему рисует синтетический `demoQueueLog`.
+ */
+function StandLogPreview({
+  stand,
+  item,
+  onOpen,
+  maxHeight,
+}: {
+  stand: Stand;
+  item?: QueueItem;
+  onOpen: (stand: Stand, item?: QueueItem) => void;
+  maxHeight: string;
+}) {
+  const live = !!stand.live;
+  const unavailable = item?.logStatus === "rotated" || item?.logStatus === "missing";
+  return (
+    <div className="surface-2 border border-token rounded overflow-hidden">
+      <div className="border-b border-token px-3 py-2 text-xs text-dim">Лог текущего теста</div>
+      {live ? (
+        <div className="p-3 text-xs grid gap-1">
+          {item ? (
+            <>
+              <div className="mono truncate">{item.title}</div>
+              <div className="text-dim">
+                {QUEUE_TEXT[item.state]} · {item.meta}
+              </div>
+              {unavailable && (
+                <div className="text-warn">
+                  {item.logStatus === "rotated"
+                    ? "Лог ротирован по сроку хранения — результат сохранён."
+                    : "Текст лога этой попытки отсутствует."}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-dim">Нет активного теста — журнал появится после постановки в очередь.</div>
+          )}
+        </div>
+      ) : (
+        <pre className={`mono text-xs p-3 overflow-auto ${maxHeight} whitespace-pre-wrap`}>{demoQueueLog(stand, item)}</pre>
+      )}
+      <div className="border-t border-token p-2 flex justify-end">
+        <Button size="sm"
+          type="button"
+          className="inline-flex items-center gap-1"
+          disabled={live && (!item || unavailable)}
+          onClick={() => onOpen(stand, item)}
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          Открыть журнал целиком
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** Журнал реальной попытки — тот же просмотрщик, что в разделе логов. */
+function AttemptLogModal({
+  stand,
+  item,
+  queueItemId,
+  onClose,
+}: {
+  stand: Stand;
+  item: QueueItem;
+  queueItemId: string;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={`Журнал · ${item.title}`}
+      subtitle={`${stand.name} · ${stand.ip}`}
+      width="lg"
+    >
+      <div className="flex flex-col min-h-[45vh] max-h-[70vh]">
+        <AttemptLogViewer key={queueItemId} queueItemId={queueItemId} state={item.rawState ?? ""} />
+      </div>
+    </Modal>
+  );
+}
+
 function LaunchTestModal({
   stands,
   rcOptions,
+  tests,
+  live,
   onClose,
   onSubmit,
 }: {
   stands: Stand[];
-  rcOptions: string[];
+  rcOptions: RcOption[];
+  tests: LaunchableTest[];
+  /** Живой режим — отправляем реальные `POST /queue-items`. */
+  live: boolean;
   onClose: () => void;
-  onSubmit: (standId: number, tests: string[], prepareEnv: boolean, debugMode: boolean) => void;
+  onSubmit: (
+    stand: Stand,
+    testIds: string[],
+    osVersionId: string,
+    kernel: string,
+    debugMode: boolean,
+  ) => Promise<void>;
 }) {
   const [debugMode, setDebugMode] = useState(false);
+  const [busy, setBusy] = useState(false);
   // Штатно доступны только физические стенды — виртуальные существуют
   // исключительно как цель для debug-режима (отладочный запуск теста на ВМ).
   const pickableStands = debugMode ? stands : stands.filter((item) => item.kind !== "virtual");
   const [standId, setStandId] = useState(pickableStands[0]?.id ?? 0);
   const stand = pickableStands.find((item) => item.id === standId) ?? pickableStands[0];
-  const tests = stand ? testsForStand(stand, debugMode) : [];
-  const [selectedTests, setSelectedTests] = useState<string[]>(tests.slice(0, 2));
-  const [prepareEnv, setPrepareEnv] = useState(false);
-  const [rcId, setRcId] = useState(rcOptions[0] ?? "");
+  const available = stand ? testsForStand(stand, tests, debugMode) : [];
+  const [selectedTests, setSelectedTests] = useState<string[]>(() => available.slice(0, 2).map((item) => item.id));
+  const [rcId, setRcId] = useState(rcOptions[0]?.value ?? "");
+  const kernels = rcOptions.find((option) => option.value === rcId)?.kernels ?? [];
+  const [kernel, setKernel] = useState(kernels[0] ?? "");
 
   const switchStand = (nextStandId: number) => {
     const nextStand = pickableStands.find((item) => item.id === nextStandId) ?? pickableStands[0];
     setStandId(nextStandId);
-    setSelectedTests(testsForStand(nextStand, debugMode).slice(0, 2));
+    setSelectedTests(nextStand ? testsForStand(nextStand, tests, debugMode).slice(0, 2).map((item) => item.id) : []);
+  };
+  const switchRc = (nextRc: string) => {
+    setRcId(nextRc);
+    setKernel(rcOptions.find((option) => option.value === nextRc)?.kernels[0] ?? "");
   };
   const toggleDebugMode = (enabled: boolean) => {
     setDebugMode(enabled);
@@ -863,37 +1219,48 @@ function LaunchTestModal({
     const nextStand = nextStands.find((item) => item.id === standId) ?? nextStands[0];
     if (nextStand) {
       setStandId(nextStand.id);
-      setSelectedTests(testsForStand(nextStand, enabled).slice(0, 2));
+      setSelectedTests(testsForStand(nextStand, tests, enabled).slice(0, 2).map((item) => item.id));
     }
   };
-  const toggleTest = (test: string) => {
+  const toggleTest = (testId: string) => {
     setSelectedTests((current) =>
-      current.includes(test)
-        ? current.filter((item) => item !== test)
-        : [...current, test],
+      current.includes(testId)
+        ? current.filter((item) => item !== testId)
+        : [...current, testId],
     );
   };
+  const submit = async () => {
+    if (!stand || busy) return;
+    setBusy(true);
+    try {
+      await onSubmit(stand, selectedTests, rcId, kernel, debugMode);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const incomplete = live && (!rcId || !kernel);
 
   return (
     <Modal
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open && !busy) onClose();
       }}
       title="Запустить тест"
       subtitle="Добавление выбранных тестов в очередь стенда"
       width="md"
       footer={
         <>
-          <Button type="button" onClick={onClose}>Отмена</Button>
+          <Button type="button" onClick={onClose} disabled={busy}>Отмена</Button>
           <Button
             variant="primary"
             type="button"
-            disabled={!selectedTests.length || !stand}
-            onClick={() => stand && onSubmit(stand.id, selectedTests, prepareEnv, debugMode)}
-            title={!selectedTests.length ? "Выберите хотя бы один тест" : undefined}
+            disabled={busy || !selectedTests.length || !stand || incomplete}
+            onClick={submit}
+            title={!selectedTests.length ? "Выберите хотя бы один тест" : incomplete ? "Выберите РЦ и ядро" : undefined}
           >
-            Добавить в очередь
+            {busy ? "Ставим в очередь…" : "Добавить в очередь"}
           </Button>
         </>
       }
@@ -916,36 +1283,22 @@ function LaunchTestModal({
               <span className="text-xs text-dim">RC</span>
               <Dropdown
                 mode="single"
-                options={rcOptions.map((rc) => ({ value: rc, label: rc }))}
+                options={rcOptions.map((option) => ({ value: option.value, label: option.label }))}
                 value={rcId}
-                onChange={setRcId}
+                onChange={switchRc}
               />
             </label>
             <label className="grid gap-1">
               <span className="text-xs text-dim">Ядро</span>
               <Dropdown
                 mode="single"
-                options={[{ value: stand?.kernel ?? "", label: stand?.kernel ?? "-" }]}
-                value={stand?.kernel ?? ""}
-                onChange={() => {}}
-                disabled
+                options={kernels.map((value) => ({ value, label: value }))}
+                value={kernel}
+                onChange={setKernel}
+                disabled={!kernels.length}
               />
             </label>
           </div>
-
-          <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
-            <Checkbox
-              checked={prepareEnv}
-              onChange={(event) => setPrepareEnv(event.target.checked)}
-              className="mt-0.5"
-            />
-            <span>
-              <span className="text-sm font-medium block">Подготовить окружение перед запуском</span>
-              <span className="text-xs text-dim">
-                Стенд будет приведён к чистому состоянию (testenv prepare) непосредственно перед стартом выбранных тестов
-              </span>
-            </span>
-          </label>
 
           <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
             <Checkbox
@@ -967,12 +1320,12 @@ function LaunchTestModal({
             <div className="text-xs text-dim mb-2">
               {debugMode ? "Все тесты (debug режим)" : "Тесты, закреплённые за стендом"}
             </div>
-            {tests.length ? (
+            {available.length ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {tests.map((test) => (
-                  <label key={test} className="surface border border-token rounded p-2 flex items-center gap-2 text-sm">
-                    <Checkbox checked={selectedTests.includes(test)} onChange={() => toggleTest(test)} />
-                    <span>{test}</span>
+                {available.map((test) => (
+                  <label key={test.id} className="surface border border-token rounded p-2 flex items-center gap-2 text-sm">
+                    <Checkbox checked={selectedTests.includes(test.id)} onChange={() => toggleTest(test.id)} />
+                    <span>{test.label}</span>
                   </label>
                 ))}
               </div>
@@ -983,72 +1336,71 @@ function LaunchTestModal({
             )}
           </div>
 
+          <div className="text-xs text-dim">
+            Каждый выбранный тест ставится в очередь стенда отдельным запросом — частичный отказ не отменяет уже
+            поставленные.
+          </div>
         </div>
     </Modal>
   );
 }
 
+/**
+ * Очередь стенда: реальный упорядоченный список элементов и управление
+ * активным/остановленным из него же.
+ *
+ * Переупорядочивание перетаскиванием и точечное удаление будущего элемента
+ * сознательно не реализованы — под них нет эндпоинтов на стороне
+ * `testing_service`, а подделывать их локальным состоянием (как было в
+ * demo-макете) значит показывать пользователю то, чего не произошло.
+ */
 function QueueModal({
   stand,
+  controls,
   onClose,
-  onChange,
+  onChanged,
   onOpenLog,
 }: {
   stand: Stand;
+  controls: QueueControls;
   onClose: () => void;
-  onChange: (queue: QueueItem[]) => void;
+  onChanged: () => void;
   onOpenLog: (item: QueueItem) => void;
 }) {
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [overIndex, setOverIndex] = useState<number | null>(null);
-  const [extraTest, setExtraTest] = useState("");
-  // Очередь стенда несёт признак debug-режима в meta уже поставленных задач
-  // (см. addTestsToQueue) — отдельное поле на Stand заводить не стали,
-  // это дешевле и не расходится с тем, что реально видно в очереди.
-  const standDebugMode = stand.queue.some((item) => item.meta.includes("debug mode"));
-  const candidateTests = standDebugMode
-    ? TEST_CATALOG.map((entry) => entry.name)
-    : testsForStand(stand, false);
-  const availableExtraTests = candidateTests.filter(
-    (test) => !stand.queue.some((item) => item.title === test),
+  const live = stand.live;
+  const standId = live?.standId;
+  const toast = useToast();
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  // Окно запрашивается от новых к старым: активный и остановленный элементы
+  // всегда свежие, а при длинной истории стенда сортировка от старых их бы
+  // просто не захватила. Порядок очереди на экране — обратный, от старых.
+  const itemsQuery = useQuery(
+    () =>
+      standId
+        ? listQueueItems({ kind: "all", stand_id: standId, order: "desc", limit: 200 })
+        : Promise.resolve(null),
+    [standId],
+    { enabled: !!standId },
   );
 
-  const reorder = (from: number, to: number) => {
-    if (from === to) return;
-    const next = [...stand.queue];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    onChange(next);
-  };
-  const remove = (index: number) => {
-    onChange(stand.queue.filter((_, itemIndex) => itemIndex !== index));
-  };
-  const retry = (index: number) => {
-    onChange(
-      stand.queue.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, state: "pending", meta: "перезапуск поставлен в очередь", knownIssue: undefined } : item,
-      ),
-    );
-  };
-  const stop = (index: number) => {
-    onChange(
-      stand.queue.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, state: "failed", meta: "остановлено вручную" } : item,
-      ),
-    );
-  };
-  const addExtraTest = () => {
-    if (!extraTest) return;
-    onChange([
-      ...stand.queue,
-      {
-        title: extraTest,
-        state: "pending",
-        meta: standDebugMode ? "доп. тест · debug mode" : "доп. тест только для этого стенда",
-      },
-    ]);
-    setExtraTest("");
-  };
+  const rows: QueueItem[] = live
+    ? (itemsQuery.data?.items ?? []).slice().reverse().map(toQueueItem)
+    : stand.queue;
+
+  async function retry(itemId: string) {
+    if (retryingId) return;
+    setRetryingId(itemId);
+    try {
+      await retryQueueItem(itemId, crypto.randomUUID());
+      toast.success("Создана новая попытка теста");
+      itemsQuery.refetch();
+      onChanged();
+    } catch (error) {
+      toast.error(apiErrMsg(error, "Не удалось повторить тест"));
+    } finally {
+      setRetryingId(null);
+    }
+  }
 
   return (
     <Modal
@@ -1060,53 +1412,33 @@ function QueueModal({
       subtitle={stand.ip}
       width="lg"
     >
-        {availableExtraTests.length > 0 && (
-          <div className="surface-2 border border-token rounded p-3 mb-3">
-            <div className="text-xs text-dim mb-2">Добавить доп. тест стенда</div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Dropdown
-                mode="single"
-                options={[
-                  { value: "", label: "Выбрать тест" },
-                  ...availableExtraTests.map((test) => ({ value: test, label: test })),
-                ]}
-                value={extraTest}
-                onChange={setExtraTest}
-              />
-              <Button
-                type="button"
-                size="sm"
-                onClick={addExtraTest}
-                disabled={!extraTest}
-                title={!extraTest ? "Выберите тест, доступный этому стенду" : undefined}
-              >
-                Добавить
-              </Button>
+        {live && (
+          <div className="surface-2 border border-token rounded p-3 mb-3 flex items-center justify-between gap-3 flex-wrap">
+            <div className="text-xs text-dim">
+              Порядок очереди задаёт сам сервис — перетаскивание и удаление отдельного элемента из середины пока не
+              поддерживаются.
             </div>
+            <Button size="sm" type="button" className="inline-flex items-center gap-1" onClick={itemsQuery.refetch}>
+              <RefreshCcw className="w-3.5 h-3.5" />
+              Обновить
+            </Button>
+          </div>
+        )}
+        {live && itemsQuery.loading && <div role="status" className="text-sm text-dim mb-3">Загрузка очереди…</div>}
+        {live && itemsQuery.error && (
+          <div role="alert" className="alert alert-danger flex items-center gap-3 text-sm mb-3">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span className="flex-1">{apiErrMsg(itemsQuery.error, "Не удалось загрузить очередь стенда")}</span>
+            <Button size="sm" onClick={itemsQuery.refetch}>Повторить</Button>
           </div>
         )}
         <div>
-          {stand.queue.length ? (
+          {rows.length ? (
             <div className="grid gap-2">
-              {stand.queue.map((item, index) => (
+              {rows.map((item, index) => (
                 <div
-                  key={`${item.title}-${index}`}
-                  draggable
-                  onDragStart={() => setDragIndex(index)}
-                  onDragEnter={() => setOverIndex(index)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDragEnd={() => {
-                    if (dragIndex !== null && overIndex !== null) reorder(dragIndex, overIndex);
-                    setDragIndex(null);
-                    setOverIndex(null);
-                  }}
-                  className={`surface-2 border rounded p-3 grid grid-cols-1 lg:grid-cols-[42px_1fr_auto] gap-3 items-center cursor-grab active:cursor-grabbing transition-all duration-200 ${
-                    dragIndex === index
-                      ? "opacity-50 scale-[0.99] border-accent"
-                      : overIndex === index
-                        ? "border-accent translate-y-0.5"
-                        : "border-token"
-                  }`}
+                  key={item.itemId ?? `${item.title}-${index}`}
+                  className="surface-2 border border-token rounded p-3 grid grid-cols-1 lg:grid-cols-[42px_1fr_auto] gap-3 items-center"
                 >
                   <div className="mono text-xs text-dim flex items-center gap-2">
                     <ListTree className="w-3.5 h-3.5" />
@@ -1119,31 +1451,34 @@ function QueueModal({
                       {item.knownIssue && <KnownIssueBadge issue={item.knownIssue} />}
                     </div>
                     <div className="text-xs text-dim mt-1">{item.meta}</div>
+                    {item.itemId && <div className="mono text-[11px] text-dim mt-1 truncate">{item.itemId}</div>}
                     {item.log && <div className="mono text-[11px] text-accent mt-1 truncate">{item.log}</div>}
                   </div>
                   <div className="flex items-center gap-1 flex-wrap justify-start lg:justify-end">
-                    {item.log && (
+                    {(item.log || (item.itemId && item.logStatus !== "missing" && item.logStatus !== "rotated")) && (
                       <Button size="sm" type="button" className="inline-flex items-center gap-1" onClick={() => onOpenLog(item)}>
                         <ExternalLink className="w-4 h-4" />
                         Лог
                       </Button>
                     )}
-                    {item.state === "running" && (
-                      <Button variant="danger" size="sm" type="button" className="inline-flex items-center gap-1" onClick={() => stop(index)}>
-                        <Square className="w-4 h-4" />
-                        Остановить
-                      </Button>
+                    {item.itemId && item.itemId === live?.activeItemId && (
+                      <StandQueueActions stand={stand} controls={controls} scope="active" />
                     )}
-                    {item.state === "failed" && (
-                      <Button size="sm" type="button" className="inline-flex items-center gap-1" onClick={() => retry(index)}>
+                    {item.itemId && item.itemId === live?.pausedItemId && (
+                      <StandQueueActions stand={stand} controls={controls} scope="paused" />
+                    )}
+                    {item.itemId && item.canRetry && (
+                      <Button
+                        size="sm"
+                        type="button"
+                        className="inline-flex items-center gap-1"
+                        disabled={retryingId !== null}
+                        onClick={() => retry(item.itemId as string)}
+                      >
                         <RefreshCcw className="w-4 h-4" />
                         Ретрай
                       </Button>
                     )}
-                    <Button variant="danger" size="sm" type="button" className="inline-flex items-center gap-1" onClick={() => remove(index)}>
-                      <Trash2 className="w-4 h-4" />
-                      Удалить
-                    </Button>
                   </div>
                 </div>
               ))}
@@ -1156,7 +1491,7 @@ function QueueModal({
   );
 }
 
-function QueueConcept({ stands }: { stands: Stand[] }) {
+function QueueConcept({ stands, controls }: { stands: Stand[]; controls: QueueControls }) {
   if (!stands.length) return <EmptySearch />;
   return (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
@@ -1173,6 +1508,9 @@ function QueueConcept({ stands }: { stands: Stand[] }) {
           <div className="mt-3">
             <QueueList queue={stand.queue} />
           </div>
+          <div className="mt-3 flex items-center gap-1 flex-wrap">
+            <StandQueueActions stand={stand} controls={controls} />
+          </div>
         </div>
       ))}
     </div>
@@ -1181,13 +1519,13 @@ function QueueConcept({ stands }: { stands: Stand[] }) {
 
 function StandCard({
   stand,
+  controls,
   onOpenQueue,
-  onSetTesting,
   onOpenLog,
 }: {
   stand: Stand;
+  controls: QueueControls;
   onOpenQueue: (standId: number) => void;
-  onSetTesting: (standId: number, testing: boolean) => void;
   onOpenLog: (stand: Stand, item?: QueueItem) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -1251,46 +1589,16 @@ function StandCard({
             <ListChecks className="w-4 h-4 shrink-0" />
             Очередь
           </Button>
-          <Button size="sm"
-            type="button"
-            className="inline-flex items-center justify-center gap-1 px-1.5"
-            onClick={() => onSetTesting(stand.id, true)}
-            disabled={stand.status === "testing"}
-            title={stand.status === "testing" ? "Стенд уже выполняет тест" : undefined}
-          >
-            <Play className="w-4 h-4 shrink-0" />
-            Старт
-          </Button>
-          <Button variant="danger" size="sm"
-            type="button"
-            className="inline-flex items-center justify-center gap-1 px-1.5"
-            onClick={() => onSetTesting(stand.id, false)}
-            disabled={stand.status !== "testing"}
-            title={stand.status !== "testing" ? "Остановить можно только запущенный тест" : undefined}
-          >
-            <Square className="w-4 h-4 shrink-0" />
-            Стоп
-          </Button>
+        </div>
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          <StandQueueActions stand={stand} controls={controls} />
         </div>
 
         {detailsOpen && (
           <div className="mt-3 grid gap-2">
             <InfoBox label="Текущий тест" value={current?.title ?? stand.currentTitle} />
             <StandMetricsGrid stand={stand} />
-            <div className="surface-2 border border-token rounded overflow-hidden">
-              <div className="border-b border-token px-3 py-2 text-xs text-dim">Лог</div>
-              <pre className="mono text-xs p-3 overflow-auto max-h-36 whitespace-pre-wrap">{demoQueueLog(stand, current)}</pre>
-              <div className="border-t border-token p-2 flex justify-end">
-                <Button size="sm"
-                  type="button"
-                  className="inline-flex items-center gap-1"
-                  onClick={() => onOpenLog(stand, current)}
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  Открыть журнал целиком
-                </Button>
-              </div>
-            </div>
+            <StandLogPreview stand={stand} item={current} onOpen={onOpenLog} maxHeight="max-h-36" />
           </div>
         )}
       </div>
@@ -1311,7 +1619,7 @@ function QueueSummary({ stand }: { stand: Stand }) {
       <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
         <Counter label="Выполнено" value={stats.done} className="text-ok" />
         <Counter label="Провалено" value={stats.failed} className="text-danger" />
-        <Counter label="Осталось" value={stats.pending + stats.running} className="text-warn" />
+        <Counter label="Осталось" value={stats.pending + stats.running + stats.paused} className="text-warn" />
       </div>
       <div className="text-xs text-dim mt-3">
         {next ? (
@@ -1334,7 +1642,7 @@ function QueueBar({ queue }: { queue: QueueItem[] }) {
       <span className="bg-[var(--ok)]" style={{ width: `${(stats.done / total) * 100}%` }} />
       <span className="bg-[var(--danger)]" style={{ width: `${(stats.failed / total) * 100}%` }} />
       <span className="bg-[var(--accent)]" style={{ width: `${(stats.running / total) * 100}%` }} />
-      <span className="bg-[var(--warn)]" style={{ width: `${(stats.pending / total) * 100}%` }} />
+      <span className="bg-[var(--warn)]" style={{ width: `${((stats.pending + stats.paused + stats.skipped) / total) * 100}%` }} />
     </div>
   );
 }
@@ -1351,7 +1659,7 @@ function QueueList({ queue }: { queue: QueueItem[] }) {
   return (
     <div className="grid gap-2">
       {queue.map((item, index) => (
-        <div key={`${item.title}-${index}`} className="surface-2 border border-token rounded p-3 flex items-start justify-between gap-3">
+        <div key={item.itemId ?? `${item.title}-${index}`} className="surface-2 border border-token rounded p-3 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <div className="text-sm font-medium truncate">{item.title}</div>
@@ -1368,15 +1676,13 @@ function QueueList({ queue }: { queue: QueueItem[] }) {
 }
 
 /**
- * Каждый тест закреплён за одним конкретным стендом (`homeStandId`) — в
- * штатном режиме запустить его можно только там. Debug режим (см.
- * `LaunchTestModal`) снимает это ограничение для разового отладочного
- * запуска, но никогда не используется в прогоне (см. `runs.tsx`).
+ * Каждый тест закреплён за одним конкретным стендом — в штатном режиме
+ * запустить его можно только там. Debug режим (см. `LaunchTestModal`) снимает
+ * это ограничение для разового отладочного запуска, но никогда не
+ * используется в прогоне (см. `runs.tsx`).
  *
- * `homeStandId` — демо-каталог, привязка тест→стенд по числовому id; в
- * живом режиме реальный каталог тестов (`testDefinitions.ts`) не несёт
- * такой привязки к конкретному стенду вообще — эта модель разъезжается с
- * реальным бэкендом и подлежит пересмотру в волне, вайрящей `tests.tsx`.
+ * В живом режиме привязка приходит из каталога (`TestDefinition.pinned_stand_id`),
+ * в demo-режиме — из локального `TEST_CATALOG` по числовому id стенда.
  */
 interface TestCatalogEntry {
   name: string;
@@ -1398,13 +1704,12 @@ const TEST_CATALOG: TestCatalogEntry[] = [
 ];
 
 /**
- * Список тестов, доступных для запуска на стенде. В штатном режиме —
- * только тесты, привязанные к этому стенду (`homeStandId === stand.id`).
- * В debug режиме ограничение по стенду снимается целиком — доступен весь
- * каталог, независимо от того, чей это тест и какой стенд выбран
- * (включая виртуальные стенды, см. `LaunchTestModal`).
+ * Тесты, доступные для запуска на стенде: в штатном режиме — только
+ * закреплённые за ним, в debug режиме — весь каталог целиком, независимо от
+ * привязки и от того, физический это стенд или ВМ.
  */
-function testsForStand(stand: Stand, debugMode = false): string[] {
-  if (debugMode) return TEST_CATALOG.map((entry) => entry.name);
-  return TEST_CATALOG.filter((entry) => entry.homeStandId === stand.id).map((entry) => entry.name);
+function testsForStand(stand: Stand, tests: LaunchableTest[], debugMode = false): LaunchableTest[] {
+  if (debugMode) return tests;
+  const key = standKey(stand);
+  return tests.filter((test) => test.standKey === key);
 }

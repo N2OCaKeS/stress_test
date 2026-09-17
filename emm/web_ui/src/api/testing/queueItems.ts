@@ -1,12 +1,27 @@
+/**
+ * Обёртки над публичным API очереди `testing_service` (`/queue-items/*` и
+ * управление очередью стенда на `/test-stands/{id}/resume-queue`).
+ *
+ * Источник истины — `testing_service/src/api/v1/endpoints/queue_items.py`
+ * и `test_stands.py`.
+ */
 import { apiGet, apiPost } from "@/api/client";
 import type { TestingPaginatedResponse } from "./types";
 export { getCurrentQueueItem, findActiveQueueItemForServer } from "@/api/testing/testStands";
+
+/**
+ * Запрошенное прерывание исполняющегося теста. Проставляется `skip`/`pause`,
+ * когда item реально исполняется на стенде — воркер подтвердит прерывание
+ * асинхронно, до этого item остаётся в `running`.
+ */
+export type QueueInterruptAction = "skip" | "pause";
 
 export interface PublicQueueItem {
   log_status?: "available" | "rotated" | "pending" | "missing";
   test_code?: string | null; test_name?: string | null; is_current?: boolean;
   id: string; test_id: string; stand_id: string; test_run_id: string | null;
   retry_of_id: string | null; debug_mode: boolean; state: string;
+  interrupt_action?: QueueInterruptAction | null;
   rc: string | null; kernel: string | null; mode: string | null;
   created_at: string; started_at: string | null; finished_at: string | null; error: string | null;
 }
@@ -37,4 +52,33 @@ export function launchQueueItem(body: QueueLaunchRequest) {
 }
 export function retryQueueItem(id: string, requestId: string) {
   return apiPost<PublicQueueItem>(`/testing/v1/queue-items/${encodeURIComponent(id)}/retry`, { request_id: requestId });
+}
+
+/**
+ * `POST /queue-items/{id}/skip` — пропустить тест. Если он уже исполняется на
+ * стенде, ответ приходит с прежним `state: "running"` и
+ * `interrupt_action: "skip"` — прерывание подтвердит воркер, перечитывать
+ * состояние нужно опросом. Из `queued`/`preparing`/`ready` item уходит в
+ * `skipped` сразу, стенд продолжает со следующего.
+ */
+export function skipQueueItem(id: string) {
+  return apiPost<PublicQueueItem>(`/testing/v1/queue-items/${encodeURIComponent(id)}/skip`, {});
+}
+
+/**
+ * `POST /queue-items/{id}/pause` — остановить тест без исхода. Семантика
+ * ответа та же, что у `skip`, целевое состояние — `paused`; стенд на
+ * следующий item не переходит, пока не вызван `resumeStandQueue`.
+ */
+export function pauseQueueItem(id: string) {
+  return apiPost<PublicQueueItem>(`/testing/v1/queue-items/${encodeURIComponent(id)}/pause`, {});
+}
+
+/**
+ * `POST /test-stands/{id}/resume-queue` — снять стенд с паузы: единственный
+ * `paused`-item переставляется в конец очереди этого стенда и возвращается в
+ * `queued`. 409 `STAND_NOT_PAUSED`, если у стенда нет остановленного item'а.
+ */
+export function resumeStandQueue(standId: string) {
+  return apiPost<PublicQueueItem>(`/testing/v1/test-stands/${encodeURIComponent(standId)}/resume-queue`, {});
 }

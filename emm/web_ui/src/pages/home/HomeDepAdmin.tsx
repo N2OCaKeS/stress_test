@@ -16,14 +16,9 @@ import {
   ShieldAlert,
   Clock,
   Lightbulb,
-  Link2,
-  ListChecks,
-  Users,
-  Trash2,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { HomeShell } from "./HomeShell";
-import { ServiceCredentialFields } from "./ServiceCredentialFields";
 import { usePersona } from "@/contexts/PersonaContext";
 import {
   hasAuditLogAccess,
@@ -40,8 +35,6 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Toggle } from "@/components/ui/Toggle";
-import { Modal } from "@/components/ui/Modal";
-import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/contexts/ToastContext";
 import { AUDIT_EVENTS } from "@/mocks/log";
 import { listUsers, listUsersByDepartment } from "@/api/auth/users";
@@ -56,25 +49,12 @@ import {
   generateDepartmentActivityReport,
   listDepartmentActivityReports,
 } from "@/api/testing/departmentActivityReports";
-import {
-  getDepartmentIntegrationSettings,
-  upsertDepartmentIntegrationSettings,
-} from "@/api/testing/departmentIntegrationSettings";
+import { getDepartmentIntegrationSettings } from "@/api/testing/departmentIntegrationSettings";
 import {
   getDepartmentTestSettings,
   upsertDepartmentTestSettings,
 } from "@/api/testing/departmentTestSettings";
-import {
-  createDepartmentReportMember,
-  deleteDepartmentReportMember,
-  listDepartmentReportMembers,
-  updateDepartmentReportMember,
-} from "@/api/testing/departmentReportMembers";
-import type {
-  DepartmentActivityReport,
-  DepartmentIntegrationSettingsUpdateRequest,
-  DepartmentReportMember,
-} from "@/api/testing/types";
+import type { DepartmentActivityReport } from "@/api/testing/types";
 import { RecentAuditEvents } from "./widgets/RecentAuditEvents";
 import { AllTasksWidget } from "./widgets/AllTasksWidget";
 
@@ -213,10 +193,7 @@ export function HomeDepAdmin() {
 
         {canManageGroups && myDeptId && (
           <section className="mt-4 grid gap-4">
-            <DepartmentIntegrationSettingsCard departmentId={myDeptId} />
-            <DepartmentQueueSettingsCard departmentId={myDeptId} />
             <HrReportCard departmentId={myDeptId} />
-            <DepartmentReportMembersCard departmentId={myDeptId} />
           </section>
         )}
 
@@ -559,13 +536,6 @@ const REPORT_STATUS_LABELS: Record<string, { label: string; className: string }>
   failed: { label: "ошибка", className: "text-danger" },
 };
 
-/** `'YYYY-MM'` текущего месяца по МСК — дефолт формы и первая опция дропдауна. */
-function currentPeriod(): string {
-  const now = new Date();
-  const msk = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
-  return `${msk.getFullYear()}-${String(msk.getMonth() + 1).padStart(2, "0")}`;
-}
-
 const PERIOD_MONTH_LABELS = [
   "января", "февраля", "марта", "апреля", "мая", "июня",
   "июля", "августа", "сентября", "октября", "ноября", "декабря",
@@ -578,36 +548,96 @@ function periodLabel(period: string): string {
   return `${PERIOD_MONTH_LABELS[idx]} ${year}`;
 }
 
-/** Последние `count` месяцев (включая текущий), самый свежий первым. */
-function recentPeriods(count: number): { value: string; label: string }[] {
+const MONTH_OPTIONS: { value: string; label: string }[] = PERIOD_MONTH_LABELS.map((label, idx) => ({
+  value: String(idx + 1).padStart(2, "0"),
+  label,
+}));
+
+interface YearMonth {
+  year: number;
+  month: number;
+}
+
+/** Текущие год/месяц по МСК. */
+function mskNow(): YearMonth {
   const now = new Date();
   const msk = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
-  const options: { value: string; label: string }[] = [];
-  for (let i = 0; i < count; i += 1) {
-    const d = new Date(msk.getFullYear(), msk.getMonth() - i, 1);
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    options.push({ value, label: periodLabel(value) });
+  return { year: msk.getFullYear(), month: msk.getMonth() + 1 };
+}
+
+/** Год/месяц `count` месяцев назад от текущего момента по МСК. */
+function monthsAgoMsk(count: number): YearMonth {
+  const now = mskNow();
+  const d = new Date(now.year, now.month - 1 - count, 1);
+  return { year: d.getFullYear(), month: d.getMonth() + 1 };
+}
+
+function toPeriod(year: string | number, month: string | number): string {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/**
+ * Годы для выпадашек периода отчёта — с запасом в обе стороны от `centerYear`,
+ * без жёсткого потолка (в отличие от старого хардкода "до января 2026"):
+ * год пересчитывается от текущего момента при каждом рендере, поэтому в
+ * 2027-м дефолт сам станет 2027-м.
+ */
+function yearOptions(centerYear: number): { value: string; label: string }[] {
+  const years: { value: string; label: string }[] = [];
+  for (let y = centerYear + 3; y >= centerYear - 10; y -= 1) {
+    years.push({ value: String(y), label: String(y) });
   }
-  return options;
+  return years;
+}
+
+/** `'YYYY-MM'` от `from` до `to` включительно, по возрастанию. Пустой массив при инвертированном диапазоне. */
+function periodsInRange(from: YearMonth, to: YearMonth): string[] {
+  const fromIdx = from.year * 12 + (from.month - 1);
+  const toIdx = to.year * 12 + (to.month - 1);
+  if (fromIdx > toIdx) return [];
+  const periods: string[] = [];
+  for (let idx = fromIdx; idx <= toIdx; idx += 1) {
+    periods.push(toPeriod(Math.floor(idx / 12), (idx % 12) + 1));
+  }
+  return periods;
 }
 
 /**
  * Замена legacy-паттерна «поправить MONTH в коде и перезапустить скрипт»
  * (`libreport.py`/`monthly_report.py`) — ручная генерация HR-отчёта отдела
- * прямо с Home. Расписание периодической генерации — отдельная настройка в
- * администрировании отдела (`department_test_settings.activity_report_schedule`),
- * здесь только разовый запуск + история.
+ * прямо с Home, плюс переключатель автоматической ежемесячной генерации
+ * (см. `department_test_settings.activity_report_auto_generate` — фоновая
+ * проверка в `testing_service`, 1 числа каждого месяца заводит отчёт за
+ * предыдущий). Остальные настройки отдела (интеграции, очередь, список
+ * сотрудников) перенесены в администрирование — здесь остаётся только то,
+ * что относится к самому отчёту.
  */
 function HrReportCard({ departmentId }: { departmentId: string }) {
-  const periodOptions = recentPeriods(12);
-  const [period, setPeriod] = useState(() => currentPeriod());
+  const nowMsk = mskNow();
+  const years = useMemo(() => yearOptions(nowMsk.year), [nowMsk.year]);
+  const previousMonth = useMemo(() => monthsAgoMsk(1), [nowMsk.year, nowMsk.month]);
+
+  const [genYear, setGenYear] = useState(() => String(previousMonth.year));
+  const [genMonth, setGenMonth] = useState(() => String(previousMonth.month).padStart(2, "0"));
   const [generating, setGenerating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Лимит покрывает все 12 показанных месяцев с запасом на повторные попытки
-  // (падение + повтор того же периода — новая строка, не upsert, см. модель).
+  const defaultFrom = useMemo(() => monthsAgoMsk(3), [nowMsk.year, nowMsk.month]);
+  const [fromYear, setFromYear] = useState(() => String(defaultFrom.year));
+  const [fromMonth, setFromMonth] = useState(() => String(defaultFrom.month).padStart(2, "0"));
+  const [toYear, setToYear] = useState(() => String(nowMsk.year));
+  const [toMonth, setToMonth] = useState(() => String(nowMsk.month).padStart(2, "0"));
+
+  const toast = useToast();
+  const testSettingsQ = useQuery(() => getDepartmentTestSettings(departmentId), [departmentId]);
+  const [autoPending, setAutoPending] = useState(false);
+
+  // Щедрый лимит вместо range-фильтра на backend'е: история отдела — единицы-
+  // десятки строк в год (§9.1 плана — одна запись на попытку генерации), 500
+  // (максимум, который отдаёт эндпоинт) с большим запасом покрывает любой
+  // выбранный диапазон, а сам диапазон фильтруется на фронте.
   const historyQ = useQuery(
-    () => listDepartmentActivityReports(departmentId, { limit: 36 }),
+    () => listDepartmentActivityReports(departmentId, { limit: 500 }),
     [departmentId],
   );
   const integrationQ = useQuery(
@@ -620,7 +650,7 @@ function HrReportCard({ departmentId }: { departmentId: string }) {
     setGenerating(true);
     setErrorMsg(null);
     try {
-      await generateDepartmentActivityReport(departmentId, { period });
+      await generateDepartmentActivityReport(departmentId, { period: toPeriod(genYear, genMonth) });
       historyQ.refetch();
     } catch (err) {
       setErrorMsg(apiErrMsg(err));
@@ -628,6 +658,19 @@ function HrReportCard({ departmentId }: { departmentId: string }) {
       setGenerating(false);
     }
   };
+
+  async function handleToggleAutoGenerate(checked: boolean) {
+    if (autoPending) return;
+    setAutoPending(true);
+    try {
+      await upsertDepartmentTestSettings(departmentId, { activity_report_auto_generate: checked });
+      testSettingsQ.refetch();
+    } catch (err) {
+      toast.error(apiErrMsg(err, "Не удалось сохранить настройку авто-генерации"));
+    } finally {
+      setAutoPending(false);
+    }
+  }
 
   const reports = historyQ.data?.items ?? [];
   // Список отсортирован backend'ом по generated_at DESC (см. репозиторий) —
@@ -639,6 +682,15 @@ function HrReportCard({ departmentId }: { departmentId: string }) {
     }
     return map;
   }, [reports]);
+
+  const rangePeriods = useMemo(
+    () =>
+      periodsInRange(
+        { year: Number(fromYear), month: Number(fromMonth) },
+        { year: Number(toYear), month: Number(toMonth) },
+      ).reverse(),
+    [fromYear, fromMonth, toYear, toMonth],
+  );
 
   return (
     <div className="card">
@@ -654,13 +706,12 @@ function HrReportCard({ departmentId }: { departmentId: string }) {
       </div>
       <div className="flex items-end gap-2 flex-wrap mb-3">
         <label className="grid gap-1">
-          <span className="text-xs text-dim">Период</span>
-          <Dropdown
-            mode="single"
-            options={periodOptions}
-            value={period}
-            onChange={setPeriod}
-          />
+          <span className="text-xs text-dim">Год</span>
+          <Dropdown mode="single" options={years} value={genYear} onChange={setGenYear} />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-xs text-dim">Месяц</span>
+          <Dropdown mode="single" options={MONTH_OPTIONS} value={genMonth} onChange={setGenMonth} />
         </label>
         <Button
           variant="primary"
@@ -674,14 +725,42 @@ function HrReportCard({ departmentId }: { departmentId: string }) {
       </div>
       {errorMsg && <div className="text-xs text-danger mb-3">{errorMsg}</div>}
 
-      <div className="text-xs text-dim mb-2">
-        Отчёты за последние 12 месяцев — какие уже есть, каких ещё нет
+      <div className="mb-3 pb-3 border-b border-token">
+        <Toggle
+          label="Генерировать автоматически 1 числа месяца за предыдущий месяц"
+          checked={testSettingsQ.data?.activity_report_auto_generate ?? false}
+          disabled={autoPending || !testSettingsQ.data}
+          onChange={(e) => handleToggleAutoGenerate(e.target.checked)}
+        />
       </div>
+
+      <div className="flex items-end gap-2 flex-wrap mb-2">
+        <span className="text-xs text-dim self-center mr-1">Показать отчёты за период:</span>
+        <label className="grid gap-1">
+          <span className="text-xs text-dim">от — год</span>
+          <Dropdown mode="single" options={years} value={fromYear} onChange={setFromYear} />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-xs text-dim">от — месяц</span>
+          <Dropdown mode="single" options={MONTH_OPTIONS} value={fromMonth} onChange={setFromMonth} />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-xs text-dim">до — год</span>
+          <Dropdown mode="single" options={years} value={toYear} onChange={setToYear} />
+        </label>
+        <label className="grid gap-1">
+          <span className="text-xs text-dim">до — месяц</span>
+          <Dropdown mode="single" options={MONTH_OPTIONS} value={toMonth} onChange={setToMonth} />
+        </label>
+      </div>
+
       {historyQ.loading && reports.length === 0 ? (
         <div className="text-xs text-dim">Загрузка…</div>
+      ) : rangePeriods.length === 0 ? (
+        <div className="text-xs text-dim">Некорректный диапазон — «от» позже «до».</div>
       ) : (
         <div className="grid gap-2">
-          {periodOptions.map(({ value }) => {
+          {rangePeriods.map((value) => {
             const report = latestByPeriod.get(value);
             return report ? (
               <HrReportRow key={value} report={report} confluenceBaseUrl={confluenceBaseUrl} />
@@ -735,517 +814,5 @@ function HrReportRow({
         <span className="text-xs text-dim mono shrink-0">page {report.confluence_page_id}</span>
       ) : null}
     </div>
-  );
-}
-
-// ── Настройки интеграции отдела (testing_service) ──────────────────────────
-
-/**
- * Поля `department_integration_settings` в порядке отображения. Ключи должны
- * дословно совпадать с `DepartmentIntegrationSettingsUpdateRequest` —
- * читаем/пишем их через generic `Record<string, string | null>`, не
- * перечисляя каждое поле руками.
- */
-const INTEGRATION_FIELDS: Array<{ key: string; label: string; placeholder?: string; mono?: boolean }> = [
-  { key: "jira_base_url", label: "Jira base URL", placeholder: "https://jira.astralinux.ru", mono: true },
-  { key: "confluence_base_url", label: "Confluence base URL", placeholder: "https://confluence.astralinux.ru", mono: true },
-  { key: "bitbucket_base_url", label: "Bitbucket base URL", placeholder: "https://bitbucket.astralinux.ru", mono: true },
-  { key: "bitbucket_project_key", label: "Bitbucket project key", placeholder: "PROJ" },
-  { key: "bitbucket_repo_slug", label: "Bitbucket repo slug", placeholder: "my-repo" },
-  { key: "jira_board_id", label: "Jira board id", placeholder: "42" },
-  { key: "tempo_team_id", label: "Tempo team id", placeholder: "7" },
-  { key: "confluence_report_page_space", label: "Confluence space для отчёта по активностям", placeholder: "DEPT" },
-  { key: "confluence_report_parent_page_title", label: "Родительская страница отчёта по активностям", placeholder: "Отчёты по активности" },
-  { key: "stp_matrix_confluence_space", label: "Confluence space для СТП-матрицы", placeholder: "DEPTQA" },
-  { key: "stp_matrix_confluence_root_page_title", label: "Корневая страница СТП-матрицы", placeholder: "Состав тестового прогона" },
-  { key: "credential_id", label: "Credential id (Jira/Zephyr)", placeholder: "cred_...", mono: true },
-  { key: "confluence_credential_id", label: "Credential id (Confluence)", placeholder: "cred_...", mono: true },
-  { key: "bitbucket_credential_id", label: "Credential id (Bitbucket)", placeholder: "cred_...", mono: true },
-];
-
-const _CREDENTIAL_SELECT_KEYS = ["credential_id", "confluence_credential_id", "bitbucket_credential_id"];
-
-/**
- * Настройки отдела для внешних интеграций (Jira/Zephyr/Confluence/Bitbucket) —
- * без них ни СТП+Zephyr, ни HR-отчёт по активности физически не работают.
- * `credential_id`/`bitbucket_credential_id` — только id учётных данных в
- * `secret_service`, сам секрет заводится там же (страница «Секреты»).
- */
-function DepartmentIntegrationSettingsCard({ departmentId }: { departmentId: string }) {
-  const toast = useToast();
-  const settingsQ = useQuery(() => getDepartmentIntegrationSettings(departmentId), [departmentId]);
-  const loaded = settingsQ.data as unknown as Record<string, string | null> | undefined;
-  const [form, setForm] = useState<Record<string, string>>({});
-  const [pending, setPending] = useState(false);
-
-  useEffect(() => {
-    if (!loaded) return;
-    const next: Record<string, string> = {};
-    for (const f of INTEGRATION_FIELDS) next[f.key] = loaded[f.key] ?? "";
-    setForm(next);
-  }, [loaded]);
-
-  const dirty = useMemo(() => {
-    if (!loaded) return false;
-    return INTEGRATION_FIELDS.some((f) => (form[f.key] ?? "").trim() !== (loaded[f.key] ?? ""));
-  }, [loaded, form]);
-
-  async function handleSave() {
-    if (pending || !loaded) return;
-    setPending(true);
-    try {
-      const body: Record<string, string | null> = {};
-      for (const f of INTEGRATION_FIELDS) {
-        const v = (form[f.key] ?? "").trim();
-        body[f.key] = v === "" ? null : v;
-      }
-      await upsertDepartmentIntegrationSettings(
-        departmentId,
-        body as DepartmentIntegrationSettingsUpdateRequest,
-      );
-      toast.success("Настройки интеграции отдела сохранены");
-      settingsQ.refetch();
-    } catch (err) {
-      toast.error(apiErrMsg(err, "Не удалось сохранить настройки интеграции"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <h3 className="font-semibold flex items-center gap-2">
-          <Link2 className="w-4 h-4 text-accent" />
-          Интеграции отдела (Jira / Confluence / Bitbucket)
-        </h3>
-        <span className="text-xs text-dim">testing_service</span>
-      </div>
-      <div className="text-xs text-dim mb-3">
-        Нужны для генерации СТП (Zephyr), публикации СТП-матрицы и отчёта по активностям отдела в Confluence. Сами токены/пароли
-        заводятся в <Link to="/secret/service" className="text-accent">сервисных учётных данных</Link>.
-        Выберите нужные записи вашего отдела ниже.
-      </div>
-
-      {loaded && !loaded.credential_id && !loaded.confluence_credential_id && !loaded.bitbucket_credential_id && (
-        <div className="alert-warn text-sm flex items-start gap-2 mb-3">
-          <Link2 className="w-4 h-4 mt-0.5 shrink-0" />
-          <div className="flex-1">
-            <div>Реальные токены Jira, Git и Confluence ещё не введены — свежий dev-стенд их не заводит автоматически.</div>
-            <Link to="/home/integration-onboarding" className="text-accent">Ввести Jira / Git / Confluence →</Link>
-          </div>
-        </div>
-      )}
-
-      {settingsQ.loading && !loaded && <div className="text-xs text-dim py-2">Загрузка…</div>}
-      {!settingsQ.loading && settingsQ.error != null && (
-        <div className="alert-danger text-sm flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-          <div className="flex-1">
-            <div>{apiErrMsg(settingsQ.error, "Настройки не загрузились")}</div>
-            <Button variant="ghost" className="mt-2" onClick={() => settingsQ.refetch()} type="button">
-              Повторить
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {loaded && (
-        <>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {INTEGRATION_FIELDS.filter((f) => !_CREDENTIAL_SELECT_KEYS.includes(f.key)).map((f) => (
-              <label key={f.key} className="flex flex-col gap-1 text-sm">
-                <span className="field-label">{f.label}</span>
-                <input
-                  className={`field-input ${f.mono ? "mono" : ""}`.trim()}
-                  value={form[f.key] ?? ""}
-                  onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
-                  placeholder={f.placeholder}
-                />
-              </label>
-            ))}
-            <ServiceCredentialFields departmentId={departmentId} values={form} disabled={pending}
-              onChange={(key, value) => setForm((prev) => ({ ...prev, [key]: value }))} />
-          </div>
-          <div className="flex items-center gap-3 mt-3">
-            <Button variant="primary" type="button" onClick={handleSave} disabled={pending || !dirty}>
-              {pending ? "Сохраняем…" : "Сохранить"}
-            </Button>
-            {dirty && !pending && <span className="text-xs text-dim">есть несохранённые изменения</span>}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Настройки очереди/ретраев тестирования отдела (testing_service) ────────
-
-/**
- * `department_test_settings` — ретрай провалившихся прогонов, имя учётки
- * исполнения теста на стенде, расписание HR-отчёта (заглушка волны 10 —
- * планировщика ещё нет, поле только хранится).
- */
-function DepartmentQueueSettingsCard({ departmentId }: { departmentId: string }) {
-  const toast = useToast();
-  const settingsQ = useQuery(() => getDepartmentTestSettings(departmentId), [departmentId]);
-  const loaded = settingsQ.data;
-  const [retryEnabled, setRetryEnabled] = useState(true);
-  const [testUsername, setTestUsername] = useState("");
-  const [schedule, setSchedule] = useState("");
-  const [pending, setPending] = useState(false);
-
-  useEffect(() => {
-    if (!loaded) return;
-    setRetryEnabled(loaded.retry_enabled);
-    setTestUsername(loaded.test_username);
-    setSchedule(loaded.activity_report_schedule ?? "");
-  }, [loaded]);
-
-  const dirty = useMemo(() => {
-    if (!loaded) return false;
-    return (
-      retryEnabled !== loaded.retry_enabled ||
-      testUsername.trim() !== loaded.test_username ||
-      schedule.trim() !== (loaded.activity_report_schedule ?? "")
-    );
-  }, [loaded, retryEnabled, testUsername, schedule]);
-
-  async function handleSave() {
-    if (pending || !loaded) return;
-    const username = testUsername.trim();
-    if (!username) {
-      toast.error("Укажите имя пользователя исполнения теста.");
-      return;
-    }
-    setPending(true);
-    try {
-      await upsertDepartmentTestSettings(departmentId, {
-        retry_enabled: retryEnabled,
-        test_username: username,
-        activity_report_schedule: schedule.trim() || null,
-      });
-      toast.success("Настройки очереди тестирования сохранены");
-      settingsQ.refetch();
-    } catch (err) {
-      toast.error(apiErrMsg(err, "Не удалось сохранить настройки очереди"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <h3 className="font-semibold flex items-center gap-2">
-          <ListChecks className="w-4 h-4 text-accent" />
-          Очередь и повторы тестирования
-        </h3>
-        <span className="text-xs text-dim">testing_service</span>
-      </div>
-
-      {settingsQ.loading && !loaded && <div className="text-xs text-dim py-2">Загрузка…</div>}
-      {!settingsQ.loading && settingsQ.error != null && (
-        <div className="alert-danger text-sm flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-          <div className="flex-1">
-            <div>{apiErrMsg(settingsQ.error, "Настройки не загрузились")}</div>
-            <Button variant="ghost" className="mt-2" onClick={() => settingsQ.refetch()} type="button">
-              Повторить
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {loaded && (
-        <>
-          <div className="flex flex-col gap-3 max-w-md">
-            <Toggle
-              label="Повторять провалившиеся тесты в прогоне"
-              checked={retryEnabled}
-              onChange={(e) => setRetryEnabled(e.target.checked)}
-            />
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="field-label">Пользователь исполнения теста на стенде</span>
-              <input
-                className="field-input mono"
-                value={testUsername}
-                onChange={(e) => setTestUsername(e.target.value)}
-                placeholder="u"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-sm">
-              <span className="field-label">
-                Расписание отчёта по активностям
-                <span className="text-dim text-xs ml-1">(планировщик ещё не реализован, значение только хранится)</span>
-              </span>
-              <input
-                className="field-input"
-                value={schedule}
-                onChange={(e) => setSchedule(e.target.value)}
-                placeholder="например, 1 числа месяца"
-              />
-            </label>
-          </div>
-          <div className="flex items-center gap-3 mt-3">
-            <Button variant="primary" type="button" onClick={handleSave} disabled={pending || !dirty}>
-              {pending ? "Сохраняем…" : "Сохранить"}
-            </Button>
-            {dirty && !pending && <span className="text-xs text-dim">есть несохранённые изменения</span>}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-// ── Сотрудники отдела для HR-отчёта (testing_service) ───────────────────────
-
-/**
- * CRUD-список `department_report_members` — только сотрудники из этого
- * списка учитываются при генерации HR-отчёта (`HrReportCard` выше). Логично
- * лежит рядом с самим отчётом: список сотрудников — вход, отчёт — выход.
- */
-function DepartmentReportMembersCard({ departmentId }: { departmentId: string }) {
-  const toast = useToast();
-  const { confirm } = useConfirm();
-  const membersQ = useQuery(
-    () => listDepartmentReportMembers(departmentId, { limit: 200 }),
-    [departmentId],
-  );
-  const [modalMember, setModalMember] = useState<DepartmentReportMember | "new" | null>(null);
-
-  const members = membersQ.data?.items ?? [];
-
-  async function handleDelete(member: DepartmentReportMember) {
-    if (
-      !(await confirm({
-        title: "Удалить сотрудника",
-        message: `Удалить ${member.display_name} из списка сотрудников для отчёта по активностям?`,
-        confirmLabel: "Удалить",
-        danger: true,
-      }))
-    )
-      return;
-    try {
-      await deleteDepartmentReportMember(departmentId, member.id);
-      toast.success(`${member.display_name} удалён из отчёта по активностям`);
-      membersQ.refetch();
-    } catch (err) {
-      toast.error(apiErrMsg(err, "Не удалось удалить сотрудника"));
-    }
-  }
-
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <h3 className="font-semibold flex items-center gap-2">
-          <Users className="w-4 h-4 text-accent" />
-          Сотрудники отдела для отчёта по активностям
-        </h3>
-        <Button
-          variant="primary"
-          size="sm"
-          type="button"
-          className="flex items-center gap-1"
-          onClick={() => setModalMember("new")}
-        >
-          <UserPlus className="w-3.5 h-3.5" /> Добавить
-        </Button>
-      </div>
-      <div className="text-xs text-dim mb-3">
-        Коммиты, комментарии в Jira по спринтам и часы Tempo учитываются только
-        для сотрудников из этого списка.
-      </div>
-
-      {membersQ.loading && members.length === 0 && (
-        <div className="text-xs text-dim py-2">Загрузка…</div>
-      )}
-      {!membersQ.loading && membersQ.error != null && (
-        <div className="alert-danger text-sm flex items-start gap-2">
-          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-          <div className="flex-1">
-            <div>{apiErrMsg(membersQ.error, "Список не загрузился")}</div>
-            <Button variant="ghost" className="mt-2" onClick={() => membersQ.refetch()} type="button">
-              Повторить
-            </Button>
-          </div>
-        </div>
-      )}
-      {!membersQ.loading && membersQ.error == null && members.length === 0 && (
-        <div className="text-sm text-dim text-center py-4">Список пуст.</div>
-      )}
-      {members.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {members.map((m) => (
-            <ReportMemberRow
-              key={m.id}
-              member={m}
-              onEdit={() => setModalMember(m)}
-              onDelete={() => handleDelete(m)}
-            />
-          ))}
-        </div>
-      )}
-
-      {modalMember != null && (
-        <ReportMemberModal
-          departmentId={departmentId}
-          member={modalMember === "new" ? null : modalMember}
-          onClose={() => setModalMember(null)}
-          onSaved={() => {
-            setModalMember(null);
-            membersQ.refetch();
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function ReportMemberRow({
-  member,
-  onEdit,
-  onDelete,
-}: {
-  member: DepartmentReportMember;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="surface-2 border border-token rounded px-3 py-2 flex items-center gap-2 flex-wrap">
-      <div className="flex-1 min-w-[160px]">
-        <div className="text-sm flex items-center gap-2">
-          {member.display_name}
-          {!member.is_active && <span className="text-xs text-dim">(не учитывается)</span>}
-        </div>
-        <div className="text-[11px] text-dim mono truncate">
-          {member.bitbucket_username ?? "—"} · {member.jira_author_name ?? "—"} ·{" "}
-          {member.jira_tempo_worker_key ?? "—"}
-        </div>
-      </div>
-      <Button variant="ghost" size="sm" type="button" onClick={onEdit}>
-        Изменить
-      </Button>
-      <Button variant="danger" size="sm" type="button" className="flex items-center gap-1" onClick={onDelete}>
-        <Trash2 className="w-3.5 h-3.5" /> Удалить
-      </Button>
-    </div>
-  );
-}
-
-function ReportMemberModal({
-  departmentId,
-  member,
-  onClose,
-  onSaved,
-}: {
-  departmentId: string;
-  member: DepartmentReportMember | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const toast = useToast();
-  const [displayName, setDisplayName] = useState(member?.display_name ?? "");
-  const [bitbucketUsername, setBitbucketUsername] = useState(member?.bitbucket_username ?? "");
-  const [jiraAuthorName, setJiraAuthorName] = useState(member?.jira_author_name ?? "");
-  const [tempoWorkerKey, setTempoWorkerKey] = useState(member?.jira_tempo_worker_key ?? "");
-  const [isActive, setIsActive] = useState(member?.is_active ?? true);
-  const [pending, setPending] = useState(false);
-
-  async function handleSubmit() {
-    const name = displayName.trim();
-    if (!name) {
-      toast.error("Укажите имя сотрудника.");
-      return;
-    }
-    setPending(true);
-    try {
-      const body = {
-        display_name: name,
-        bitbucket_username: bitbucketUsername.trim() || null,
-        jira_author_name: jiraAuthorName.trim() || null,
-        jira_tempo_worker_key: tempoWorkerKey.trim() || null,
-        is_active: isActive,
-      };
-      if (member) {
-        await updateDepartmentReportMember(departmentId, member.id, body);
-        toast.success(`${name} обновлён`);
-      } else {
-        await createDepartmentReportMember(departmentId, body);
-        toast.success(`${name} добавлен`);
-      }
-      onSaved();
-    } catch (err) {
-      toast.error(apiErrMsg(err, "Не удалось сохранить сотрудника"));
-    } finally {
-      setPending(false);
-    }
-  }
-
-  return (
-    <Modal
-      open
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-      title={member ? "Изменить сотрудника" : "Добавить сотрудника"}
-      icon={<Users className="w-5 h-5 text-accent" />}
-      footer={
-        <>
-          <Button variant="default" type="button" onClick={onClose}>
-            Отмена
-          </Button>
-          <Button variant="primary" type="button" onClick={handleSubmit} disabled={pending}>
-            {pending ? "Сохраняем…" : "Сохранить"}
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-3">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="field-label">ФИО / отображаемое имя</span>
-          <input
-            className="field-input"
-            autoFocus
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Иванов Иван"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="field-label">Bitbucket username</span>
-          <input
-            className="field-input mono"
-            value={bitbucketUsername}
-            onChange={(e) => setBitbucketUsername(e.target.value)}
-            placeholder="ivanov"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="field-label">Jira author name</span>
-          <input
-            className="field-input mono"
-            value={jiraAuthorName}
-            onChange={(e) => setJiraAuthorName(e.target.value)}
-            placeholder="Ivan Ivanov"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="field-label">Tempo worker key</span>
-          <input
-            className="field-input mono"
-            value={tempoWorkerKey}
-            onChange={(e) => setTempoWorkerKey(e.target.value)}
-            placeholder="JIRAUSER10123"
-          />
-        </label>
-        <Toggle
-          label="Учитывать в следующем отчёте"
-          checked={isActive}
-          onChange={(e) => setIsActive(e.target.checked)}
-        />
-      </div>
-    </Modal>
   );
 }

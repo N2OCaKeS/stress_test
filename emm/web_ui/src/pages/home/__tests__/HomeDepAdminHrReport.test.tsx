@@ -49,10 +49,8 @@ vi.mock("@/api/testing/departmentActivityReports", () => ({
 }));
 
 const getDepartmentIntegrationSettingsMock = vi.fn();
-const upsertDepartmentIntegrationSettingsMock = vi.fn();
 vi.mock("@/api/testing/departmentIntegrationSettings", () => ({
   getDepartmentIntegrationSettings: (...a: unknown[]) => getDepartmentIntegrationSettingsMock(...a),
-  upsertDepartmentIntegrationSettings: (...a: unknown[]) => upsertDepartmentIntegrationSettingsMock(...a),
 }));
 
 const getDepartmentTestSettingsMock = vi.fn();
@@ -60,14 +58,6 @@ const upsertDepartmentTestSettingsMock = vi.fn();
 vi.mock("@/api/testing/departmentTestSettings", () => ({
   getDepartmentTestSettings: (...a: unknown[]) => getDepartmentTestSettingsMock(...a),
   upsertDepartmentTestSettings: (...a: unknown[]) => upsertDepartmentTestSettingsMock(...a),
-}));
-
-const listDepartmentReportMembersMock = vi.fn();
-vi.mock("@/api/testing/departmentReportMembers", () => ({
-  listDepartmentReportMembers: (...a: unknown[]) => listDepartmentReportMembersMock(...a),
-  createDepartmentReportMember: vi.fn(),
-  updateDepartmentReportMember: vi.fn(),
-  deleteDepartmentReportMember: vi.fn(),
 }));
 
 import { HomeDepAdmin } from "@/pages/home/HomeDepAdmin";
@@ -95,6 +85,9 @@ describe("HomeDepAdmin — отчёт по активностям сотрудн
     getHostDiskUsageMock.mockReset().mockResolvedValue({ paths: [] });
     listTasksMock.mockReset().mockResolvedValue({ items: [], total: 0, limit: 5, offset: 0 });
     generateDepartmentActivityReportMock.mockReset();
+    // "Сегодня" в тестовом окружении — реальный системный час (сентябрь
+    // 2026), поэтому диапазон по умолчанию — июнь..сентябрь 2026, а отчёт за
+    // август 2026 в него попадает.
     listDepartmentActivityReportsMock.mockReset().mockResolvedValue({
       items: [
         {
@@ -109,7 +102,7 @@ describe("HomeDepAdmin — отчёт по активностям сотрудн
         },
       ],
       total: 1,
-      limit: 10,
+      limit: 500,
       offset: 0,
     });
     getDepartmentIntegrationSettingsMock.mockReset().mockResolvedValue({
@@ -129,30 +122,23 @@ describe("HomeDepAdmin — отчёт по активностям сотрудн
       created_at: null,
       updated_at: null,
     });
-    upsertDepartmentIntegrationSettingsMock.mockReset();
     getDepartmentTestSettingsMock.mockReset().mockResolvedValue({
       id: null,
       department_id: "dep_1",
       retry_enabled: true,
       test_username: "u",
-      activity_report_schedule: null,
+      activity_report_auto_generate: false,
       created_at: null,
       updated_at: null,
     });
     upsertDepartmentTestSettingsMock.mockReset();
-    listDepartmentReportMembersMock.mockReset().mockResolvedValue({
-      items: [],
-      total: 0,
-      limit: 200,
-      offset: 0,
-    });
   });
 
   afterEach(() => {
     import.meta.env.VITE_USE_MOCK_AUTH = "true";
   });
 
-  it("показывает блок «Отчёт по активностям сотрудников отдела» с кнопкой генерации и историей", async () => {
+  it("показывает блок «Отчёт по активностям сотрудников отдела» с кнопкой генерации и историей по умолчанию за 3 месяца", async () => {
     renderHome();
     expect(await screen.findByText("Отчёт по активностям сотрудников отдела")).toBeInTheDocument();
     expect(await screen.findByText(/августа 2026/)).toBeInTheDocument();
@@ -161,16 +147,16 @@ describe("HomeDepAdmin — отчёт по активностям сотрудн
       "href",
       "https://confluence.astralinux.ru/pages/viewpage.action?pageId=12345",
     );
-    // Остальные 11 месяцев из последних 12 не сгенерированы — видно явно,
-    // а не молча пропущены, как было бы при показе только истории.
-    expect(screen.getAllByText("не создан").length).toBe(11);
+    // Диапазон по умолчанию — 3 месяца назад..текущий месяц (июнь..сентябрь
+    // 2026, 4 месяца): один готов (август), три остальных — "не создан".
+    expect(screen.getAllByText("не создан").length).toBe(3);
   });
 
-  it("клик по «Сгенерировать отчёт» зовёт generateDepartmentActivityReport с department_id и периодом", async () => {
+  it("клик по «Сгенерировать отчёт» зовёт generateDepartmentActivityReport с department_id и периодом предыдущего месяца", async () => {
     generateDepartmentActivityReportMock.mockResolvedValue({
       id: "rep_2",
       department_id: "dep_1",
-      period: "2026-09",
+      period: "2026-08",
       generated_at: "2026-09-07T10:00:00Z",
       generated_by: "u1",
       confluence_page_id: null,
@@ -183,10 +169,9 @@ describe("HomeDepAdmin — отчёт по активностям сотрудн
     fireEvent.click(screen.getByRole("button", { name: /Сгенерировать отчёт/ }));
 
     await waitFor(() => expect(generateDepartmentActivityReportMock).toHaveBeenCalledTimes(1));
-    expect(generateDepartmentActivityReportMock).toHaveBeenCalledWith(
-      "dep_1",
-      expect.objectContaining({ period: expect.stringMatching(/^\d{4}-\d{2}$/) }),
-    );
+    // Дефолт формы генерации — предыдущий месяц относительно текущего (не
+    // текущий — он ещё не закончился и не может быть полным отчётом).
+    expect(generateDepartmentActivityReportMock).toHaveBeenCalledWith("dep_1", { period: "2026-08" });
     // Успешная генерация перезапрашивает историю.
     await waitFor(() => expect(listDepartmentActivityReportsMock.mock.calls.length).toBeGreaterThan(1));
   });
@@ -199,5 +184,28 @@ describe("HomeDepAdmin — отчёт по активностям сотрудн
     fireEvent.click(screen.getByRole("button", { name: /Сгенерировать отчёт/ }));
 
     expect(await screen.findByText("boom")).toBeInTheDocument();
+  });
+
+  it("переключатель авто-генерации зовёт upsertDepartmentTestSettings с activity_report_auto_generate", async () => {
+    upsertDepartmentTestSettingsMock.mockResolvedValue({
+      id: "dts_1",
+      department_id: "dep_1",
+      retry_enabled: true,
+      test_username: "u",
+      activity_report_auto_generate: true,
+      created_at: null,
+      updated_at: null,
+    });
+    renderHome();
+    const toggle = await screen.findByLabelText(/Генерировать автоматически 1 числа месяца/);
+    expect(toggle).not.toBeChecked();
+
+    fireEvent.click(toggle);
+
+    await waitFor(() =>
+      expect(upsertDepartmentTestSettingsMock).toHaveBeenCalledWith("dep_1", {
+        activity_report_auto_generate: true,
+      }),
+    );
   });
 });

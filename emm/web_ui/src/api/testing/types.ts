@@ -258,7 +258,7 @@ export interface DepartmentTestSettings {
   department_id: string;
   retry_enabled: boolean;
   test_username: string;
-  activity_report_schedule: string | null;
+  activity_report_auto_generate: boolean;
   created_at: Iso8601 | null;
   updated_at: Iso8601 | null;
 }
@@ -267,7 +267,7 @@ export interface DepartmentTestSettings {
 export interface DepartmentTestSettingsUpdateRequest {
   retry_enabled?: boolean;
   test_username?: string;
-  activity_report_schedule?: string | null;
+  activity_report_auto_generate?: boolean;
 }
 
 // ── department-integration-settings ───────────────────────────────────────

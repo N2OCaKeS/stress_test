@@ -74,30 +74,37 @@ async def create_test_definition(
     return obj
 
 
-async def get_test_definition(db: AsyncSession, test_id: str) -> TestDefinition:
-    """SELECT теста по PK. Read без проверки прав и без аудита."""
+async def get_test_definition(
+    db: AsyncSession, identity: Identity, test_id: str,
+) -> TestDefinition:
+    """SELECT теста по PK. Без ролевой проверки и аудита, но в пределах своего отдела."""
     obj = await repo.get_by_id(db, test_id)
     if obj is None:
         raise NotFoundError(
             error_code="TEST_DEFINITION_NOT_FOUND",
             message="Test definition not found",
         )
+    permissions.require_own_department(identity, obj.department_id)
     return obj
 
 
-async def get_test_definition_by_code(db: AsyncSession, code: str) -> TestDefinition:
-    """SELECT теста по UNIQUE code. Read без проверки прав и без аудита."""
+async def get_test_definition_by_code(
+    db: AsyncSession, identity: Identity, code: str,
+) -> TestDefinition:
+    """SELECT теста по UNIQUE code. Тот же скоуп, что и у чтения по id."""
     obj = await repo.get_by_code(db, code)
     if obj is None:
         raise NotFoundError(
             error_code="TEST_DEFINITION_NOT_FOUND",
             message="Test definition not found",
         )
+    permissions.require_own_department(identity, obj.department_id)
     return obj
 
 
 async def list_test_definitions(
     db: AsyncSession,
+    identity: Identity,
     limit: int,
     offset: int,
     *,
@@ -105,13 +112,22 @@ async def list_test_definitions(
     category: str | None = None,
     readiness: str | None = None,
 ) -> tuple[list[TestDefinition], int]:
-    """List + count каталога под фильтрами. Read без проверки прав и без аудита."""
+    """List + count каталога под фильтрами, суженными до отдела caller'а.
+
+    `department_id` остаётся параметром запроса, но чужой отдел в нём — отказ,
+    а не выдача: дефолт «все отделы» здесь означал бы отсутствие изоляции.
+    Платформенные тесты (`department_id IS NULL`) видны всем — см.
+    `permissions.require_own_department`.
+    """
+    scope = permissions.own_department_or_403(identity, department_id)
     items = await repo.list_all(
         db, limit=limit, offset=offset,
-        department_id=department_id, category=category, readiness=readiness,
+        department_id=scope, category=category, readiness=readiness,
+        include_unscoped=True,
     )
     total = await repo.count_all(
-        db, department_id=department_id, category=category, readiness=readiness,
+        db, department_id=scope, category=category, readiness=readiness,
+        include_unscoped=True,
     )
     return items, total
 

@@ -8,12 +8,22 @@ import pytest
 
 from src.core.exceptions import NotFoundError, ServiceUnavailableError
 from src.db.session import AsyncSessionLocal
+from src.dependencies.auth import Identity
 from src.repositories import department_integration_settings as dis_repo
 from src.services import jira_report_client, jira_sprint_board as svc, secret_client
 from src.utils.ids import department_integration_settings_id
 from tests.conftest import auth_hdr as _hdr
 
 BOARD_URL = "/api/testing/v1/department-integration-settings/{dept}/sprint-board"
+
+
+def _identity(department_id: str = "dep_x") -> Identity:
+    """Caller того же отдела — сервис гейтит доску по `department_id`."""
+    return Identity(
+        user_id="usr_sprint_board", username="tester", actor_type="user",
+        department_id=department_id, allowed_services=["testing_service"],
+        service_roles={"testing_service": ["admin"]}, is_banned=False, platform_role=None,
+    )
 
 
 @dataclass
@@ -53,7 +63,7 @@ class TestGetSprintBoardService:
     async def test_no_credential_is_not_configured(self, monkeypatch):
         settings = _Settings(credential_id=None)
         monkeypatch.setattr(dis_repo, "get_by_department", _fake_get_by_department(settings))
-        result = await svc.get_sprint_board(None, "dep_x")
+        result = await svc.get_sprint_board(None, _identity(), "dep_x")
         assert result.configured is False
         assert result.sprint is None
         assert "not configured" in result.warning
@@ -71,7 +81,7 @@ class TestGetSprintBoardService:
         monkeypatch.setattr(secret_client, "reveal_credential", fake_reveal)
         monkeypatch.setattr(jira_report_client, "get_active_sprint", fake_active_sprint)
 
-        result = await svc.get_sprint_board(None, "dep_x")
+        result = await svc.get_sprint_board(None, _identity(), "dep_x")
         assert result.configured is True
         assert result.sprint is None
         assert result.columns == []
@@ -90,7 +100,7 @@ class TestGetSprintBoardService:
         monkeypatch.setattr(secret_client, "reveal_credential", fake_reveal)
         monkeypatch.setattr(jira_report_client, "get_active_sprint", fake_active_sprint)
 
-        result = await svc.get_sprint_board(None, "dep_x")
+        result = await svc.get_sprint_board(None, _identity(), "dep_x")
         assert result.configured is True
         assert result.sprint is None
         assert "boom" in result.warning
@@ -104,7 +114,7 @@ class TestGetSprintBoardService:
 
         monkeypatch.setattr(secret_client, "reveal_credential", fake_reveal)
 
-        result = await svc.get_sprint_board(None, "dep_x")
+        result = await svc.get_sprint_board(None, _identity(), "dep_x")
         assert result.configured is True
         assert "credential unavailable" in result.warning
 
@@ -130,7 +140,7 @@ class TestGetSprintBoardService:
         monkeypatch.setattr(jira_report_client, "get_active_sprint", fake_active_sprint)
         monkeypatch.setattr(jira_report_client, "search_sprint_issues", fake_search_issues)
 
-        result = await svc.get_sprint_board(None, "dep_x")
+        result = await svc.get_sprint_board(None, _identity(), "dep_x")
         assert result.configured is True
         assert result.warning is None
         assert result.sprint.id == 42

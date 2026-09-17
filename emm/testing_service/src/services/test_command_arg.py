@@ -83,9 +83,16 @@ async def _require_variable(db: AsyncSession, variable_id: str) -> None:
         )
 
 
-async def list_command_args(db: AsyncSession, test_id: str) -> list[TestCommandArg]:
-    """Слоты теста по порядку. Read без проверки прав и без аудита."""
-    await _require_test(db, test_id)
+async def list_command_args(
+    db: AsyncSession, identity: Identity, test_id: str,
+) -> list[TestCommandArg]:
+    """Слоты теста по порядку.
+
+    Своего скоупа у слотов нет — видимость наследуется от теста-владельца
+    (в команде теста лежат пути, имена стендов и ссылки на переменные отдела).
+    """
+    test = await _require_test(db, test_id)
+    permissions.require_own_department(identity, test.department_id)
     return await repo.list_by_test(db, test_id)
 
 

@@ -65,18 +65,26 @@ async def create_stp_test_case(
     return obj
 
 
-async def get_stp_test_case(db: AsyncSession, case_id: str) -> StpTestCase:
+async def get_stp_test_case(
+    db: AsyncSession, identity: Identity, case_id: str,
+) -> StpTestCase:
     obj = await repo.get_by_id(db, case_id)
     if obj is None:
         raise NotFoundError(error_code="STP_TEST_CASE_NOT_FOUND", message="Stp test case not found")
+    permissions.require_own_department(identity, obj.department_id)
     return obj
 
 
 async def list_stp_test_cases(
-    db: AsyncSession, limit: int, offset: int, *, department_id: str | None = None,
+    db: AsyncSession, identity: Identity, limit: int, offset: int, *,
+    department_id: str | None = None,
 ) -> tuple[list[StpTestCase], int]:
-    items = await repo.list_all(db, limit=limit, offset=offset, department_id=department_id)
-    total = await repo.count_all(db, department_id=department_id)
+    """Каталог кейсов своего отдела + платформенные (`department_id IS NULL`)."""
+    scope = permissions.own_department_or_403(identity, department_id)
+    items = await repo.list_all(
+        db, limit=limit, offset=offset, department_id=scope, include_unscoped=True,
+    )
+    total = await repo.count_all(db, department_id=scope, include_unscoped=True)
     return items, total
 
 

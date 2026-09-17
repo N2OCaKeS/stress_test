@@ -345,12 +345,18 @@ class TestListAndGet:
         assert run_a_id in ids
         assert run_b_id not in ids
 
+        # Чужой отдел в фильтре больше не «сужение выдачи», а отказ.
+        foreign = await client.get(BASE, headers=_hdr(admin_token), params={"department_id": "dep_b"})
+        assert foreign.status_code == 403, foreign.text
+        assert foreign.json()["error_code"] == "DEPARTMENT_ISOLATION"
+
         by_final = await client.get(BASE, headers=_hdr(admin_token), params={"final": True})
         ids = [r["id"] for r in by_final.json()["items"]]
         assert run_a_id in ids
         assert run_b_id not in ids
 
-        by_status = await client.get(BASE, headers=_hdr(admin_token), params={"status": "queued"})
+        # `status` проверяем глазами отдела B — кампания B чужая для admin_token.
+        by_status = await client.get(BASE, headers=_hdr(token_b), params={"status": "queued"})
         ids = [r["id"] for r in by_status.json()["items"]]
         assert run_b_id in ids
         assert run_a_id not in ids

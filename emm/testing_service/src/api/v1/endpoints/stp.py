@@ -1,12 +1,14 @@
 """СТП: каталог тест-кейсов, генерация Zephyr test-run'ов, прогоны, ячейки (§2.5, §6, §D2-D5 плана миграции).
 
-Тест-кейсы — чтение открыто любому аутентифицированному актору, запись —
-матрица `(stp_test_case, *, ...)`. `/stp/generate` — админский вызов,
+Тест-кейсы — чтение в пределах своего отдела плюс платформенные кейсы без
+владельца (`department_id IS NULL`), запись — матрица `(stp_test_case, *, ...)`.
+Прогоны/ячейки скоупятся через отдел стенда — своего `department_id` у
+`stp_test_runs` нет (см. модель). `/stp/generate` — админский вызов,
 матрица `(stp_test_run, *, create)`, принимает явный `scope` (changelog/full,
 §D4/D5) — первый вызов заводит состав, повтор с тем же `scope` идемпотентен,
 с другим — переключает уже существующий состав (см. `services/stp.py`).
 `/stp/composition` — текущий `scope`+`revision` пары (отдел, РЦ), чтение
-открыто. Ячейки — ручной override под `(stp_cell, *, update)`, событийное
+своему отделу. Ячейки — ручной override под `(stp_cell, *, update)`, событийное
 обновление идёт мимо HTTP (см. `services/queue.py` → `services/stp_status.py`).
 `/stp/matrix/publish` — ручная публикация сводной таблицы РЦ в Confluence,
 department-scoped `(stp_test_run, *, publish)` (см. `services/stp_matrix.py`).
@@ -28,7 +30,7 @@ preview тоже дёргает Jira/Zephyr живым запросом с кр�
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AuthenticatedIdentity, CurrentUserIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse, PaginatedResponse
 from src.schemas.stp import (
@@ -68,17 +70,17 @@ router = APIRouter(prefix="/stp")
     "/test-cases",
     response_model=PaginatedResponse[StpTestCaseResponse],
     summary="Каталог тест-кейсов СТП",
-    description="Зеркало Zephyr Scale test-case. Доступен любому аутентифицированному актору.",
+    description="Зеркало Zephyr Scale test-case. Свой отдел + платформенные кейсы.",
 )
 async def list_stp_test_cases(
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     department_id: str | None = Query(default=None),
 ) -> PaginatedResponse[StpTestCaseResponse]:
     items, total = await stp_test_case_svc.list_stp_test_cases(
-        db, limit=limit, offset=offset, department_id=department_id,
+        db, identity, limit=limit, offset=offset, department_id=department_id,
     )
     return PaginatedResponse[StpTestCaseResponse](
         items=[StpTestCaseResponse.model_validate(i) for i in items],
@@ -109,9 +111,9 @@ async def create_stp_test_case(
     summary="Карточка тест-кейса СТП",
 )
 async def get_stp_test_case(
-    case_id: str, identity: AuthenticatedIdentity, db: AsyncSession = Depends(get_db),
+    case_id: str, identity: CurrentUserIdentity, db: AsyncSession = Depends(get_db),
 ) -> StpTestCaseResponse:
-    obj = await stp_test_case_svc.get_stp_test_case(db, case_id)
+    obj = await stp_test_case_svc.get_stp_test_case(db, identity, case_id)
     return StpTestCaseResponse.model_validate(obj)
 
 
@@ -183,18 +185,18 @@ async def generate_stp(
     response_model=StpCompositionResponse,
     summary="Текущий активный состав СТП (scope + revision) отдела для одной РЦ",
     description=(
-        "Открыт любому аутентифицированному актору. Отсутствие строки — не 404, а "
+        "Доступен пользователям этого же отдела. Отсутствие строки — не 404, а "
         "дефолт `scope: null, revision: 0` (состав ещё ни разу не генерировался)."
     ),
 )
 async def get_stp_composition(
     os_version_id: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     department_id: str | None = Query(default=None),
 ) -> StpCompositionResponse:
     data = await stp_svc.get_stp_composition_effective(
-        db, department_id or identity.department_id, os_version_id,
+        db, identity, department_id or identity.department_id, os_version_id,
     )
     return StpCompositionResponse(**data)
 
@@ -231,7 +233,7 @@ async def publish_stp_matrix(
     summary="Список СТП-прогонов (Zephyr test-run'ов)",
 )
 async def list_stp_test_runs(
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -239,7 +241,7 @@ async def list_stp_test_runs(
     os_version_id: str | None = Query(default=None),
 ) -> PaginatedResponse[StpTestRunResponse]:
     items, total = await stp_svc.list_stp_test_runs(
-        db, limit=limit, offset=offset, stand_id=stand_id, os_version_id=os_version_id,
+        db, identity, limit=limit, offset=offset, stand_id=stand_id, os_version_id=os_version_id,
     )
     return PaginatedResponse[StpTestRunResponse](
         items=[StpTestRunResponse.model_validate(i) for i in items],
@@ -254,9 +256,9 @@ async def list_stp_test_runs(
     responses={404: {"description": "Не найден."}},
 )
 async def get_stp_test_run(
-    run_id: str, identity: AuthenticatedIdentity, db: AsyncSession = Depends(get_db),
+    run_id: str, identity: CurrentUserIdentity, db: AsyncSession = Depends(get_db),
 ) -> StpTestRunResponse:
-    run, _cells = await stp_svc.get_stp_test_run(db, run_id)
+    run, _cells = await stp_svc.get_stp_test_run(db, identity, run_id)
     return StpTestRunResponse.model_validate(run)
 
 
@@ -267,9 +269,9 @@ async def get_stp_test_run(
     responses={404: {"description": "Прогон не найден."}},
 )
 async def list_stp_test_run_cells(
-    run_id: str, identity: AuthenticatedIdentity, db: AsyncSession = Depends(get_db),
+    run_id: str, identity: CurrentUserIdentity, db: AsyncSession = Depends(get_db),
 ) -> list[StpCellResponse]:
-    _run, cells = await stp_svc.get_stp_test_run(db, run_id)
+    _run, cells = await stp_svc.get_stp_test_run(db, identity, run_id)
     return [StpCellResponse.model_validate(c) for c in cells]
 
 

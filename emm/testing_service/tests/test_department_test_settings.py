@@ -1,13 +1,12 @@
 """Тесты `/api/testing/v1/department-test-settings` (§2.4 плана миграции).
 
-GET открыт любому аутентифицированному актору и никогда не 404 — отсутствие
-строки значит дефолты. PUT (upsert) — под матрицей прав
-`(department_test_settings, *, update)`.
+GET доступен пользователям этого же отдела и никогда не 404 — отсутствие
+строки значит дефолты. PUT (upsert) — department-scoped матрица
+`(department_test_settings, *, update)`. Чужой отдел в обоих случаях 403 —
+это проверяет `test_department_isolation.py`.
 """
 
 from __future__ import annotations
-
-import uuid
 
 import pytest
 
@@ -15,9 +14,14 @@ from tests.conftest import auth_hdr as _hdr
 
 BASE = "/api/testing/v1/department-test-settings"
 
+# Отдел фикстур `admin_token`/`guest_token`/`no_role_token` (см. conftest).
+# Строки этой таблицы чистятся между тестами, поэтому «своего» отдела хватает
+# и там, где раньше брался случайный.
+OWN_DEPT = "dep_a"
+
 
 def _dept() -> str:
-    return f"dep_{uuid.uuid4().hex[:8]}"
+    return OWN_DEPT
 
 
 class TestGetDefaults:

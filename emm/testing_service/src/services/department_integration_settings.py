@@ -1,8 +1,10 @@
 """Use cases настроек интеграции отдела с Jira/Zephyr/Confluence (§2.4, §3.5 плана миграции).
 
-Устройство зеркалит `department_test_settings.py`: чтение открыто любому
-аутентифицированному актору (отсутствие строки — не 404, а дефолт с пустыми
-полями), запись — под матрицей `(department_integration_settings, *, update)`.
+Устройство зеркалит `department_test_settings.py`: чтение — своему отделу
+(отсутствие строки — не 404, а дефолт с пустыми полями), запись —
+department-scoped матрица `(department_integration_settings, *, update)`.
+Строка несёт ссылки на кредентиалы отдела в secret_service, поэтому cross-
+department доступ закрыт с обеих сторон.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -90,6 +92,17 @@ async def get_effective(db: AsyncSession, department_id: str) -> dict:
     }
 
 
+async def get_effective_for(db: AsyncSession, identity: Identity, department_id: str) -> dict:
+    """То же, что `get_effective`, но для HTTP-чтения — с гейтом по отделу.
+
+    Отдельная функция по той же причине, что и в `department_test_settings`:
+    внутренние потребители (СТП-публикация, HR-отчёт) идут без
+    пользовательского контекста.
+    """
+    permissions.require_own_department(identity, department_id)
+    return await get_effective(db, department_id)
+
+
 async def upsert(
     db: AsyncSession,
     identity: Identity,
@@ -99,8 +112,8 @@ async def upsert(
 ) -> DepartmentIntegrationSettings:
     """PUT — создаёт строку при первом вызове, иначе обновляет заданные поля."""
     try:
-        await permissions.require_action(
-            db, identity, EntityType.DEPARTMENT_INTEGRATION_SETTINGS, Action.UPDATE,
+        await permissions.require_department_action(
+            db, identity, department_id, EntityType.DEPARTMENT_INTEGRATION_SETTINGS, Action.UPDATE,
         )
     except AuthorizationError:
         audit_service.emit(

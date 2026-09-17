@@ -123,22 +123,43 @@ class TestCreate:
 # ── Список + фильтры (department scoping) ───────────────────────────────────
 
 class TestListFilters:
-    async def test_filter_by_department(self, client, admin_token, no_role_token):
-        dept = f"dep_{uuid.uuid4().hex[:8]}"
-        created = await client.post(
-            BASE, headers=_hdr(admin_token), json=_payload(department_id=dept),
+    async def test_listing_is_scoped_to_own_department(self, client, admin_token, no_role_token):
+        """Свой отдел виден, чужой — нет; платформенный тест (без отдела) виден всем."""
+        own = await client.post(
+            BASE, headers=_hdr(admin_token), json=_payload(department_id="dep_a"),
         )
-        assert created.status_code == 201
+        assert own.status_code == 201
         other = await client.post(
             BASE, headers=_hdr(admin_token), json=_payload(department_id="dep_other"),
         )
         assert other.status_code == 201
+        unscoped = await client.post(BASE, headers=_hdr(admin_token), json=_payload())
+        assert unscoped.status_code == 201
 
-        resp = await client.get(BASE, params={"department_id": dept}, headers=_hdr(no_role_token))
+        resp = await client.get(BASE, params={"limit": 500}, headers=_hdr(no_role_token))
         assert resp.status_code == 200
-        codes = {item["id"] for item in resp.json()["items"]}
-        assert created.json()["id"] in codes
-        assert other.json()["id"] not in codes
+        ids = {item["id"] for item in resp.json()["items"]}
+        assert own.json()["id"] in ids
+        assert unscoped.json()["id"] in ids
+        assert other.json()["id"] not in ids
+
+    async def test_explicit_own_department_filter_allowed(self, client, admin_token, no_role_token):
+        own = await client.post(
+            BASE, headers=_hdr(admin_token), json=_payload(department_id="dep_a"),
+        )
+        assert own.status_code == 201
+        resp = await client.get(
+            BASE, params={"department_id": "dep_a", "limit": 500}, headers=_hdr(no_role_token),
+        )
+        assert resp.status_code == 200
+        assert own.json()["id"] in {item["id"] for item in resp.json()["items"]}
+
+    async def test_explicit_foreign_department_filter_rejected(self, client, no_role_token):
+        resp = await client.get(
+            BASE, params={"department_id": "dep_other"}, headers=_hdr(no_role_token),
+        )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["error_code"] == "DEPARTMENT_ISOLATION"
 
     async def test_filter_by_category(self, client, admin_token, no_role_token):
         category = f"cat_{uuid.uuid4().hex[:8]}"

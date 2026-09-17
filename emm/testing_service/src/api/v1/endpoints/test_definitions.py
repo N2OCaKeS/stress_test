@@ -1,7 +1,9 @@
 """CRUD каталога тестов (§2.2 плана миграции).
 
-Чтение (список / карточка по id / по коду) доступно любому аутентифицированному
-актору, запись (create/update/delete) — под матрицей прав
+Чтение (список / карточка по id / по коду) — в пределах своего отдела плюс
+платформенные тесты без владельца (`department_id IS NULL`, так заводит их
+импорт легаси-каталога); чужой отдел — 403 `DEPARTMENT_ISOLATION`. Запись
+(create/update/delete) — под матрицей прав
 `(test_definition, *, create|update|delete)`. Слоты команды теста
 (`test_command_args`) — соседний роутер `test_command_args.py`, смонтированный
 под тем же `{test_id}`.
@@ -10,7 +12,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AuthenticatedIdentity, CurrentUserIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse, PaginatedResponse
 from src.schemas.test_definition import (
@@ -28,16 +30,18 @@ router = APIRouter(prefix="/test-definitions")
     response_model=PaginatedResponse[TestDefinitionResponse],
     summary="Список тестов каталога",
     description=(
-        "Каталог тестов с опциональными фильтрами по отделу/категории/готовности. "
-        "Доступен любому аутентифицированному актору. Envelope `{items, total, limit, offset}`."
+        "Каталог тестов с опциональными фильтрами по категории/готовности. "
+        "Выдача сужена до отдела вызывающего плюс платформенные тесты; "
+        "`department_id` принимается только свой. Envelope `{items, total, limit, offset}`."
     ),
     responses={
         200: {"description": "Страница каталога."},
         401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — запрошен чужой `department_id`."},
     },
 )
 async def list_test_definitions(
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -45,9 +49,9 @@ async def list_test_definitions(
     category: str | None = Query(default=None, description="Фильтр по категории."),
     readiness: str | None = Query(default=None, description="Фильтр по статусу готовности."),
 ) -> PaginatedResponse[TestDefinitionResponse]:
-    """List тестов. Любой аутентифицированный актор."""
+    """List тестов. Свой отдел + платформенные."""
     items, total = await svc.list_test_definitions(
-        db, limit=limit, offset=offset,
+        db, identity, limit=limit, offset=offset,
         department_id=department_id, category=category, readiness=readiness,
     )
     return PaginatedResponse[TestDefinitionResponse](
@@ -62,19 +66,20 @@ async def list_test_definitions(
     "/by-code/{code}",
     response_model=TestDefinitionResponse,
     summary="Получить тест по коду",
-    description="Карточка теста по UNIQUE-коду. Любой аутентифицированный актор.",
+    description="Карточка теста по UNIQUE-коду. Свой отдел либо платформенный тест.",
     responses={
         401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — тест чужого отдела."},
         404: {"description": "Тест не найден."},
     },
 )
 async def get_test_definition_by_code(
     code: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> TestDefinitionResponse:
-    """Get теста по коду. Любой аутентифицированный актор."""
-    obj = await svc.get_test_definition_by_code(db, code)
+    """Get теста по коду. Свой отдел либо платформенный тест."""
+    obj = await svc.get_test_definition_by_code(db, identity, code)
     return TestDefinitionResponse.model_validate(obj)
 
 
@@ -104,19 +109,20 @@ async def create_test_definition(
     "/{test_id}",
     response_model=TestDefinitionResponse,
     summary="Получить тест",
-    description="Карточка теста. Любой аутентифицированный актор.",
+    description="Карточка теста. Свой отдел либо платформенный тест.",
     responses={
         401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — тест чужого отдела."},
         404: {"description": "Тест не найден."},
     },
 )
 async def get_test_definition(
     test_id: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> TestDefinitionResponse:
-    """Get теста по id. Любой аутентифицированный актор."""
-    obj = await svc.get_test_definition(db, test_id)
+    """Get теста по id. Свой отдел либо платформенный тест."""
+    obj = await svc.get_test_definition(db, identity, test_id)
     return TestDefinitionResponse.model_validate(obj)
 
 

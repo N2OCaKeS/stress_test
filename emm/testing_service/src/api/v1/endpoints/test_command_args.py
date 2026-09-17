@@ -1,8 +1,8 @@
 """CRUD слотов конструктора команд теста (§3.2-3.3 плана миграции).
 
 Смонтирован под `/test-definitions/{test_id}/args`. Слоты не заводят
-отдельную защищаемую сущность верхнего уровня — read открыт любому
-аутентифицированному актору (как и сам тест), write проверяет
+отдельную защищаемую сущность верхнего уровня — видимость read'а
+наследуется от теста-владельца (как и сам тест), write проверяет
 `(test_definition, *, update)`, потому что редактирование команды это часть
 редактирования теста.
 """
@@ -10,7 +10,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AuthenticatedIdentity, CurrentUserIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse
 from src.schemas.test_command_arg import (
@@ -28,19 +28,20 @@ router = APIRouter(prefix="/test-definitions/{test_id}/args")
     "",
     response_model=list[TestCommandArgResponse],
     summary="Слоты команды теста",
-    description="Все слоты теста, упорядоченные по `position`. Любой аутентифицированный актор.",
+    description="Все слоты теста, упорядоченные по `position`. Видимость — как у самого теста.",
     responses={
         401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — тест чужого отдела."},
         404: {"description": "Тест не найден."},
     },
 )
 async def list_command_args(
     test_id: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> list[TestCommandArgResponse]:
-    """List слотов теста по порядку. Любой аутентифицированный актор."""
-    items = await svc.list_command_args(db, test_id)
+    """List слотов теста по порядку. Видимость — как у самого теста."""
+    items = await svc.list_command_args(db, identity, test_id)
     return [TestCommandArgResponse.model_validate(i) for i in items]
 
 

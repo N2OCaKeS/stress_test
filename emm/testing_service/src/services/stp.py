@@ -159,11 +159,12 @@ async def _resolve_composition(
 
 
 async def get_stp_composition_effective(
-    db: AsyncSession, department_id: str, os_version_id: str,
+    db: AsyncSession, identity: Identity, department_id: str, os_version_id: str,
 ) -> dict:
     """Эффективный состав пары `(department, РЦ)` — пустой дефолт, если строки ещё нет
     (состав ни разу не генерировался), тот же паттерн, что и
     `department_integration_settings.get_effective`."""
+    permissions.require_own_department(identity, department_id)
     row = await stp_composition_repo.get_by_department_and_os_version(db, department_id, os_version_id)
     if row is None:
         return {
@@ -476,19 +477,30 @@ async def generate_stp_runs(
 
 
 async def list_stp_test_runs(
-    db: AsyncSession, limit: int, offset: int, *,
+    db: AsyncSession, identity: Identity, limit: int, offset: int, *,
     stand_id: str | None = None, os_version_id: str | None = None,
 ) -> tuple[list[StpTestRun], int]:
+    """Прогоны своего отдела — фильтр по отделу стенда (своего у прогона нет)."""
+    scope = permissions.own_department_or_403(identity, None)
     items = await stp_test_run_repo.list_all(
-        db, limit=limit, offset=offset, stand_id=stand_id, os_version_id=os_version_id,
+        db, limit=limit, offset=offset,
+        stand_id=stand_id, os_version_id=os_version_id, department_id=scope,
     )
-    total = await stp_test_run_repo.count_all(db, stand_id=stand_id, os_version_id=os_version_id)
+    total = await stp_test_run_repo.count_all(
+        db, stand_id=stand_id, os_version_id=os_version_id, department_id=scope,
+    )
     return items, total
 
 
-async def get_stp_test_run(db: AsyncSession, run_id: str):
+async def get_stp_test_run(db: AsyncSession, identity: Identity, run_id: str):
     run = await stp_test_run_repo.get_by_id(db, run_id)
     if run is None:
         raise NotFoundError(error_code="STP_TEST_RUN_NOT_FOUND", message="Stp test run not found")
+    # `stand_id` — NOT NULL FK с RESTRICT, стенд обязан быть; если его всё же
+    # нет, отдел не восстановить — прогон считаем невидимым.
+    stand = await test_stand_repo.get_by_id(db, run.stand_id)
+    if stand is None:
+        raise NotFoundError(error_code="STP_TEST_RUN_NOT_FOUND", message="Stp test run not found")
+    permissions.require_own_department(identity, stand.department_id)
     cells = await stp_cell_repo.list_by_run(db, run_id)
     return run, cells

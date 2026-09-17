@@ -548,7 +548,7 @@ async def preview_test_run(
     return stands_without_tests, entries
 
 
-async def get_test_run(db: AsyncSession, run_id: str) -> tuple[TestRun, list]:
+async def get_test_run(db: AsyncSession, identity: Identity, run_id: str) -> tuple[TestRun, list]:
     """Карточка кампании + все её дочерние queue_items (§6.1 — обзор кампании)."""
     run = await repo.get_by_id(db, run_id)
     if run is None:
@@ -556,12 +556,14 @@ async def get_test_run(db: AsyncSession, run_id: str) -> tuple[TestRun, list]:
             error_code="TEST_RUN_NOT_FOUND",
             message="Test run not found",
         )
+    permissions.require_own_department(identity, run.department_id)
     items = await queue_item_repo.list_by_test_run_id(db, run_id)
     return run, items
 
 
 async def list_test_runs(
     db: AsyncSession,
+    identity: Identity,
     limit: int,
     offset: int,
     *,
@@ -569,9 +571,10 @@ async def list_test_runs(
     status: str | None = None,
     final: bool | None = None,
 ) -> tuple[list[TestRun], int]:
-    """List + count кампаний под фильтрами. Открыто любому аутентифицированному актору."""
+    """List + count кампаний под фильтрами, суженными до отдела вызывающего."""
+    scope = permissions.own_department_or_403(identity, department_id)
     items = await repo.list_all(
-        db, limit=limit, offset=offset, department_id=department_id, status=status, final=final,
+        db, limit=limit, offset=offset, department_id=scope, status=status, final=final,
     )
-    total = await repo.count_all(db, department_id=department_id, status=status, final=final)
+    total = await repo.count_all(db, department_id=scope, status=status, final=final)
     return items, total

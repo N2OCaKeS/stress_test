@@ -1,10 +1,13 @@
 """Use cases настроек тестирования отдела (§2.4 плана миграции).
 
-Чтение открыто любому аутентифицированному актору (как `test_definition`/
-`test_stand`) — это не секрет, а рабочая конфигурация очереди. Отсутствие
-строки в БД не 404: сервис отдаёт дефолты (`DEFAULT_*`), реальная строка
-появляется только на первый `PUT`. Запись — под матрицей прав
+Настройки department-scoped: `test_username` уезжает в prepare-for-test и
+определяет, какого SSH-пользователя `server_service` провижнит на стендах
+отдела, поэтому чужой отдел их не читает и не пишет. Чтение —
+`require_own_department`, запись — `require_department_action` на
 `(department_test_settings, *, update)`.
+
+Отсутствие строки в БД не 404: сервис отдаёт дефолты (`DEFAULT_*`), реальная
+строка появляется только на первый `PUT`.
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +60,17 @@ async def get_effective(db: AsyncSession, department_id: str) -> dict:
     }
 
 
+async def get_effective_for(db: AsyncSession, identity: Identity, department_id: str) -> dict:
+    """То же, что `get_effective`, но для HTTP-чтения — с гейтом по отделу.
+
+    Отдельная функция, а не флаг: `get_effective` дёргает очередь
+    (`services/queue.py`) уже без пользовательского контекста, ей гейт
+    неприменим.
+    """
+    permissions.require_own_department(identity, department_id)
+    return await get_effective(db, department_id)
+
+
 async def upsert(
     db: AsyncSession,
     identity: Identity,
@@ -65,8 +79,8 @@ async def upsert(
 ) -> DepartmentTestSettings:
     """PUT — создаёт строку при первом вызове, иначе обновляет заданные поля."""
     try:
-        await permissions.require_action(
-            db, identity, EntityType.DEPARTMENT_TEST_SETTINGS, Action.UPDATE,
+        await permissions.require_department_action(
+            db, identity, department_id, EntityType.DEPARTMENT_TEST_SETTINGS, Action.UPDATE,
         )
     except AuthorizationError:
         audit_service.emit(

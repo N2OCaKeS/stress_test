@@ -27,7 +27,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.exceptions import DomainValidationError, NotFoundError
+from src.core.exceptions import AuthorizationError, DomainValidationError, NotFoundError
+from src.dependencies.auth import Identity
 from src.models import TestLog, TestLogSegment
 from src.repositories import queue_item as queue_item_repo
 from src.repositories import test_definition as test_definition_repo
@@ -36,7 +37,7 @@ from src.repositories import test_log_blob as test_log_blob_repo
 from src.repositories import test_log_segment as test_log_segment_repo
 from src.repositories import test_stand as stand_repo
 from src.schemas.test_log import LogSegmentRequest
-from src.services import log_rotation
+from src.services import log_rotation, permissions
 from src.utils.ids import test_log_id as new_log_id
 from src.utils.ids import test_log_segment_id as new_segment_id
 
@@ -188,7 +189,28 @@ async def append_segment(db: AsyncSession, queue_item_id: str, payload: LogSegme
     return log
 
 
-async def get_full_log(db: AsyncSession, queue_item_id: str) -> tuple[TestLog, str]:
+async def stand_department_id(db: AsyncSession, stand_id: str) -> str | None:
+    """Отдел-владелец стенда. `test_logs` своей колонки отдела не несут (см. модуль модели)."""
+    stand = await stand_repo.get_by_id(db, stand_id)
+    return stand.department_id if stand is not None else None
+
+
+async def require_stand_access(db: AsyncSession, identity: Identity, stand_id: str) -> None:
+    """Гейт чтения лога: текст прогона видит только отдел-владелец стенда.
+
+    Стенд не найден (снесён после появления лога) — отдел не восстановить,
+    считаем лог невидимым, а не общедоступным.
+    """
+    department_id = await stand_department_id(db, stand_id)
+    if department_id is None:
+        raise AuthorizationError(
+            error_code="DEPARTMENT_ISOLATION",
+            message="Cannot resolve the owning department of this log",
+        )
+    permissions.require_own_department(identity, department_id)
+
+
+async def get_full_log(db: AsyncSession, identity: Identity, queue_item_id: str) -> tuple[TestLog, str]:
     """Лог + полный текст. 404, если для этого queue_item лога ещё нет."""
     log = await test_log_repo.get_by_queue_item_id(db, queue_item_id)
     if log is None:
@@ -196,15 +218,16 @@ async def get_full_log(db: AsyncSession, queue_item_id: str) -> tuple[TestLog, s
             error_code="TEST_LOG_NOT_FOUND",
             message="No log for this queue item yet (test has not started or produced its first chunk)",
         )
+    await require_stand_access(db, identity, log.stand_id)
     blob = await test_log_blob_repo.get_by_log_id(db, log.id)
     return log, (blob.content if blob else "")
 
 
 async def get_log_range(
-    db: AsyncSession, queue_item_id: str, from_: int | None, to_: int | None,
+    db: AsyncSession, identity: Identity, queue_item_id: str, from_: int | None, to_: int | None,
 ) -> tuple[TestLog, str]:
     """Диапазон текста лога. Отсутствующая граница — 0/конец. Невалидный диапазон — 422."""
-    log, content = await get_full_log(db, queue_item_id)
+    log, content = await get_full_log(db, identity, queue_item_id)
     length = len(content)
     start = 0 if from_ is None else from_
     end = length if to_ is None else to_
@@ -218,7 +241,8 @@ async def get_log_range(
 
 
 async def list_segments(
-    db: AsyncSession, queue_item_id: str, *, status: str | None = None, limit: int = 500, offset: int = 0,
+    db: AsyncSession, identity: Identity, queue_item_id: str, *,
+    status: str | None = None, limit: int = 500, offset: int = 0,
 ) -> tuple[list[TestLogSegment], int]:
     """Страница сегментов лога. 404, если для этого queue_item лога ещё нет."""
     log = await test_log_repo.get_by_queue_item_id(db, queue_item_id)
@@ -227,6 +251,7 @@ async def list_segments(
             error_code="TEST_LOG_NOT_FOUND",
             message="No log for this queue item yet (test has not started or produced its first chunk)",
         )
+    await require_stand_access(db, identity, log.stand_id)
     items = await test_log_segment_repo.list_by_log(db, log.id, status=status, limit=limit, offset=offset)
     total = await test_log_segment_repo.count_by_log(db, log.id, status=status)
     return items, total

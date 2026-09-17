@@ -41,11 +41,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import RunSummaryCommentStatus
 from src.core.exceptions import AppException, NotFoundError
+from src.dependencies.auth import Identity
 from src.models import RunSummaryComment
 from src.repositories import department_integration_settings as dis_repo
 from src.repositories import run_summary_comment as repo
 from src.repositories import test_run as test_run_repo
-from src.services import audit_service, confluence_client, secret_client, server_client
+from src.services import audit_service, confluence_client, permissions, secret_client, server_client
 from src.utils.ids import run_summary_comment_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -254,7 +255,7 @@ async def post_run_summary(db: AsyncSession, test_run_id: str) -> RunSummaryComm
     return result
 
 
-async def get_run_summary(db: AsyncSession, test_run_id: str) -> dict:
+async def get_run_summary(db: AsyncSession, identity: Identity, test_run_id: str) -> dict:
     """`GET /test-runs/{id}/summary-comment` — статус для отображения в UI прогона.
 
     Строки может не быть (кампания ещё не завершилась терминально, либо
@@ -264,6 +265,7 @@ async def get_run_summary(db: AsyncSession, test_run_id: str) -> dict:
     run = await test_run_repo.get_by_id(db, test_run_id)
     if run is None:
         raise NotFoundError(error_code="TEST_RUN_NOT_FOUND", message="Test run not found")
+    permissions.require_own_department(identity, run.department_id)
 
     row = await repo.get_by_test_run_id(db, test_run_id)
     if row is None:

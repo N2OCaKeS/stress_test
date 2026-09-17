@@ -1,17 +1,17 @@
 """Прогоны — fleet-wide кампании (§2.4, §6.1 плана миграции).
 
 Создание — под матрицей прав `(test_run, *, create)`. Чтение (список/карточка)
-доступно любому аутентифицированному актору, как у `test_definition`/
-`test_stand` — сама постановка тестов в очередь уже гейтится их собственной
-матрицей на уровне queue.py (роль `admin` требуется на create кампании, а не
-на каждый вложенный queue_item).
+— в пределах своего отдела (`test_runs.department_id` NOT NULL), как у
+`test_stand`; сама постановка тестов в очередь дополнительно гейтится
+собственной матрицей на уровне queue.py (роль `admin` требуется на create
+кампании, а не на каждый вложенный queue_item).
 """
 
 from fastapi import APIRouter, Depends, Query
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AuthenticatedIdentity, CurrentUserIdentity
+from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import PaginatedResponse
 from src.schemas.run_summary import RunSummaryCommentResponse
@@ -124,11 +124,17 @@ async def preview_test_run(
     "",
     response_model=PaginatedResponse[TestRunResponse],
     summary="Список кампаний",
-    description="Кампании с опциональными фильтрами по отделу/статусу/финальности. Доступен любому аутентифицированному актору.",
-    responses={401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."}},
+    description=(
+        "Кампании с опциональными фильтрами по статусу/финальности; выдача "
+        "сужена до отдела вызывающего, `department_id` принимается только свой."
+    ),
+    responses={
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — запрошен чужой `department_id`."},
+    },
 )
 async def list_test_runs(
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -136,9 +142,10 @@ async def list_test_runs(
     status: str | None = Query(default=None, description="Фильтр по агрегатному статусу кампании."),
     final: bool | None = Query(default=None, description="Фильтр по флагу финального/официального прогона."),
 ) -> PaginatedResponse[TestRunResponse]:
-    """List кампаний. Любой аутентифицированный актор."""
+    """List кампаний. Свой отдел."""
     items, total = await svc.list_test_runs(
-        db, limit=limit, offset=offset, department_id=department_id, status=status, final=final,
+        db, identity, limit=limit, offset=offset,
+        department_id=department_id, status=status, final=final,
     )
     return PaginatedResponse[TestRunResponse](
         items=[TestRunResponse.model_validate(i) for i in items],
@@ -155,16 +162,17 @@ async def list_test_runs(
     description="Карточка кампании + все дочерние queue_items с их состояниями (агрегатный обзор).",
     responses={
         401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — кампания чужого отдела."},
         404: {"description": "Кампания не найдена."},
     },
 )
 async def get_test_run(
     run_id: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> TestRunDetailResponse:
-    """Get кампании по id. Любой аутентифицированный актор."""
-    run, items = await svc.get_test_run(db, run_id)
+    """Get кампании по id. Свой отдел."""
+    run, items = await svc.get_test_run(db, identity, run_id)
     response = TestRunDetailResponse.model_validate(run)
     entries = await entry_repo.list_for_run(db, run_id)
     response.entries = [TestRunEntryResponse.model_validate(entry) for entry in entries]
@@ -205,14 +213,15 @@ async def get_test_run(
     ),
     responses={
         401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — кампания чужого отдела."},
         404: {"description": "Кампания не найдена."},
     },
 )
 async def get_run_summary_comment(
     run_id: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> RunSummaryCommentResponse:
-    """Get статуса комментария кампании. Любой аутентифицированный актор."""
-    result = await run_summary_svc.get_run_summary(db, run_id)
+    """Get статуса комментария кампании. Свой отдел."""
+    result = await run_summary_svc.get_run_summary(db, identity, run_id)
     return RunSummaryCommentResponse.model_validate(result)

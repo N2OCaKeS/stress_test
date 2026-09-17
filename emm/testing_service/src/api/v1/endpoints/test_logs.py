@@ -1,10 +1,10 @@
 """Чтение/экспорт логов прогонов (§2.6, §8.4 плана миграции).
 
-Открыто любому аутентифицированному актору (`AuthenticatedIdentity`) — то же
-соображение, что и у остальных read-путей сервиса (каталог глобальных
-переменных, список стендов): чтение лога не секрет и не завязано на
-department-scope роль. Если позже понадобится более строгий гейт — заводить
-его отдельным решением, не задним числом здесь.
+Текст лога прогона — данные отдела-владельца стенда (вывод команд на его
+железе, имена хостов, пути), поэтому читает его только этот отдел. Отдел
+резолвится через `test_logs.stand_id` → `test_stands.department_id`: своей
+колонки отдела у логов нет (см. `models/test_log.py`). Чужой отдел — 403
+`DEPARTMENT_ISOLATION` на HTTP и close 4403 на WS.
 
 `WS .../log/stream` (§8.6) — живой просмотр лога прямо во время исполнения
 теста, для консоли сервера в web_ui. В отличие от интерактивной SSH-консоли
@@ -26,10 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from src.core.constants import ACTIVE_QUEUE_STATES
-from src.core.exceptions import AppException, AuthenticationError
+from src.core.constants import SERVICE_NAME
+from src.core.exceptions import AppException, AuthenticationError, AuthorizationError
 from src.db.session import AsyncSessionLocal
 from src.dependencies import auth as auth_deps
-from src.dependencies.auth import AuthenticatedIdentity
+from src.dependencies.auth import CurrentUserIdentity, Identity
 from src.dependencies.db import get_db
 from src.repositories import queue_item as queue_item_repo
 from src.repositories import test_log as test_log_repo
@@ -42,10 +43,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/queue-items")
 
-# WS close-коды. 4401/4404/4503 — application-specific (диапазон 4000-4999
+# WS close-коды. 4401/4403/4404/4503 — application-specific (диапазон 4000-4999
 # свободен по RFC 6455), мапятся на привычные HTTP-семантики. 1000 — штатное
 # закрытие по завершении теста, тот же код, что и у интерактивной консоли.
 _WS_CLOSE_UNAUTHENTICATED = 4401
+_WS_CLOSE_FORBIDDEN = 4403
 _WS_CLOSE_NOT_FOUND = 4404
 _WS_CLOSE_UNAVAILABLE = 4503
 _WS_CLOSE_NORMAL = 1000
@@ -79,12 +81,12 @@ def _ws_bearer(websocket: WebSocket) -> str | None:
     return None
 
 
-async def _authenticate_ws(token: str) -> None:
-    """Introspect + ban-check — WS-эквивалент `get_authenticated_identity`.
+async def _authenticate_ws(token: str) -> Identity:
+    """Introspect + ban-check + доступ отдела к сервису — WS-эквивалент `get_current_identity`.
 
-    Без department-гейта: чтение лога открыто любому аутентифицированному
-    актору, как и у HTTP-соседей этого роутера (`GET .../log`), поэтому здесь
-    намеренно нет проверки `SERVICE_ACCESS_DENIED`.
+    Middleware на WebSocket не отрабатывает, поэтому те же три инварианта
+    проверяем руками. Department-гейт самого лога — уже по стенду, после
+    резолва queue_item'а (см. `stream_log`).
     """
     body = await auth_deps._introspect(token)
     if not body.get("active"):
@@ -95,6 +97,12 @@ async def _authenticate_ws(token: str) -> None:
     identity = auth_deps._to_identity(body)
     if identity.is_banned:
         raise AuthenticationError(error_code="USER_BANNED", message="User is banned")
+    if SERVICE_NAME not in identity.allowed_services:
+        raise AuthorizationError(
+            error_code="SERVICE_ACCESS_DENIED",
+            message=f"User's department has no access to {SERVICE_NAME}",
+        )
+    return identity
 
 
 @router.get(
@@ -110,19 +118,20 @@ async def _authenticate_ws(token: str) -> None:
     ),
     responses={
         401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — лог стенда чужого отдела."},
         404: {"description": "TEST_LOG_NOT_FOUND — для этого queue_item лога ещё нет."},
         422: {"description": "LOG_RANGE_INVALID — невалидный from/to."},
     },
 )
 async def get_log(
     queue_item_id: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     from_: int | None = Query(default=None, ge=0, alias="from", description="Начало диапазона (включительно)."),
     to_: int | None = Query(default=None, ge=0, alias="to", description="Конец диапазона (исключая)."),
 ) -> Response:
-    """Get текста лога, целиком или диапазоном. Любой аутентифицированный актор."""
-    log, content = await svc.get_log_range(db, queue_item_id, from_, to_)
+    """Get текста лога, целиком или диапазоном. Пользователь отдела-владельца стенда."""
+    log, content = await svc.get_log_range(db, identity, queue_item_id, from_, to_)
     filename = await svc.build_filename(db, log)
     return Response(
         content=content,
@@ -142,12 +151,13 @@ async def get_log(
     ),
     responses={
         401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — лог стенда чужого отдела."},
         404: {"description": "TEST_LOG_NOT_FOUND — для этого queue_item лога ещё нет."},
     },
 )
 async def list_log_segments(
     queue_item_id: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     status_filter: str | None = Query(
         default=None, alias="status", description="Фильтр по статусу сегмента: OK / CHANGED / FATAL.",
@@ -155,8 +165,10 @@ async def list_log_segments(
     limit: int = Query(default=500, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
 ) -> PaginatedResponse[TestLogSegmentResponse]:
-    """List сегментов лога. Любой аутентифицированный актор."""
-    items, total = await svc.list_segments(db, queue_item_id, status=status_filter, limit=limit, offset=offset)
+    """List сегментов лога. Пользователь отдела-владельца стенда."""
+    items, total = await svc.list_segments(
+        db, identity, queue_item_id, status=status_filter, limit=limit, offset=offset,
+    )
     return PaginatedResponse[TestLogSegmentResponse](
         items=[TestLogSegmentResponse.model_validate(i) for i in items],
         total=total, limit=limit, offset=offset,
@@ -185,13 +197,29 @@ async def stream_log(websocket: WebSocket, queue_item_id: str) -> None:
         await websocket.close(code=_WS_CLOSE_UNAUTHENTICATED, reason="ACCESS_TOKEN_MISSING")
         return
     try:
-        await _authenticate_ws(token)
+        identity = await _authenticate_ws(token)
     except AuthenticationError as exc:
         await websocket.close(code=_WS_CLOSE_UNAUTHENTICATED, reason=exc.error_code)
+        return
+    except AuthorizationError as exc:
+        await websocket.close(code=_WS_CLOSE_FORBIDDEN, reason=exc.error_code)
         return
     except AppException as exc:
         await websocket.close(code=_WS_CLOSE_UNAVAILABLE, reason=exc.error_code)
         return
+
+    # Гейт по отделу — до accept'а: стенд элемента очереди резолвится один раз,
+    # дальше поллинг крутится уже по проверенному queue_item'у.
+    async with AsyncSessionLocal() as db:
+        first_item = await queue_item_repo.get_by_id(db, queue_item_id)
+        if first_item is None:
+            await websocket.close(code=_WS_CLOSE_NOT_FOUND, reason="QUEUE_ITEM_NOT_FOUND")
+            return
+        try:
+            await svc.require_stand_access(db, identity, first_item.stand_id)
+        except AuthorizationError as exc:
+            await websocket.close(code=_WS_CLOSE_FORBIDDEN, reason=exc.error_code)
+            return
 
     offered = websocket.scope.get("subprotocols", [])
     await websocket.accept(

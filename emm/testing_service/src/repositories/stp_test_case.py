@@ -1,6 +1,6 @@
 """StpTestCase-репозиторий — сырой CRUD против таблицы `stp_test_cases`."""
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import StpTestCase
@@ -52,22 +52,40 @@ async def list_by_ids(db: AsyncSession, ids: list[str]) -> list[StpTestCase]:
     return list((await db.execute(stmt)).scalars())
 
 
-def _apply_filters(stmt, *, department_id: str | None):
+def _apply_filters(stmt, *, department_id: str | None, include_unscoped: bool = False):
     if department_id is not None:
-        stmt = stmt.where(StpTestCase.department_id == department_id)
+        if include_unscoped:
+            # Кейсы без владельца-отдела платформенные и видны всем — тот же
+            # nullable-скоуп, что у `test_definitions`.
+            stmt = stmt.where(
+                or_(
+                    StpTestCase.department_id == department_id,
+                    StpTestCase.department_id.is_(None),
+                )
+            )
+        else:
+            stmt = stmt.where(StpTestCase.department_id == department_id)
     return stmt
 
 
 async def list_all(
-    db: AsyncSession, limit: int = 100, offset: int = 0, *, department_id: str | None = None,
+    db: AsyncSession, limit: int = 100, offset: int = 0, *,
+    department_id: str | None = None, include_unscoped: bool = False,
 ) -> list[StpTestCase]:
-    stmt = _apply_filters(select(StpTestCase), department_id=department_id)
+    stmt = _apply_filters(
+        select(StpTestCase), department_id=department_id, include_unscoped=include_unscoped,
+    )
     stmt = stmt.order_by(StpTestCase.code.asc()).limit(limit).offset(offset)
     return list((await db.execute(stmt)).scalars())
 
 
-async def count_all(db: AsyncSession, *, department_id: str | None = None) -> int:
-    stmt = _apply_filters(select(func.count(StpTestCase.id)), department_id=department_id)
+async def count_all(
+    db: AsyncSession, *, department_id: str | None = None, include_unscoped: bool = False,
+) -> int:
+    stmt = _apply_filters(
+        select(func.count(StpTestCase.id)),
+        department_id=department_id, include_unscoped=include_unscoped,
+    )
     return int((await db.execute(stmt)).scalar_one())
 
 

@@ -1,14 +1,16 @@
 """CRUD `/department-integration-settings` (§2.4, §3.5 плана миграции).
 
-GET открыт любому аутентифицированному актору, никогда не 404 — отсутствие
-строки означает "интеграция не настроена" (все поля `null`). PUT (upsert) —
-под матрицей `(department_integration_settings, *, update)`.
+GET доступен своему отделу, никогда не 404 — отсутствие строки означает
+"интеграция не настроена" (все поля `null`). PUT (upsert) — department-scoped
+матрица `(department_integration_settings, *, update)`. Чужой отдел — 403
+`DEPARTMENT_ISOLATION`: строка несёт ссылки на кредентиалы отдела, а
+sprint-board этими кредентиалами ещё и ходит в Jira.
 """
 
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AuthenticatedIdentity, BearerToken, CurrentUserIdentity
+from src.dependencies.auth import BearerToken, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.department_integration_settings import (
     DepartmentIntegrationSettingsResponse,
@@ -27,17 +29,20 @@ router = APIRouter(prefix="/department-integration-settings")
     summary="Настройки интеграции отдела с Jira/Zephyr/Confluence",
     description=(
         "Отдаёт эффективные настройки отдела — пустые поля, если строка ещё не "
-        "создана (`id: null`). Доступен любому аутентифицированному актору."
+        "создана (`id: null`). Доступен пользователям этого же отдела."
     ),
-    responses={401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."}},
+    responses={
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — настройки чужого отдела."},
+    },
 )
 async def get_department_integration_settings(
     department_id: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> DepartmentIntegrationSettingsResponse:
-    """Get настроек отдела. Любой аутентифицированный актор."""
-    data = await svc.get_effective(db, department_id)
+    """Get настроек отдела. Пользователь этого же отдела."""
+    data = await svc.get_effective_for(db, identity, department_id)
     return DepartmentIntegrationSettingsResponse(**data)
 
 
@@ -77,15 +82,18 @@ async def upsert_department_integration_settings(
         "Тянет активный спринт настроенной доски Jira и группирует его issue "
         "по статусу. Только чтение — в Jira ничего не пишется. Отсутствие "
         "настройки, активного спринта или недоступность Jira отдаётся как "
-        "`warning` в теле ответа, не как ошибка. Доступен любому "
-        "аутентифицированному актору, как и остальные GET этого файла."
+        "`warning` в теле ответа, не как ошибка. Доступен пользователям этого "
+        "же отдела, как и остальные GET этого файла."
     ),
-    responses={401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."}},
+    responses={
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — доска чужого отдела."},
+    },
 )
 async def get_department_sprint_board(
     department_id: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> JiraSprintBoardResponse:
-    """Get доски активного спринта отдела. Любой аутентифицированный актор."""
-    return await sprint_board_svc.get_sprint_board(db, department_id)
+    """Get доски активного спринта отдела. Пользователь этого же отдела."""
+    return await sprint_board_svc.get_sprint_board(db, identity, department_id)

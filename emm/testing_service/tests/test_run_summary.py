@@ -419,8 +419,10 @@ class TestGetRunSummaryCommentEndpoint:
     async def test_reflects_posted_state(self, client, admin_token, mock_confluence, mock_secret_client):
         _calls, _state = mock_confluence
         mock_secret_client["cred_x"] = ("bot", "tok123")
-        run_id = await _seed_test_run(department_id="dep_get")
-        await _seed_integration_settings("dep_get")
+        # Отдел тот же, что у `admin_token` — GET карточки кампании
+        # department-scoped (см. test_department_isolation.py).
+        run_id = await _seed_test_run(department_id="dep_a")
+        await _seed_integration_settings("dep_a")
 
         async with AsyncSessionLocal() as db:
             await run_summary_svc.post_run_summary(db, run_id)

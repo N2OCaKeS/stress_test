@@ -148,8 +148,9 @@ async def get_test_stand(
 ) -> tuple[TestStand, dict | None, bool]:
     """SELECT стенда по PK + best-effort обогащение карточкой сервера.
 
-    Возвращает `(stand, server, server_unavailable)`. Read без проверки прав
-    и без аудита — как у `test_definition`.
+    Возвращает `(stand, server, server_unavailable)`. Ролевой проверки и
+    аудита нет, но стенд чужого отдела не отдаётся — `department_id` у стендов
+    NOT NULL (резолвится из server_service при создании).
     """
     obj = await repo.get_by_id(db, stand_id)
     if obj is None:
@@ -157,6 +158,7 @@ async def get_test_stand(
             error_code="TEST_STAND_NOT_FOUND",
             message="Test stand not found",
         )
+    permissions.require_own_department(identity, obj.department_id)
 
     server: dict | None = None
     server_unavailable = False
@@ -174,6 +176,7 @@ async def get_test_stand(
 
 async def list_test_stands(
     db: AsyncSession,
+    identity: Identity,
     limit: int,
     offset: int,
     *,
@@ -184,29 +187,40 @@ async def list_test_stands(
 ) -> tuple[list[TestStand], int]:
     """List + count стендов под фильтрами. Только хранимые поля, без live-обогащения.
 
+    Выдача всегда сужена до отдела вызывающего — `server_id`-lookup в том
+    числе: иначе по чужому `serverId` можно было бы достать `stand_id` чужого
+    отдела и дальше опрашивать им очередь.
+
     `server_id` — точечный lookup «какой стенд стоит за этим Server/Vm.id»
     (UNIQUE(server_id), значит 0 либо 1 элемент); нужен консоли сервера
     (§8.6 плана миграции), чтобы по `serverId` карточки найти `stand_id`
     и дальше опросить `current-queue-item`.
     """
+    scope = permissions.own_department_or_403(identity, department_id)
     items = await repo.list_all(
         db, limit=limit, offset=offset,
-        department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
+        department_id=scope, is_active=is_active, queue_enabled=queue_enabled,
         server_id=server_id,
     )
     total = await repo.count_all(
-        db, department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
+        db, department_id=scope, is_active=is_active, queue_enabled=queue_enabled,
         server_id=server_id,
     )
     return items, total
 
 
-async def get_stand_or_404(db: AsyncSession, stand_id: str) -> TestStand:
+async def get_stand_or_404(
+    db: AsyncSession, stand_id: str, identity: Identity | None = None,
+) -> TestStand:
     """SELECT стенда по PK без live-обогащения сервером — чистый existence-check.
 
     Соседние read-эндпоинты, которым нужен только факт «стенд существует»
     (например `current-queue-item`, §8.6), не обязаны платить за N+1 к
     server_service ради этого — тот вызов делает `get_test_stand`.
+
+    `identity` передают HTTP-пути, чтобы получить тот же department-гейт, что
+    и у `get_test_stand`; внутренние вызовы без пользовательского контекста
+    оставляют его пустым.
     """
     obj = await repo.get_by_id(db, stand_id)
     if obj is None:
@@ -214,6 +228,8 @@ async def get_stand_or_404(db: AsyncSession, stand_id: str) -> TestStand:
             error_code="TEST_STAND_NOT_FOUND",
             message="Test stand not found",
         )
+    if identity is not None:
+        permissions.require_own_department(identity, obj.department_id)
     return obj
 
 

@@ -1,8 +1,8 @@
 """Read-only зеркало доски активного спринта Jira отдела (`GET .../sprint-board`).
 
 Чисто на чтение — write-операций в Jira здесь нет и не планируется. Устройство
-зеркалит `department_integration_settings.get_effective`: чтение открыто
-любому аутентифицированному актору, отсутствие настройки или недоступность
+зеркалит `department_integration_settings.get_effective`: чтение — своему
+отделу, отсутствие настройки или недоступность
 Jira — не исключение, а `warning` в самом ответе (best-effort: страница
 владельца отдела не должна падать 500 из-за того, что Jira недоступна или
 интеграция ещё не заведена).
@@ -23,6 +23,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import AppException
+from src.dependencies.auth import Identity
 from src.repositories import department_integration_settings as dis_repo
 from src.schemas.jira_sprint_board import (
     JiraSprintBoardColumn,
@@ -30,7 +31,7 @@ from src.schemas.jira_sprint_board import (
     JiraSprintBoardResponse,
     JiraSprintInfo,
 )
-from src.services import jira_report_client, secret_client
+from src.services import jira_report_client, permissions, secret_client
 
 _CATEGORY_ORDER = {"new": 0, "indeterminate": 1, "done": 2}
 
@@ -76,8 +77,16 @@ def _sprint_info(sprint: dict) -> JiraSprintInfo:
     )
 
 
-async def get_sprint_board(db: AsyncSession, department_id: str) -> JiraSprintBoardResponse:
-    """Собирает доску активного спринта отдела. Никогда не бросает наружу — все провалы best-effort."""
+async def get_sprint_board(
+    db: AsyncSession, identity: Identity, department_id: str,
+) -> JiraSprintBoardResponse:
+    """Собирает доску активного спринта отдела.
+
+    Best-effort только про внешнюю Jira: провал похода наружу уезжает в
+    `warning`, а не в исключение. Гейт по отделу — наоборот, жёсткий: вызов
+    раскрывает кредентиалу отдела на стороне сервиса и ходит ей в Jira.
+    """
+    permissions.require_own_department(identity, department_id)
     settings = await dis_repo.get_by_department(db, department_id)
     if settings is None or not settings.jira_base_url or not settings.jira_board_id or not settings.credential_id:
         return JiraSprintBoardResponse(

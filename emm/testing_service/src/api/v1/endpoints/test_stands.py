@@ -1,7 +1,8 @@
 """CRUD стендов (§2.3, §4 плана миграции).
 
 Стенды — надстройка над Server/Vm из server_service, без дублирования данных.
-Чтение (список/карточка) доступно любому аутентифицированному актору, запись
+Чтение (список/карточка) — в пределах своего отдела (`test_stands.department_id`
+NOT NULL, резолвится из server_service при создании), запись
 (create/update/delete) — под матрицей прав `(test_stand, *, create|update|delete)`.
 
 `GET /test-stands/{id}` пробрасывает bearer вызывающего в server_service —
@@ -12,7 +13,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.dependencies.auth import AuthenticatedIdentity, BearerToken, CurrentUserIdentity
+from src.dependencies.auth import BearerToken, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse, PaginatedResponse
 from src.schemas.public_queue import PublicQueueItem
@@ -36,15 +37,19 @@ router = APIRouter(prefix="/test-stands")
     response_model=PaginatedResponse[TestStandResponse],
     summary="Список тестовых стендов",
     description=(
-        "Стенды с опциональными фильтрами по отделу/активности/участию в "
-        "очереди. Доступен любому аутентифицированному актору. Отдаёт только "
+        "Стенды с опциональными фильтрами по активности/участию в очереди; "
+        "выдача сужена до отдела вызывающего, `department_id` принимается "
+        "только свой. Отдаёт только "
         "хранимые поля — без живого обогащения карточкой сервера (N+1 к "
         "server_service на страницу списка не делается, см. `GET /{id}`)."
     ),
-    responses={401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."}},
+    responses={
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — запрошен чужой `department_id`."},
+    },
 )
 async def list_test_stands(
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -56,9 +61,9 @@ async def list_test_stands(
         description="Фильтр по привязанному Server/Vm.id — UNIQUE, значит 0 либо 1 элемент в ответе.",
     ),
 ) -> PaginatedResponse[TestStandResponse]:
-    """List стендов. Любой аутентифицированный актор."""
+    """List стендов. Свой отдел."""
     items, total = await svc.list_test_stands(
-        db, limit=limit, offset=offset,
+        db, identity, limit=limit, offset=offset,
         department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
         server_id=server_id,
     )
@@ -113,16 +118,17 @@ async def create_test_stand(
     ),
     responses={
         401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — стенд чужого отдела."},
         404: {"description": "Стенд не найден."},
     },
 )
 async def get_test_stand(
     stand_id: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     bearer_token: BearerToken,
     db: AsyncSession = Depends(get_db),
 ) -> TestStandResponse:
-    """Get стенда по id. Любой аутентифицированный актор."""
+    """Get стенда по id. Свой отдел."""
     obj, server, server_unavailable = await svc.get_test_stand(db, identity, bearer_token, stand_id)
     response = TestStandResponse.model_validate(obj)
     response.server = server
@@ -142,16 +148,17 @@ async def get_test_stand(
     ),
     responses={
         401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — стенд чужого отдела."},
         404: {"description": "Стенд не найден."},
     },
 )
 async def get_current_queue_item(
     stand_id: str,
-    identity: AuthenticatedIdentity,
+    identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> QueueItemSummaryResponse | None:
-    """Get активного item'а очереди стенда. Любой аутентифицированный актор."""
-    await svc.get_stand_or_404(db, stand_id)
+    """Get активного item'а очереди стенда. Свой отдел."""
+    await svc.get_stand_or_404(db, stand_id, identity)
     item = await queue_svc.get_active_queue_item(db, stand_id)
     if item is None:
         return None

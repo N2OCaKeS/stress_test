@@ -1,8 +1,9 @@
 """Тесты `/api/testing/v1/test-stands` — тестовые стенды.
 
-Чтение доступно любому аутентифицированному актору, аноним → 401. Запись —
-под матрицей прав (сид-миграция даёт её системной роли `admin`), тот же
-паттерн, что и у `test_definitions`.
+Чтение доступно любой роли СВОЕГО отдела, аноним → 401, чужой отдел → 403
+(см. `test_department_isolation.py`). Запись — под матрицей прав
+(сид-миграция даёт её системной роли `admin`), тот же паттерн, что и у
+`test_definitions`.
 
 Создание и карточка одного стенда идут живым pass-through вызовом к
 server_service (`server_client.get_server`) — транспорт подменяется
@@ -240,18 +241,29 @@ class TestCreate:
 # ── Список + фильтры ─────────────────────────────────────────────────────────
 
 class TestListFilters:
-    async def test_filter_by_department(self, client, admin_token, no_role_token, mock_server_service):
-        dept = f"dep_{uuid.uuid4().hex[:8]}"
-        created = await _create_stand(client, admin_token, mock_server_service, department_id=dept)
-        assert created.status_code == 201
-        other = await _create_stand(client, admin_token, mock_server_service, department_id="dep_other")
+    async def test_listing_is_scoped_to_own_department(
+        self, client, admin_token, no_role_token, mock_server_service,
+    ):
+        """`department_id` стенда NOT NULL — чужой отдел не виден вообще."""
+        own = await _create_stand(client, admin_token, mock_server_service, department_id="dep_a")
+        assert own.status_code == 201
+        other = await _create_stand(
+            client, admin_token, mock_server_service, department_id="dep_other",
+        )
         assert other.status_code == 201
 
-        resp = await client.get(BASE, params={"department_id": dept}, headers=_hdr(no_role_token))
+        resp = await client.get(BASE, params={"limit": 500}, headers=_hdr(no_role_token))
         assert resp.status_code == 200
         ids = {item["id"] for item in resp.json()["items"]}
-        assert created.json()["id"] in ids
+        assert own.json()["id"] in ids
         assert other.json()["id"] not in ids
+
+    async def test_explicit_foreign_department_filter_rejected(self, client, no_role_token):
+        resp = await client.get(
+            BASE, params={"department_id": "dep_other"}, headers=_hdr(no_role_token),
+        )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["error_code"] == "DEPARTMENT_ISOLATION"
 
     async def test_filter_by_is_active(self, client, admin_token, no_role_token, mock_server_service):
         active = await _create_stand(client, admin_token, mock_server_service, is_active=True)

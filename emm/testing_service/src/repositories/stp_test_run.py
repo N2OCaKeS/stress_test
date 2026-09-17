@@ -46,11 +46,19 @@ async def find_latest_for_context(
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
-def _apply_filters(stmt, *, stand_id: str | None, os_version_id: str | None):
+def _apply_filters(
+    stmt, *, stand_id: str | None, os_version_id: str | None, department_id: str | None = None,
+):
     if stand_id is not None:
         stmt = stmt.where(StpTestRun.stand_id == stand_id)
     if os_version_id is not None:
         stmt = stmt.where(StpTestRun.os_version_id == os_version_id)
+    if department_id is not None:
+        # Своего department у прогона нет — join на стенд, как в
+        # `list_by_department_and_os_version`.
+        stmt = stmt.join(TestStand, TestStand.id == StpTestRun.stand_id).where(
+            TestStand.department_id == department_id
+        )
     return stmt
 
 
@@ -61,17 +69,23 @@ async def list_all(
     *,
     stand_id: str | None = None,
     os_version_id: str | None = None,
+    department_id: str | None = None,
 ) -> list[StpTestRun]:
-    stmt = _apply_filters(select(StpTestRun), stand_id=stand_id, os_version_id=os_version_id)
+    stmt = _apply_filters(
+        select(StpTestRun),
+        stand_id=stand_id, os_version_id=os_version_id, department_id=department_id,
+    )
     stmt = stmt.order_by(StpTestRun.created_at.desc()).limit(limit).offset(offset)
     return list((await db.execute(stmt)).scalars())
 
 
 async def count_all(
     db: AsyncSession, *, stand_id: str | None = None, os_version_id: str | None = None,
+    department_id: str | None = None,
 ) -> int:
     stmt = _apply_filters(
-        select(func.count(StpTestRun.id)), stand_id=stand_id, os_version_id=os_version_id,
+        select(func.count(StpTestRun.id)),
+        stand_id=stand_id, os_version_id=os_version_id, department_id=department_id,
     )
     return int((await db.execute(stmt)).scalar_one())
 

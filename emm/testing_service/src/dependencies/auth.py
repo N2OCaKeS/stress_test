@@ -264,6 +264,15 @@ async def get_authenticated_identity(request: Request) -> Identity:
     не забанен. Анонимный запрос отбивается 401 — каталог открыт всем
     аутентифицированным, но не анонимам. Запись в каталог по-прежнему идёт
     через `CurrentUserIdentity` + матрицу прав.
+
+    Вешать только на эндпоинты, чьи данные действительно не имеют
+    департаментского скоупа. Сейчас это `/global-variables*` (каталог
+    переменных конструктора команд) и `/statistics/settings`+
+    `/statistics/status` (platform singleton внешнего сервиса статистики) —
+    ни у одной из этих моделей нет `department_id`. Всё, что несёт данные
+    отдела (логи прогонов, стенды, кампании, СТП, HR-ростеры, настройки
+    отдела), идёт через `CurrentUserIdentity` плюс гейт по отделу
+    (`permissions.require_own_department` / `own_department_or_403`).
     """
     token = _extract_bearer(request)
     if token is None:

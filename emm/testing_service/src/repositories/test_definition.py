@@ -1,6 +1,6 @@
 """TestDefinition-репозиторий — сырой CRUD против таблицы `test_definitions`."""
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import TestDefinition
@@ -28,9 +28,21 @@ def _apply_filters(
     department_id: str | None,
     category: str | None,
     readiness: str | None,
+    include_unscoped: bool = False,
 ):
     if department_id is not None:
-        stmt = stmt.where(TestDefinition.department_id == department_id)
+        if include_unscoped:
+            # Тесты без владельца-отдела платформенные и видны всем — именно
+            # такими их заводит `scripts/import_catalog.py` (department_id: null
+            # на все позиции легаси-каталога).
+            stmt = stmt.where(
+                or_(
+                    TestDefinition.department_id == department_id,
+                    TestDefinition.department_id.is_(None),
+                )
+            )
+        else:
+            stmt = stmt.where(TestDefinition.department_id == department_id)
     if category is not None:
         stmt = stmt.where(TestDefinition.category == category)
     if readiness is not None:
@@ -46,11 +58,13 @@ async def list_all(
     department_id: str | None = None,
     category: str | None = None,
     readiness: str | None = None,
+    include_unscoped: bool = False,
 ) -> list[TestDefinition]:
     """Страница каталога с опциональными фильтрами, order by code."""
     stmt = _apply_filters(
         select(TestDefinition),
         department_id=department_id, category=category, readiness=readiness,
+        include_unscoped=include_unscoped,
     )
     stmt = stmt.order_by(TestDefinition.code.asc()).limit(limit).offset(offset)
     return list((await db.execute(stmt)).scalars())
@@ -62,11 +76,13 @@ async def count_all(
     department_id: str | None = None,
     category: str | None = None,
     readiness: str | None = None,
+    include_unscoped: bool = False,
 ) -> int:
     """COUNT под теми же фильтрами, что и `list_all` — для total в pagination."""
     stmt = _apply_filters(
         select(func.count(TestDefinition.id)),
         department_id=department_id, category=category, readiness=readiness,
+        include_unscoped=include_unscoped,
     )
     return int((await db.execute(stmt)).scalar_one())
 

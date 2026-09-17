@@ -41,3 +41,7 @@ class PublicQueueItem(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     error: str | None
+    # Запрошенное прерывание (`skip`/`pause`), пока воркер его не отработал.
+    # Непустое значение видно только у `running`-элемента — фронт по нему
+    # показывает «Останавливается…» и дизейблит кнопки управления очередью.
+    interrupt_action: str | None = None

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.auth import AuthenticatedIdentity, BearerToken, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse, PaginatedResponse
+from src.schemas.public_queue import PublicQueueItem
 from src.schemas.queue import QueueItemSummaryResponse
 from src.schemas.test_stand import (
     TestStandCreate,
@@ -22,8 +23,10 @@ from src.schemas.test_stand import (
     TestStandTestCredentialsResponse,
     TestStandUpdate,
 )
+from src.services import public_queue as public_queue_svc
 from src.services import queue as queue_svc
 from src.services import test_stand as svc
+from src.services import log_availability
 
 router = APIRouter(prefix="/test-stands")
 
@@ -153,8 +156,37 @@ async def get_current_queue_item(
     if item is None:
         return None
     return QueueItemSummaryResponse(
-        queue_item_id=item.id, state=item.state, test_id=item.test_id, started_at=item.started_at,
+        queue_item_id=item.id, state=item.state, test_id=item.test_id,
+        started_at=item.started_at, interrupt_action=item.interrupt_action,
     )
+
+
+@router.post(
+    "/{stand_id}/resume-queue",
+    response_model=PublicQueueItem,
+    summary="Продолжить остановленную очередь стенда",
+    description=(
+        "Берёт единственный `paused`-элемент стенда, переставляет его в конец "
+        "очереди (`position`) и возвращает в `queued` — после чего стенд "
+        "продолжает работу с того элемента, который теперь идёт первым. В "
+        "ответе — сам возобновлённый элемент (его `state` уже может быть "
+        "`preparing`, если очередь подхватила именно его)."
+    ),
+    responses={
+        403: {"description": "Нет прав на этот стенд."},
+        404: {"description": "Стенд не найден."},
+        409: {"description": "STAND_NOT_PAUSED — у стенда нет остановленного элемента."},
+    },
+)
+async def resume_queue(
+    stand_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> PublicQueueItem:
+    """Resume остановленной очереди стенда. Доступ: как у постановки в очередь."""
+    item = await public_queue_svc.resume_stand_queue(db, identity, stand_id)
+    logs = await log_availability.for_items(db, [item])
+    return public_queue_svc.response(item).model_copy(update={"log_status": logs[item.id]})
 
 
 @router.patch(

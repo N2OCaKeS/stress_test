@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import ACTIVE_QUEUE_STATES, QueueItemState
+from src.core.constants import ACTIVE_QUEUE_STATES, IN_FLIGHT_QUEUE_STATES, QueueItemState
 from src.models import QueueItem, TestStand, TestDefinition
 
 
@@ -80,6 +80,39 @@ async def get_next_queued_for_stand(db: AsyncSession, stand_id: str) -> QueueIte
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_paused_for_stand(db: AsyncSession, stand_id: str) -> QueueItem | None:
+    """Поставленный на паузу элемент этого стенда, если он есть.
+
+    Пауза останавливает стенд целиком, поэтому больше одного `paused`
+    одновременно быть не должно; `limit(1)` по наименьшей `position` просто
+    закрывает контракт функции на случай рассинхрона.
+    """
+    stmt = (
+        select(QueueItem)
+        .where(QueueItem.stand_id == stand_id, QueueItem.state == QueueItemState.PAUSED)
+        .order_by(QueueItem.position.asc(), QueueItem.created_at.asc())
+        .limit(1)
+        .with_for_update()
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def has_in_flight_for_stand(db: AsyncSession, stand_id: str) -> bool:
+    """True, если у стенда сейчас крутится цикл по какому-то элементу.
+
+    Нужно тем операциям, которые убирают из очереди НЕ головной элемент
+    (пропуск/пауза ещё не начавшегося `queued`): продолжать очередь в этот
+    момент нельзя — головной элемент уже подготавливается или исполняется, и
+    второй `prepare-for-test` на тот же стенд сломал бы цикл.
+    """
+    stmt = (
+        select(QueueItem.id)
+        .where(QueueItem.stand_id == stand_id, QueueItem.state.in_(IN_FLIGHT_QUEUE_STATES))
+        .limit(1)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none() is not None
+
+
 async def claim_next_ready(db: AsyncSession) -> QueueItem | None:
     """Атомарно забрать один `ready`-item по любому стенду.
 
@@ -149,10 +182,12 @@ async def aggregate_pool_overview(
 
     `remaining`/`running` не фильтруются по "последней попытке" — только
     терминальный item может быть перекрыт retry'ем (см. контракт §B1), значит
-    активный (`queued`/`preparing`/`ready`/`running`) всегда и есть последняя
-    попытка своей цепочки. `succeeded`/`failed` — наоборот, только по
+    активный (`queued`/`preparing`/`ready`/`paused`/`running`) всегда и есть
+    последняя попытка своей цепочки. `succeeded`/`failed` — наоборот, только по
     последней попытке (`is_current`), иначе перезапущенный упавший тест
-    заодно посчитался бы дважды.
+    заодно посчитался бы дважды. Пропущенный (`skipped`) исхода не имеет и не
+    попадает ни в один счётчик — работы по нему больше нет, но и результата
+    тоже.
     """
     successor = aliased(QueueItem)
     is_current = ~select(successor.id).where(successor.retry_of_id == QueueItem.id).exists()
@@ -177,7 +212,10 @@ async def aggregate_pool_overview(
     succeeded = 0
     failed = 0
     for state, current in await db.execute(stmt):
-        if state in (QueueItemState.QUEUED, QueueItemState.PREPARING, QueueItemState.READY):
+        if state in (
+            QueueItemState.QUEUED, QueueItemState.PREPARING,
+            QueueItemState.READY, QueueItemState.PAUSED,
+        ):
             remaining += 1
         elif state == QueueItemState.RUNNING:
             running += 1

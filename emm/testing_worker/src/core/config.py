@@ -72,6 +72,18 @@ class Settings(BaseSettings):
         ),
     )
 
+    interrupt_poll_interval_seconds: float = Field(
+        default=7.0,
+        alias="INTERRUPT_POLL_INTERVAL_SECONDS",
+        description=(
+            "Как часто спрашивать `/internal/queue/{id}/interrupt-check`, пока "
+            "тест выполняется. Компромисс между задержкой останова (оператор "
+            "нажал «Пропустить» — ждёт до этого интервала) и лишней нагрузкой "
+            "на testing_service: опрос идёт всё время жизни SSH-сессии, а она "
+            "может тянуться часами."
+        ),
+    )
+
     ssh_connect_timeout_seconds: float = Field(
         default=30.0,
         alias="SSH_CONNECT_TIMEOUT_SECONDS",

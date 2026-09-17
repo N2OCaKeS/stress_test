@@ -10,10 +10,12 @@ from __future__ import annotations
 import asyncio
 import shlex
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import asyncssh
 import pytest
 
+from src.core.config import get_settings
 from src.services import queue_loop
 from src.services.ssh_executor import ExecutionResult
 
@@ -354,6 +356,177 @@ class TestRunOneItemWritesDatesFile:
         kinds = [call[0] for call in recorded["calls"]]
         assert "write" not in kinds
         assert "execute" in kinds
+
+
+class TestInterruptWatcher:
+    """Прерывание идущего теста: kill на стенде + `completed(interrupted=...)`."""
+
+    def _item(self, **overrides) -> dict:
+        item = {
+            "queue_item_id": "qi_int",
+            "host": "10.0.0.7",
+            "test_username": "u",
+            "test_ssh_private_key": "keydata",
+            "command": ["sudo", "bash", "/home/u/starter.sh"],
+            "command_masked": ["sudo", "bash", "/home/u/starter.sh"],
+            "debug_mode": False,
+            "is_retry": False,
+        }
+        item.update(overrides)
+        return item
+
+    def _patch_fast_polling(self, monkeypatch, interval: float = 0.01) -> None:
+        """Опрос раз в 10мс вместо штатных семи секунд — иначе тест ждал бы их живьём."""
+        real = get_settings()
+        stub = SimpleNamespace(
+            ssh_connect_timeout_seconds=real.ssh_connect_timeout_seconds,
+            ssh_command_timeout_seconds=real.ssh_command_timeout_seconds,
+            queue_poll_interval_seconds=real.queue_poll_interval_seconds,
+            interrupt_poll_interval_seconds=interval,
+        )
+        monkeypatch.setattr(queue_loop, "get_settings", lambda: stub)
+
+    @pytest.mark.parametrize("action", ["skip", "pause"])
+    async def test_interrupt_kills_remote_process_and_reports_it(self, monkeypatch, action):
+        recorded = {"calls": []}
+
+        async def fake_execute(host, username, key, command, **kwargs):
+            # Тест «висит» до тех пор, пока его не отменят снаружи.
+            await asyncio.Event().wait()
+            raise AssertionError("execute() must be cancelled by the watcher")
+
+        async def fake_check_interrupt(queue_item_id):
+            recorded["calls"].append(("check_interrupt", queue_item_id))
+            return action
+
+        async def fake_kill(host, username, key, **kwargs):
+            recorded["calls"].append(("kill", host, username))
+            return True
+
+        async def fake_log_segment(*a, **k):
+            recorded["calls"].append(("log_segment",))
+
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None):
+            recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error, interrupted))
+
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.ssh_executor, "kill_remote_process", fake_kill)
+        monkeypatch.setattr(queue_loop.testing_client, "check_interrupt", fake_check_interrupt)
+        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
+        self._patch_fast_polling(monkeypatch)
+
+        await asyncio.wait_for(queue_loop._run_one_item(self._item()), timeout=5)
+
+        kinds = [call[0] for call in recorded["calls"]]
+        # Прерванная сессия не оставляет ни исхода, ни полного вывода — сегмент
+        # лога не заводится, только отчёт о прерывании.
+        assert "log_segment" not in kinds
+        assert ("kill", "10.0.0.7", "u") in recorded["calls"]
+        assert recorded["calls"][-1] == (
+            "report_completed", "qi_int", False, None, None, action,
+        )
+
+    async def test_natural_finish_before_interrupt_reports_normal_outcome(self, monkeypatch):
+        recorded = {"calls": [], "checks": 0}
+
+        async def fake_execute(host, username, key, command, **kwargs):
+            return ExecutionResult(
+                connected=True, succeeded=True, exit_code=0, error=None,
+                output="done", started_at=_STARTED, finished_at=_FINISHED,
+            )
+
+        async def fake_check_interrupt(queue_item_id):
+            recorded["checks"] += 1
+            return None
+
+        async def fake_kill(*a, **k):
+            recorded["calls"].append(("kill",))
+            raise AssertionError("kill must not run when the test finished on its own")
+
+        async def fake_log_segment(queue_item_id, **fields):
+            recorded["calls"].append(("log_segment", fields["status"]))
+
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None):
+            recorded["calls"].append(("report_completed", succeeded, exit_code, error, interrupted))
+
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.ssh_executor, "kill_remote_process", fake_kill)
+        monkeypatch.setattr(queue_loop.testing_client, "check_interrupt", fake_check_interrupt)
+        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
+        self._patch_fast_polling(monkeypatch)
+
+        await asyncio.wait_for(queue_loop._run_one_item(self._item()), timeout=5)
+
+        assert recorded["calls"] == [
+            ("log_segment", "OK"),
+            ("report_completed", True, 0, None, None),
+        ]
+
+    async def test_watcher_keeps_polling_until_interrupt_appears(self, monkeypatch):
+        """Первые опросы возвращают `null` — исполнение продолжается, kill не идёт."""
+        recorded = {"checks": 0, "killed": False, "interrupted": "unset"}
+
+        async def fake_execute(host, username, key, command, **kwargs):
+            await asyncio.Event().wait()
+
+        async def fake_check_interrupt(queue_item_id):
+            recorded["checks"] += 1
+            return "skip" if recorded["checks"] >= 3 else None
+
+        async def fake_kill(*a, **k):
+            recorded["killed"] = True
+            return True
+
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None):
+            recorded["interrupted"] = interrupted
+
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.ssh_executor, "kill_remote_process", fake_kill)
+        monkeypatch.setattr(queue_loop.testing_client, "check_interrupt", fake_check_interrupt)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
+        self._patch_fast_polling(monkeypatch)
+
+        await asyncio.wait_for(queue_loop._run_one_item(self._item()), timeout=5)
+
+        assert recorded["checks"] >= 3
+        assert recorded["killed"] is True
+        assert recorded["interrupted"] == "skip"
+
+    async def test_failing_interrupt_check_does_not_break_the_run(self, monkeypatch):
+        """Сбой опроса — не повод обрывать уже идущий тест."""
+        recorded = {}
+
+        async def fake_execute(host, username, key, command, **kwargs):
+            await _REAL_SLEEP(0.05)
+            return ExecutionResult(
+                connected=True, succeeded=False, exit_code=3, error="boom",
+                output="out", started_at=_STARTED, finished_at=_FINISHED,
+            )
+
+        async def fake_check_interrupt(queue_item_id):
+            raise RuntimeError("testing_service exploded")
+
+        async def fake_kill(*a, **k):
+            raise AssertionError("kill must not run without an interrupt action")
+
+        async def fake_log_segment(*a, **k):
+            pass
+
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None):
+            recorded["report"] = (succeeded, exit_code, error, interrupted)
+
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.ssh_executor, "kill_remote_process", fake_kill)
+        monkeypatch.setattr(queue_loop.testing_client, "check_interrupt", fake_check_interrupt)
+        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
+        self._patch_fast_polling(monkeypatch)
+
+        await asyncio.wait_for(queue_loop._run_one_item(self._item()), timeout=5)
+
+        assert recorded["report"] == (False, 3, "boom", None)
 
 
 class TestRunPollingLoop:

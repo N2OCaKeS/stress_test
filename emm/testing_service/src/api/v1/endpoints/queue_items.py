@@ -42,6 +42,59 @@ async def retry(
     return svc.response(item).model_copy(update={"log_status": logs[item.id]})
 
 
+@router.post(
+    "/{item_id}/skip",
+    response_model=PublicQueueItem,
+    summary="Пропустить элемент очереди",
+    description=(
+        "Снимает тест с исполнения без исхода: элемент уходит в `skipped`, "
+        "стенд сразу продолжает со следующего. Если элемент прямо сейчас "
+        "исполняется на стенде (`running`), моментально оборвать его нельзя — "
+        "ответ вернёт тот же `running`-элемент с `interrupt_action=\"skip\"`, "
+        "а фактический обрыв сделает `testing_worker` при ближайшем опросе."
+    ),
+    responses={
+        403: {"description": "Нет прав на стенд этого элемента."},
+        404: {"description": "Элемент очереди не найден."},
+        409: {"description": "QUEUE_ITEM_NOT_ACTIVE — элемент уже завершён."},
+    },
+)
+async def skip(
+    item_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+):
+    item = await svc.skip(db, identity, item_id)
+    logs = await log_availability.for_items(db, [item])
+    return svc.response(item).model_copy(update={"log_status": logs[item.id]})
+
+
+@router.post(
+    "/{item_id}/pause",
+    response_model=PublicQueueItem,
+    summary="Остановить элемент очереди",
+    description=(
+        "То же прерывание, что и `skip`, но исход не фиксируется: элемент "
+        "уходит в `paused` и остаётся в очереди стенда, стенд встаёт и ждёт "
+        "`POST /test-stands/{stand_id}/resume-queue`. Для `running`-элемента "
+        "ответ несёт `interrupt_action=\"pause\"` — см. `skip`."
+    ),
+    responses={
+        403: {"description": "Нет прав на стенд этого элемента."},
+        404: {"description": "Элемент очереди не найден."},
+        409: {"description": "QUEUE_ITEM_NOT_ACTIVE — элемент уже завершён."},
+    },
+)
+async def pause(
+    item_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+):
+    item = await svc.pause(db, identity, item_id)
+    logs = await log_availability.for_items(db, [item])
+    return svc.response(item).model_copy(update={"log_status": logs[item.id]})
+
+
 @router.get("", response_model=PaginatedResponse[PublicQueueItem])
 async def list_items(
     identity: CurrentUserIdentity,
@@ -57,7 +110,10 @@ async def list_items(
     retry_of_id: str | None = None,
     created_from: AwareDatetime | None = None,
     created_until: AwareDatetime | None = None,
-    states: list[Literal["queued", "preparing", "ready", "running", "succeeded", "failed"]] | None = Query(None),
+    states: list[Literal[
+        "queued", "preparing", "ready", "running",
+        "succeeded", "failed", "skipped", "paused",
+    ]] | None = Query(None),
     debug_mode: bool | None = None,
     q: str | None = Query(None, max_length=200),
     order: Literal["asc", "desc"] = "desc",

@@ -3,7 +3,7 @@
 import hashlib
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.core.constants import ACTIVE_QUEUE_STATES, Action, EntityType
+from src.core.constants import ACTIVE_QUEUE_STATES, Action, EntityType, QueueInterruptAction
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
@@ -42,6 +42,7 @@ def response(item):
                 "started_at",
                 "finished_at",
                 "error",
+                "interrupt_action",
             )
         },
         rc=ctx.get("RC"),
@@ -114,6 +115,45 @@ async def launch(db: AsyncSession, identity: Identity, body: QueueLaunchRequest)
         request_fingerprint=fingerprint,
         stp_test_run_id=stp.id if stp else None,
     )
+
+
+async def _authorize_item(db: AsyncSession, identity: Identity, item_id: str):
+    """Общая для skip/pause часть: найти элемент и проверить права на его стенд.
+
+    Тот же допуск, что у `retry()` — владение стендом через матрицу отдела
+    плюс проверка, что чужая кампания не управляется из другого отдела.
+    """
+    item = await repo.get_by_id(db, item_id)
+    if not item:
+        raise NotFoundError(error_code="QUEUE_ITEM_NOT_FOUND", message="Попытка не найдена")
+    stand = await authorize(db, identity, item.stand_id)
+    if item.test_run_id:
+        run = await db.get(TestRun, item.test_run_id)
+        if not run or run.department_id != identity.department_id:
+            raise AuthorizationError(
+                error_code="PERMISSION_DENIED",
+                message="Прогон принадлежит другому отделу",
+            )
+    locked = await repo.get_by_id_for_update(db, item_id)
+    return locked, stand
+
+
+async def skip(db: AsyncSession, identity: Identity, item_id: str):
+    """Снять элемент очереди с исполнения без исхода и поехать дальше."""
+    item, stand = await _authorize_item(db, identity, item_id)
+    return await queue.request_interrupt(db, item, stand, QueueInterruptAction.SKIP)
+
+
+async def pause(db: AsyncSession, identity: Identity, item_id: str):
+    """Снять элемент очереди с исполнения и остановить стенд до `resume-queue`."""
+    item, stand = await _authorize_item(db, identity, item_id)
+    return await queue.request_interrupt(db, item, stand, QueueInterruptAction.PAUSE)
+
+
+async def resume_stand_queue(db: AsyncSession, identity: Identity, stand_id: str):
+    """Вернуть остановленный элемент стенда в конец очереди и продолжить её."""
+    stand = await authorize(db, identity, stand_id)
+    return await queue.resume_stand_queue(db, stand)
 
 
 async def retry(

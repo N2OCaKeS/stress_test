@@ -276,6 +276,64 @@ async def execute(
     )
 
 
+# Прибиваем тест по имени скрипта, а не по PID: PID у нас нет — sshd запускает
+# команду через login-шелл, и `sudo` порождает собственное дерево процессов,
+# до которого обрыв SSH-канала не доходит. На стенде в любой момент идёт не
+# больше одного `starter.sh` (очередь стенда сериализована самим дизайном
+# testing_service), так что `pkill -f` по имени не заденет чужую работу.
+_KILL_COMMAND = "sudo pkill -f starter.sh"
+
+
+async def kill_remote_process(
+    host: str,
+    test_username: str,
+    test_ssh_private_key: str,
+    *,
+    connect_timeout: float = 30.0,
+) -> bool:
+    """Оборвать идущий на стенде `starter.sh` отдельным коротким SSH-коннектом.
+
+    Отдельное соединение, а не тот же канал, на котором висит `execute()` —
+    тот занят чтением вывода до EOF и послать по нему ещё одну команду нельзя.
+
+    Best-effort: любая SSH-ошибка (стенд не отвечает, ключ протух, сеть легла)
+    не поднимается наружу — возвращается `False` и пишется WARNING. Смысл в
+    том, что вызывающий всё равно обрывает свою сторону: незакрытый процесс на
+    стенде в худшем случае доживёт до собственного таймаута, но очередь на
+    этом стоять не должна. `True` — команда ушла (ненулевой код `pkill`, когда
+    процесса уже нет, ошибкой не считается).
+    """
+    try:
+        client_key = asyncssh.import_private_key(test_ssh_private_key)
+    except (asyncssh.KeyImportError, ValueError, TypeError) as exc:
+        logger.warning("ssh_executor.kill: invalid private key for host=%s: %s", host, type(exc).__name__)
+        return False
+
+    try:
+        conn = await asyncssh.connect(
+            host=host,
+            username=test_username,
+            client_keys=[client_key],
+            # Тот же принцип, что у execute() — стенды часто переустанавливаются.
+            known_hosts=None,
+            connect_timeout=connect_timeout,
+            login_timeout=connect_timeout,
+        )
+    except (asyncssh.Error, OSError, asyncio.TimeoutError, TimeoutError) as exc:
+        logger.warning("ssh_executor.kill: cannot connect to host=%s: %s", host, type(exc).__name__)
+        return False
+
+    try:
+        async with conn:
+            await conn.run(_KILL_COMMAND, check=False)
+    except (asyncssh.Error, OSError, asyncio.TimeoutError, TimeoutError) as exc:
+        logger.warning("ssh_executor.kill: %r failed on host=%s: %s", _KILL_COMMAND, host, type(exc).__name__)
+        return False
+
+    logger.info("ssh_executor.kill: %r sent to host=%s", _KILL_COMMAND, host)
+    return True
+
+
 async def write_remote_file(
     host: str,
     username: str,

@@ -188,6 +188,16 @@ class QueueItemState(StrEnum):
     `preparing`/`running` может породить retry-элемент (см.
     `services/queue.py`), сам провалившийся элемент всё равно уходит в
     `failed`.
+
+    `skipped` — терминальное, наравне с `succeeded`/`failed`: тест прерван
+    оператором и не досчитан, но слот очереди освобождается сразу и стенд
+    продолжает со следующего `queued`. Исхода у такого элемента нет, поэтому
+    в СТП/Zephyr он ничего не пишет.
+
+    `paused` — не терминальное и не исполняющееся: тест прерван, но исход не
+    зафиксирован, элемент ждёт явного `resume-queue`. Стенд при этом стоит —
+    `claim_next`/`get_next_queued_for_stand` такой элемент не видят, а бронь
+    за стендом сохраняется.
     """
 
     QUEUED = "queued"
@@ -196,13 +206,37 @@ class QueueItemState(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    SKIPPED = "skipped"
+    PAUSED = "paused"
 
 
 # Состояния, которые занимают место в очереди стенда — пока у стенда есть
 # элемент в одном из них, следующий просто ждёт своей позиции.
 ACTIVE_QUEUE_STATES: frozenset[str] = frozenset({
     QueueItemState.QUEUED, QueueItemState.PREPARING, QueueItemState.RUNNING,
-    QueueItemState.READY,
+    QueueItemState.READY, QueueItemState.PAUSED,
+})
+
+
+class QueueInterruptAction(StrEnum):
+    """Что просили сделать с элементом, который прямо сейчас исполняется на стенде.
+
+    Проставляется публичными `/skip` и `/pause` только для `running`-элемента
+    — это сигнал `testing_worker`у («прерви, когда в следующий раз спросишь
+    `interrupt-check`»), а не состояние само по себе. Сбрасывается в `None`,
+    когда воркер отчитался о прерывании через `/completed`.
+    """
+
+    SKIP = "skip"
+    PAUSE = "pause"
+
+
+# Состояния, в которых на стенде уже идёт (или вот-вот пойдёт) физическая
+# работа по конкретному элементу: подготовка стенда, ожидание воркера или сама
+# SSH-сессия. Отличаются от ACTIVE_QUEUE_STATES тем, что `queued`/`paused`
+# сюда не входят — они просто занимают место в очереди, цикл на них не крутится.
+IN_FLIGHT_QUEUE_STATES: frozenset[str] = frozenset({
+    QueueItemState.PREPARING, QueueItemState.READY, QueueItemState.RUNNING,
 })
 
 

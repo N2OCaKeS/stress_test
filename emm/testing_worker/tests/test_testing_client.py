@@ -104,7 +104,22 @@ class TestReportCompleted:
         assert recorded["path"] == "/internal/queue/qi_1/completed"
         assert recorded["identity"] == "testing_worker"
         body = _json.loads(recorded["body"])
-        assert body == {"succeeded": True, "exit_code": 0, "error": None}
+        assert body == {"succeeded": True, "exit_code": 0, "error": None, "interrupted": None}
+
+    async def test_interrupted_run_is_reported_as_such(self, monkeypatch):
+        recorded = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            recorded["body"] = request.content
+            return httpx.Response(200, json={"ok": True})
+
+        _install_transport(monkeypatch, handler)
+
+        await testing_client.report_completed(
+            "qi_1", succeeded=False, exit_code=None, error=None, interrupted="pause",
+        )
+
+        assert _json.loads(recorded["body"])["interrupted"] == "pause"
 
     async def test_does_not_raise_on_network_failure(self, monkeypatch):
         def handler(request: httpx.Request) -> httpx.Response:
@@ -126,6 +141,55 @@ class TestReportCompleted:
         await testing_client.report_completed(
             "qi_missing", succeeded=True, exit_code=0, error=None,
         )
+
+
+class TestCheckInterrupt:
+    @pytest.mark.parametrize("action", ["skip", "pause"])
+    async def test_returns_requested_action(self, monkeypatch, action):
+        recorded = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            recorded["method"] = request.method
+            recorded["path"] = request.url.path
+            recorded["identity"] = request.headers.get("X-Service-Identity")
+            return httpx.Response(200, json={"action": action})
+
+        _install_transport(monkeypatch, handler)
+
+        assert await testing_client.check_interrupt("qi_1") == action
+        assert recorded["method"] == "GET"
+        assert recorded["path"] == "/internal/queue/qi_1/interrupt-check"
+        assert recorded["identity"] == "testing_worker"
+
+    async def test_null_action_means_keep_running(self, monkeypatch):
+        _install_transport(monkeypatch, lambda request: httpx.Response(200, json={"action": None}))
+
+        assert await testing_client.check_interrupt("qi_1") is None
+
+    async def test_unknown_action_is_ignored(self, monkeypatch):
+        """Только `skip`/`pause` считаются командой — иначе тест не обрываем."""
+        _install_transport(monkeypatch, lambda request: httpx.Response(200, json={"action": "explode"}))
+
+        assert await testing_client.check_interrupt("qi_1") is None
+
+    async def test_returns_none_on_network_failure(self, monkeypatch):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("refused", request=request)
+
+        _install_transport(monkeypatch, handler)
+
+        assert await testing_client.check_interrupt("qi_1") is None
+
+    async def test_returns_none_on_non_200(self, monkeypatch):
+        _install_transport(monkeypatch, lambda request: httpx.Response(500, json={}))
+
+        assert await testing_client.check_interrupt("qi_1") is None
+
+    async def test_returns_none_when_not_configured(self, monkeypatch):
+        monkeypatch.delenv("TESTING_SERVICE_URL", raising=False)
+        get_settings.cache_clear()  # type: ignore[attr-defined]
+
+        assert await testing_client.check_interrupt("qi_1") is None
 
 
 class TestLogChunk:

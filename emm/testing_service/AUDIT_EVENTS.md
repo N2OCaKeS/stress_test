@@ -63,3 +63,12 @@
 | Action | Status | Severity | Payload (`details`) |
 |---|---|---|---|
 | `queue_item.launch_rejected` | denied | WARNING | `test_id`, актуальный `readiness`; обычный запуск остановлен из-за ручной смены статуса каталога до подготовки или выдачи воркеру. |
+
+## Управление очередью стенда
+
+| Action | Status | Severity | Payload (`details`) |
+|---|---|---|---|
+| `queue_item.interrupt_requested` | success | WARNING | `stand_id`, `action` (`skip`/`pause`); заявка оператора на обрыв уже идущей SSH-сессии — сам обрыв делает `testing_worker`. |
+| `queue_item.skipped` | success | WARNING | `stand_id`, `from_state`; тест снят с исполнения без исхода, стенд продолжает со следующего элемента. |
+| `queue_item.paused` | success | WARNING | `stand_id`, `from_state`; тест снят с исполнения без исхода, стенд стоит до `resume-queue`. |
+| `queue_item.resumed` | success | INFO | `stand_id`, новая `position`; остановленный элемент вернулся в конец очереди стенда. |

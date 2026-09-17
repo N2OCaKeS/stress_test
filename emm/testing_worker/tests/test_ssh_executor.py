@@ -351,6 +351,69 @@ class TestExecuteChunkStreaming:
         assert len(received) >= 2
 
 
+class _FakeRunConnection(_FakeConnection):
+    """`_FakeConnection` + `run()` для `kill_remote_process`."""
+
+    def __init__(self, run_exc: Exception | None = None, exit_status: int = 0) -> None:
+        super().__init__()
+        self._run_exc = run_exc
+        self._exit_status = exit_status
+        self.ran: list[tuple[str, bool]] = []
+
+    async def run(self, command: str, *, check: bool = True):
+        self.ran.append((command, check))
+        if self._run_exc is not None:
+            raise self._run_exc
+        return SimpleNamespace(exit_status=self._exit_status)
+
+
+class TestKillRemoteProcess:
+    async def test_sends_pkill_over_a_separate_connection(self, monkeypatch):
+        _patch_import_key(monkeypatch)
+        conn = _FakeRunConnection()
+        _patch_connect(monkeypatch, conn=conn)
+
+        killed = await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata")
+
+        assert killed is True
+        assert conn.ran == [("sudo pkill -f starter.sh", False)]
+
+    async def test_nonzero_pkill_exit_is_not_a_failure(self, monkeypatch):
+        """`pkill` возвращает 1, когда гасить уже нечего — тест успел упасть сам."""
+        _patch_import_key(monkeypatch)
+        conn = _FakeRunConnection(exit_status=1)
+        _patch_connect(monkeypatch, conn=conn)
+
+        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata") is True
+
+    async def test_invalid_private_key_is_best_effort(self, monkeypatch):
+        _patch_import_key(monkeypatch, import_exc=asyncssh.KeyImportError("bad key"))
+
+        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "not-a-key") is False
+
+    @pytest.mark.parametrize(
+        "connect_exc",
+        [
+            asyncssh.PermissionDenied("denied"),
+            asyncssh.ConnectionLost("lost"),
+            OSError("no route to host"),
+            TimeoutError("timed out"),
+        ],
+    )
+    async def test_connect_failure_is_swallowed(self, monkeypatch, connect_exc):
+        _patch_import_key(monkeypatch)
+        _patch_connect(monkeypatch, connect_exc=connect_exc)
+
+        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata") is False
+
+    async def test_run_failure_is_swallowed(self, monkeypatch):
+        _patch_import_key(monkeypatch)
+        conn = _FakeRunConnection(run_exc=asyncssh.ChannelOpenError(1, "no channel"))
+        _patch_connect(monkeypatch, conn=conn)
+
+        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata") is False
+
+
 class _FakeSftpFile:
     """Минимальный `SFTPClientFile` — только `write()` под `async with`."""
 

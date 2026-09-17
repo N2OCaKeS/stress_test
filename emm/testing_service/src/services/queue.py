@@ -35,7 +35,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import QueueItemState, TERMINAL_TEST_RUN_STATUSES, TestReadiness
+from src.core.constants import (
+    ACTIVE_QUEUE_STATES,
+    QueueInterruptAction,
+    QueueItemState,
+    TERMINAL_TEST_RUN_STATUSES,
+    TestReadiness,
+)
 from src.core.exceptions import (
     AppException,
     ConflictError,
@@ -668,6 +674,14 @@ async def complete_item(db: AsyncSession, queue_item_id: str, body: QueueComplet
             message="Test stand referenced by this queue item no longer exists",
         )
 
+    # Любой терминальный переход снимает заявку на прерывание: она могла
+    # остаться, если тест успел закончиться сам, пока воркер её вычитывал.
+    item.interrupt_action = None
+
+    if body.interrupted is not None:
+        await _complete_interrupted(db, item, stand, body.interrupted)
+        return item
+
     if body.succeeded:
         item.state = QueueItemState.SUCCEEDED
         item.finished_at = datetime.now(timezone.utc)
@@ -697,4 +711,148 @@ async def complete_item(db: AsyncSession, queue_item_id: str, body: QueueComplet
         audit_action="queue_item.completed",
         is_first_ever=False,
     )
+    return item
+
+
+async def _complete_interrupted(db: AsyncSession, item: QueueItem, stand, action: str) -> None:
+    """Воркер отчитался, что оборвал SSH-сессию по заявке оператора.
+
+    Исхода у теста нет, поэтому ни СТП/Zephyr (`stp_status`), ни retry-логика
+    здесь не участвуют — это не провал теста, а снятие его с исполнения.
+    """
+    item.interrupt_action = None
+    if action == QueueInterruptAction.PAUSE:
+        item.state = QueueItemState.PAUSED
+        await db.commit()
+        audit_service.emit(
+            "queue_item.paused",
+            target_id=item.id, target_type="queue_item",
+            status="success", allowed=True,
+            details={"stand_id": stand.id, "from_state": QueueItemState.RUNNING},
+        )
+        # Стенд остаётся за нами и стоит до явного resume-queue — очередь не
+        # продолжаем, бронь не снимаем.
+        return
+
+    item.state = QueueItemState.SKIPPED
+    item.finished_at = datetime.now(timezone.utc)
+    item.error = None
+    await db.commit()
+    if item.test_run_id:
+        new_status = await test_run_status.recompute(db, item.test_run_id)
+        await db.commit()
+        await _maybe_post_run_summary(db, new_status, item.test_run_id)
+    audit_service.emit(
+        "queue_item.skipped",
+        target_id=item.id, target_type="queue_item",
+        status="success", allowed=True,
+        details={"stand_id": stand.id, "from_state": QueueItemState.RUNNING},
+    )
+    await _advance_stand_queue(db, stand)
+
+
+async def get_interrupt_action(db: AsyncSession, queue_item_id: str) -> str | None:
+    """Заявка на прерывание для `testing_worker` — обычный SELECT, без лока."""
+    item = await repo.get_by_id(db, queue_item_id)
+    if item is None:
+        return None
+    return item.interrupt_action
+
+
+async def request_interrupt(db: AsyncSession, item: QueueItem, stand, action: str) -> QueueItem:
+    """Пропустить (`skip`) либо остановить (`pause`) элемент очереди.
+
+    Пока элемент реально исполняется на стенде (`running`), оборвать его может
+    только `testing_worker` — здесь остаётся заявка в `interrupt_action`,
+    которую он заберёт следующим `interrupt-check`, и элемент возвращается как
+    есть (всё ещё `running`). Во всех остальных активных состояниях никакой
+    SSH-сессии ещё нет, прерывать физически нечего — переход происходит сразу.
+    """
+    if item.state not in ACTIVE_QUEUE_STATES:
+        raise ConflictError(
+            error_code="QUEUE_ITEM_NOT_ACTIVE",
+            message="Элемент очереди уже завершён",
+            details={"state": item.state},
+        )
+
+    if item.state == QueueItemState.RUNNING:
+        item.interrupt_action = action
+        await db.commit()
+        await db.refresh(item)
+        audit_service.emit(
+            "queue_item.interrupt_requested",
+            target_id=item.id, target_type="queue_item",
+            status="success", allowed=True,
+            details={"stand_id": stand.id, "action": action},
+        )
+        return item
+
+    from_state = item.state
+    # Стенд мог уже начать готовиться под этот элемент — креды, если их успели
+    # застэшить, дальше не нужны ни пропущенному, ни поставленному на паузу
+    # (пауза после resume проходит подготовку заново).
+    if item.creds_stash_key:
+        await creds_stash.pop_creds(item.creds_stash_key)
+        item.creds_stash_key = None
+
+    if action == QueueInterruptAction.PAUSE:
+        item.state = QueueItemState.PAUSED
+        await db.commit()
+        await db.refresh(item)
+        audit_service.emit(
+            "queue_item.paused",
+            target_id=item.id, target_type="queue_item",
+            status="success", allowed=True,
+            details={"stand_id": stand.id, "from_state": from_state},
+        )
+        return item
+
+    item.state = QueueItemState.SKIPPED
+    item.finished_at = datetime.now(timezone.utc)
+    item.error = None
+    await db.commit()
+    if item.test_run_id:
+        new_status = await test_run_status.recompute(db, item.test_run_id)
+        await db.commit()
+        await _maybe_post_run_summary(db, new_status, item.test_run_id)
+    audit_service.emit(
+        "queue_item.skipped",
+        target_id=item.id, target_type="queue_item",
+        status="success", allowed=True,
+        details={"stand_id": stand.id, "from_state": from_state},
+    )
+    # Пропустить можно и не головной элемент очереди — тогда цикл стенда занят
+    # кем-то другим, и трогать его нельзя: второй prepare-for-test на тот же
+    # стенд сломал бы подготовку, а пустая очередь ошибочно сняла бы бронь
+    # из-под ещё идущего теста.
+    if not await repo.has_in_flight_for_stand(db, stand.id):
+        await _advance_stand_queue(db, stand)
+    await db.refresh(item)
+    return item
+
+
+async def resume_stand_queue(db: AsyncSession, stand) -> QueueItem:
+    """Вернуть поставленный на паузу элемент в конец очереди стенда и поехать дальше."""
+    item = await repo.get_paused_for_stand(db, stand.id)
+    if item is None:
+        raise ConflictError(
+            error_code="STAND_NOT_PAUSED",
+            message="У стенда нет остановленного элемента очереди",
+            details={"stand_id": stand.id},
+        )
+
+    item.state = QueueItemState.QUEUED
+    item.position = await repo.next_position_for_stand(db, stand.id)
+    item.started_at = None
+    item.error = None
+    await db.commit()
+    audit_service.emit(
+        "queue_item.resumed",
+        target_id=item.id, target_type="queue_item",
+        status="success", allowed=True,
+        details={"stand_id": stand.id, "position": item.position},
+    )
+    if not await repo.has_in_flight_for_stand(db, stand.id):
+        await _advance_stand_queue(db, stand)
+    await db.refresh(item)
     return item

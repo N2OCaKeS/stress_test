@@ -21,6 +21,12 @@
    собрал `testing_service`, здесь просто argv). Пока команда выполняется,
    каждый накопленный кусок вывода уходит наружу через
    `testing_client.log_chunk(...)` (§8.6 — живой лог в консоли сервера).
+   Параллельно с исполнением крутится наблюдатель: раз в
+   `interrupt_poll_interval_seconds` он спрашивает `interrupt-check`, не
+   просил ли оператор снять тест. Если просил — на стенд отдельным коннектом
+   уходит kill (`sudo pkill -f starter.sh`), исполнение отменяется, и вместо
+   обычного исхода уходит `completed(interrupted=...)`. Обрыв SSH-канала сам
+   по себе процесс под `sudo` не гасит, поэтому kill именно явный.
 4. Если до исполнения дело дошло (`result.connected`) — один
    `testing_client.log_segment(...)` на весь тест, с полным выводом и
    замаскированной командой (`command_masked`, посчитан `testing_service`'ом
@@ -87,6 +93,96 @@ async def _write_dates_file(item: dict, settings) -> str | None:
     return None
 
 
+async def _watch_for_interrupt(queue_item_id: str, interval: float, stop: asyncio.Event) -> str | None:
+    """Опрашивать `interrupt-check`, пока не попросят прервать либо не выставят `stop`.
+
+    Возвращает запрошенное действие (`skip`/`pause`), либо `None`, если тест
+    успел закончиться сам. Первый опрос уходит не сразу, а через `interval` —
+    заявка на прерывание может появиться только после того, как тест реально
+    стартовал, и лишний запрос в момент старта смысла не имеет.
+    """
+    while not stop.is_set():
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+            return None
+        except asyncio.TimeoutError:
+            pass
+        try:
+            action = await testing_client.check_interrupt(queue_item_id)
+        except Exception:  # noqa: BLE001 — сбой опроса не повод обрывать тест
+            logger.exception("queue item %s: interrupt-check raised", queue_item_id)
+            continue
+        if action is not None:
+            return action
+    return None
+
+
+async def _execute_with_interrupt_watch(item: dict, settings, on_output_chunk):
+    """Исполнить команду, параллельно следя за заявкой на прерывание.
+
+    Возвращает `(result, interrupted)`: либо обычный `ExecutionResult` и
+    `None`, либо `None` и действие, по которому исполнение было оборвано.
+    """
+    queue_item_id = item["queue_item_id"]
+    execute_task = asyncio.ensure_future(ssh_executor.execute(
+        item["host"],
+        item["test_username"],
+        item["test_ssh_private_key"],
+        item["command"],
+        connect_timeout=settings.ssh_connect_timeout_seconds,
+        command_timeout=item.get("command_timeout_seconds") or settings.ssh_command_timeout_seconds,
+        on_output_chunk=on_output_chunk,
+    ))
+    stop_watch = asyncio.Event()
+    watch_task = asyncio.ensure_future(_watch_for_interrupt(
+        queue_item_id, settings.interrupt_poll_interval_seconds, stop_watch,
+    ))
+
+    try:
+        await asyncio.wait({execute_task, watch_task}, return_when=asyncio.FIRST_COMPLETED)
+    except asyncio.CancelledError:
+        execute_task.cancel()
+        watch_task.cancel()
+        raise
+
+    interrupted: str | None = None
+    if watch_task.done() and not watch_task.cancelled():
+        exc = watch_task.exception()
+        if exc is not None:
+            logger.warning("queue item %s: interrupt watcher failed: %r", queue_item_id, exc)
+        else:
+            interrupted = watch_task.result()
+
+    # Заявка могла прийти ровно в тот момент, когда тест закончился сам. Тогда
+    # у нас на руках настоящий исход — он важнее прерывания, обрывать уже нечего.
+    if interrupted is None or execute_task.done():
+        stop_watch.set()
+        await _quiet_cancel(watch_task)
+        return await execute_task, None
+
+    logger.info("queue item %s: interrupt requested (%s), killing remote process", queue_item_id, interrupted)
+    await ssh_executor.kill_remote_process(
+        item["host"],
+        item["test_username"],
+        item["test_ssh_private_key"],
+        connect_timeout=settings.ssh_connect_timeout_seconds,
+    )
+    execute_task.cancel()
+    await _quiet_cancel(execute_task)
+    return None, interrupted
+
+
+async def _quiet_cancel(task) -> None:
+    """Дождаться завершения отменённой/законченной задачи, проглотив её исход."""
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception:  # noqa: BLE001 — исход отменённой задачи уже не нужен
+        pass
+
+
 async def _run_one_item(item: dict) -> None:
     """Исполнить одно задание из `claim()`, зафиксировать лог и отчитаться `completed`."""
     settings = get_settings()
@@ -102,15 +198,17 @@ async def _run_one_item(item: dict) -> None:
     async def _on_output_chunk(text: str) -> None:
         await testing_client.log_chunk(queue_item_id, text)
 
-    result = await ssh_executor.execute(
-        item["host"],
-        item["test_username"],
-        item["test_ssh_private_key"],
-        item["command"],
-        connect_timeout=settings.ssh_connect_timeout_seconds,
-        command_timeout=item.get("command_timeout_seconds") or settings.ssh_command_timeout_seconds,
-        on_output_chunk=_on_output_chunk,
-    )
+    result, interrupted = await _execute_with_interrupt_watch(item, settings, _on_output_chunk)
+
+    if interrupted is not None:
+        logger.info("queue item %s interrupted: action=%s", queue_item_id, interrupted)
+        # Ни исхода, ни полного вывода у оборванной сессии нет — `log-segment`
+        # не заводим, уже отданные `log-chunk`и остаются как есть.
+        await testing_client.report_completed(
+            queue_item_id, succeeded=False, exit_code=None, error=None,
+            interrupted=interrupted,
+        )
+        return
 
     logger.info(
         "queue item %s finished: connected=%s succeeded=%s exit_code=%s is_retry=%s debug_mode=%s",

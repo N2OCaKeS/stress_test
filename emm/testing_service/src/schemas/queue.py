@@ -14,6 +14,7 @@
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -94,6 +95,27 @@ class QueueCompletedRequest(BaseModel):
     succeeded: bool
     exit_code: int | None = Field(default=None)
     error: str | None = Field(default=None, max_length=2048)
+    interrupted: Literal["skip", "pause"] | None = Field(
+        default=None,
+        description=(
+            "Заполняется, когда SSH-сессия была оборвана по заявке оператора "
+            "(`interrupt-check` вернул действие). В этом случае "
+            "`succeeded`/`exit_code`/`error` игнорируются: исхода у теста нет, "
+            "элемент уходит в `skipped` либо `paused`."
+        ),
+    )
+
+
+class QueueInterruptCheckResponse(BaseModel):
+    """Ответ GET /internal/queue/{queue_item_id}/interrupt-check.
+
+    `action=null` — прерывать нечего, воркер продолжает исполнение. То же
+    самое отдаётся для неизвестного `queue_item_id`: у воркера это опрос по
+    таймеру, и 404 посреди уже идущего теста для него не более информативен,
+    чем «прерывания нет».
+    """
+
+    action: Literal["skip", "pause"] | None = None
 
 
 class QueueItemSummaryResponse(BaseModel):
@@ -108,3 +130,6 @@ class QueueItemSummaryResponse(BaseModel):
     state: str
     test_id: str
     started_at: datetime | None = None
+    # Запрошенное, но ещё не отработанное воркером прерывание — карточке стенда
+    # этого хватает, чтобы показать «Останавливается…» без второго запроса.
+    interrupt_action: str | None = None

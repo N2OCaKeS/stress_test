@@ -75,6 +75,10 @@ class QueueItem(Base):
     prepare_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # Ссылка на Redis-запись с кредами тестового пользователя — не сами креды.
     creds_stash_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Заявка на прерывание уже исполняющегося элемента (`skip`/`pause`) —
+    # читается воркером через `/internal/queue/{id}/interrupt-check` и
+    # сбрасывается, когда он отчитался о прерывании.
+    interrupt_action: Mapped[str | None] = mapped_column(String(16), nullable=True)
     failed_step: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     # Soft-FK на auth_service identity (`usr_<hex>`/`bot_<hex>`).

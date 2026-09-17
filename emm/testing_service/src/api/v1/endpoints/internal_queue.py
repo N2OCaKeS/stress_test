@@ -1,13 +1,14 @@
 """Internal-эндпоинты очереди для `testing_worker` (§5.5 плана миграции).
 
-Оба пути живут вне `/api/testing/v1`, тем же приёмом, что и callback
+Все пути живут вне `/api/testing/v1`, тем же приёмом, что и callback
 `prepare-for-test` (см. `internal_prepare_for_test.py`) — чистый
 service-to-service канал под shared-secret (`testing_worker` identity в
 `SERVICE_API_KEYS`), не часть версионированного публичного API.
 
-Контракт зафиксирован здесь буквально — следующий агент (реализация
-`testing_worker`) строит SSH-исполнение поверх ЭТИХ двух эндпоинтов, без
-права менять их форму в одностороннем порядке.
+Контракт зафиксирован здесь буквально — `testing_worker` строит SSH-исполнение
+поверх этих эндпоинтов, без права менять их форму в одностороннем порядке.
+Расширять можно (новый эндпоинт, новое опциональное поле с дефолтом), ломать
+уже существующую форму — нет.
 """
 
 from fastapi import APIRouter, Depends, Path
@@ -16,7 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.db import get_db
 from src.dependencies.internal_auth import require_caller_identity
 from src.schemas.common import OkResponse
-from src.schemas.queue import QueueClaimResponse, QueueCompletedRequest
+from src.schemas.queue import (
+    QueueClaimResponse,
+    QueueCompletedRequest,
+    QueueInterruptCheckResponse,
+)
 from src.services import queue as queue_svc
 
 router = APIRouter(prefix="/internal/queue", include_in_schema=False)
@@ -63,6 +68,28 @@ async def completed(
 
     Дубль уже обработанного completion'а (`state` уже не `running`) —
     идемпотентный no-op.
+
+    `interrupted` (`skip`/`pause`) означает, что сессию оборвали по заявке
+    оператора: исхода у теста нет, `succeeded`/`exit_code`/`error` не
+    рассматриваются, retry не заводится и СТП не обновляется.
     """
     await queue_svc.complete_item(db, queue_item_id, body)
     return OkResponse()
+
+
+@router.get("/{queue_item_id}/interrupt-check", response_model=QueueInterruptCheckResponse)
+async def interrupt_check(
+    queue_item_id: str = Path(description="id элемента очереди, полученный из `claim`."),
+    db: AsyncSession = Depends(get_db),
+    _caller: None = Depends(require_caller_identity("testing_worker")),
+) -> QueueInterruptCheckResponse:
+    """Просили ли прервать этот элемент, пока он исполняется.
+
+    Воркер дёргает эндпоинт параллельно с идущей SSH-сессией, по таймеру
+    (`INTERRUPT_POLL_INTERVAL_SECONDS`). Обычный `SELECT` без лока — заявка
+    выставляется публичными `/skip` и `/pause` и снимается тем же
+    `/completed`, которым воркер отчитывается о прерывании.
+    """
+    return QueueInterruptCheckResponse(
+        action=await queue_svc.get_interrupt_action(db, queue_item_id),
+    )

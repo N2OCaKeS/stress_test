@@ -76,6 +76,7 @@ src/
 | `TESTING_SERVICE_URL` | — | базовый URL `testing_service` (например `http://testing_service:8004`) |
 | `TESTING_SERVICE_INTERNAL_API_KEY` | — | shared-secret для `/internal/queue/*`, совпадает с `SERVICE_API_KEYS['testing_worker']` на `testing_service` |
 | `QUEUE_POLL_INTERVAL_SECONDS` | `3.0` | пауза между `claim`, когда очередь пуста/`testing_service` недоступен |
+| `INTERRUPT_POLL_INTERVAL_SECONDS` | `7.0` | как часто спрашивать `interrupt-check`, пока тест выполняется |
 | `SSH_CONNECT_TIMEOUT_SECONDS` | `30.0` | таймаут TCP-коннекта + SSH-handshake + аутентификации |
 | `SSH_COMMAND_TIMEOUT_SECONDS` | `3600.0` | грубый общий cap на исполнение команды теста |
 

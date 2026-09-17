@@ -229,6 +229,40 @@ class TestChangelogFilter:
         assert changelog_service.is_configured() is False
 
 
+# ── Папка Zephyr: глубина release ───────────────────────────────────────────
+
+
+class TestDeriveRelease:
+    """Папка рана — `/stress_test/{release}/{rc}`; глубина `release` должна
+    совпадать с легаси (`liballta.py::TestrunManager.create_test_run`), иначе
+    новые раны садятся в другую ветку дерева папок Jira, чем легаси-раны того
+    же РЦ."""
+
+    def test_ordinary_four_segment_release_keeps_three(self):
+        assert stp_svc._derive_release("1.8.5.46") == "1.8.5"
+
+    def test_folder_matches_legacy_example(self):
+        rc = "1.8.5.46"
+        assert f"/stress_test/{stp_svc._derive_release(rc)}/{rc}" == "/stress_test/1.8.5/1.8.5.46"
+
+    def test_uu_hotfix_keeps_five_segments(self):
+        assert stp_svc._derive_release("1.7.3.UU.1.2") == "1.7.3.UU.1"
+
+    def test_six_segments_without_uu_marker_is_ordinary(self):
+        assert stp_svc._derive_release("1.8.5.46.7.8") == "1.8.5"
+
+    def test_short_format_falls_back_without_raising(self):
+        assert stp_svc._derive_release("1.8") == "1.8"
+
+    def test_pull_from_life_copy_agrees(self):
+        """Дубль в `stp_pull_from_life` обязан давать то же самое — иначе
+        поиск ходит не в ту папку, в которую пишет генерация."""
+        from src.services import stp_pull_from_life as pull_svc
+
+        for rc in ("1.8.5.46", "1.7.3.UU.1.2", "1.8.5.46.7.8", "1.8", "1.8.5"):
+            assert stp_svc._derive_release(rc) == pull_svc._derive_release(rc), rc
+
+
 # ── Zephyr client — retry без environment на 400 ────────────────────────────
 
 
@@ -259,7 +293,7 @@ class TestZephyrClientCreateTestRun:
         key = await zephyr_client.create_test_run(
             base_url="http://jira.example",
             bearer_token="tok",
-            folder="/stress_test/1.8/1.8.5.46",
+            folder="/stress_test/1.8.5/1.8.5.46",
             name="1.8.5.46_orel_6.1.0_stand1",
             items=[zephyr_client.ZephyrRunItem(test_case_key="BT-T1", environment="6.1.0")],
         )

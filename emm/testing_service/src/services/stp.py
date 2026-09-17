@@ -85,15 +85,25 @@ async def _filter_by_changelog(
 
 
 def _derive_release(rc: str) -> str:
-    """Первые два сегмента RC (`1.8.5.46` → `1.8`) — родительская папка Zephyr.
+    """Родительская папка Zephyr по номеру РЦ: `1.8.5.46` → `1.8.5`.
 
-    Легаси хранит `release`/`rc` как отдельные параметры (`allta_back.py`), в
-    testing_service своего отдельного понятия "release" нет — RC и
-    `os_version_id` уже отождествлены (см. `services/test_run.py`), поэтому
-    "release" здесь — лучшее доступное приближение, не отдельное поле БД.
+    Правило легаси (`liballta.py::TestrunManager.create_test_run`): обычный
+    релиз из 4 сегментов → первые ТРИ сегмента, хотфикс из 6 сегментов с
+    маркером `UU` на четвёртом месте → первые ПЯТЬ (`1.7.3.UU.1.2` →
+    `1.7.3.UU.1`). Дальше `zefir.py` складывает из этого
+    `/stress_test/{release}/{rc}`, поэтому глубина здесь определяет, в какую
+    ветку дерева папок Jira садится ран — легаси-раны того же РЦ лежат именно
+    там.
+
+    Формат, не подпадающий ни под один случай (в легаси такого не было, там
+    `release` просто оставался неинициализированным), сводим к первым трём
+    сегментам — тот же консервативный дефолт, что у
+    `run_summary.render_titles`.
     """
     parts = rc.split(".")
-    return ".".join(parts[:2]) if len(parts) >= 2 else rc
+    if len(parts) == 6 and parts[3] == "UU":
+        return ".".join(parts[:5])
+    return ".".join(parts[:3]) if len(parts) >= 3 else rc
 
 
 async def _resolve_jira_bearer(db: AsyncSession, department_id: str) -> tuple[str, str] | None:

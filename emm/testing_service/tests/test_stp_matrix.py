@@ -22,7 +22,7 @@ from src.repositories import stp_cell as stp_cell_repo
 from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
 from src.repositories import test_stand as test_stand_repo
-from src.services import confluence_client, secret_client, stp_matrix as stp_matrix_svc
+from src.services import confluence_client, secret_client, server_client, stp_matrix as stp_matrix_svc
 from src.utils.ids import department_integration_settings_id
 from src.utils.ids import stp_cell_id, stp_test_case_id, stp_test_run_id
 from src.utils.ids import test_stand_id as new_test_stand_id
@@ -91,6 +91,23 @@ async def _seed_integration_settings(
             "stp_matrix_confluence_root_page_title": stp_matrix_confluence_root_page_title,
         })
         await db.commit()
+
+
+@pytest.fixture(autouse=True)
+def mock_os_version_catalog(monkeypatch):
+    """`{os_version_id: name}` — карточка версии из server_service.
+
+    Autouse: заголовки иерархии и тело матрицы строятся из НОМЕРА РЦ, а
+    `stp_test_runs.os_version_id` — id каталога. Дефолт `name == id`
+    сохраняет старые фикстуры, где id уже записан человеческой версией.
+    """
+    names: dict[str, str] = {}
+
+    async def fake_get_os_version(os_version_id: str) -> dict:
+        return {"id": os_version_id, "name": names.get(os_version_id, os_version_id)}
+
+    monkeypatch.setattr(server_client, "get_os_version", fake_get_os_version)
+    return names
 
 
 @pytest.fixture
@@ -176,7 +193,7 @@ class TestRenderMatrixHtml:
         cell = StpCell(id="cell_1", stp_test_case_id="case_1", stp_test_run_id="run_1", status="pass")
 
         html = stp_matrix_svc.render_matrix_html(
-            os_version_id="1.8.5.46", runs=[run], cases=[case], cells=[cell],
+            rc_number="1.8.5.46", runs=[run], cases=[case], cells=[cell],
         )
         assert "Прогресс выполнения тестового прогона 1.8.5.46" in html
         assert "PostgreSQL" in html
@@ -186,7 +203,7 @@ class TestRenderMatrixHtml:
 
     def test_no_runs_yields_placeholder(self):
         html = stp_matrix_svc.render_matrix_html(
-            os_version_id="1.8.5.46", runs=[], cases=[], cells=[],
+            rc_number="1.8.5.46", runs=[], cases=[], cells=[],
         )
         assert "Нет прогонов" in html
 
@@ -198,7 +215,7 @@ class TestRenderMatrixHtml:
         )
         case = StpTestCase(id="case_1", code="pg", title="PostgreSQL")
         html = stp_matrix_svc.render_matrix_html(
-            os_version_id="1.8.5.46", runs=[run], cases=[case], cells=[],
+            rc_number="1.8.5.46", runs=[run], cases=[case], cells=[],
         )
         assert "#ffe8e8" in html  # подсветка режима smolensk
         assert "Не запускался" not in html  # ячейка без cell — пусто, не "not_run"
@@ -283,6 +300,70 @@ class TestPublishStpMatrix:
             "Состав тестового прогона", "STRESS_stp ⬝ 1.8.5", "1.8.5.46",
         ]
         assert pages[result.confluence_page_id]["parent_id"] == result.confluence_parent_page_id
+
+    async def test_catalog_id_is_resolved_to_the_version_string(
+        self, dept_a, mock_secret_client, mock_confluence_pages, mock_os_version_catalog,
+    ):
+        """`stp_test_runs.os_version_id` — внутренний id; в заголовки страниц
+        и в тело таблицы обязан попадать номер РЦ, не `osv_<hex>`."""
+        calls, _pages = mock_confluence_pages
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+        os_version_id = "osv_3f2a1b4c5d6e7f8091a2b3c4d5e6f701"
+        mock_os_version_catalog[os_version_id] = "1.8.6.38"
+        await _seed_integration_settings(dept_a)
+        stand_id = await _seed_stand(dept_a)
+        case_id = await _seed_case("pg", "PostgreSQL")
+        run_id = await _seed_run(
+            os_version_id=os_version_id, mode="orel", kernel="6.1.0", stand_id=stand_id,
+        )
+        await _seed_cell(case_id=case_id, run_id=run_id, status="pass")
+
+        async with AsyncSessionLocal() as db:
+            from tests.test_queue import _identity
+            result = await stp_matrix_svc.publish_stp_matrix(
+                db, _identity(department_id=dept_a),
+                department_id=dept_a, os_version_id=os_version_id,
+            )
+
+        assert result.status == StpMatrixPublicationStatus.POSTED
+        assert calls["create"] == [
+            "Состав тестового прогона", "STRESS_stp ⬝ 1.8.6", "1.8.6.38",
+        ]
+        assert "1.8.6.38" in result.body_snapshot
+        assert os_version_id not in result.body_snapshot
+        assert all(os_version_id not in title for title in calls["create"] + calls["find"])
+
+    async def test_unresolvable_catalog_id_fails_instead_of_publishing_garbage(
+        self, dept_a, mock_secret_client, mock_confluence_pages, monkeypatch,
+    ):
+        calls, _pages = mock_confluence_pages
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+        await _seed_integration_settings(dept_a)
+        stand_id = await _seed_stand(dept_a)
+        case_id = await _seed_case("pg", "PostgreSQL")
+        run_id = await _seed_run(
+            os_version_id="osv_deadbeef", mode="orel", kernel="6.1.0", stand_id=stand_id,
+        )
+        await _seed_cell(case_id=case_id, run_id=run_id, status="pass")
+
+        async def boom(os_version_id: str) -> dict:
+            from src.core.exceptions import NotFoundError
+
+            raise NotFoundError(
+                error_code="SERVER_SERVICE_OBJECT_NOT_FOUND", message="no such os_version",
+            )
+
+        monkeypatch.setattr(server_client, "get_os_version", boom)
+
+        async with AsyncSessionLocal() as db:
+            from tests.test_queue import _identity
+            result = await stp_matrix_svc.publish_stp_matrix(
+                db, _identity(department_id=dept_a),
+                department_id=dept_a, os_version_id="osv_deadbeef",
+            )
+
+        assert result.status == StpMatrixPublicationStatus.FAILED
+        assert calls["create"] == []
 
     async def test_second_publish_with_same_body_is_a_noop(
         self, dept_a, mock_secret_client, mock_confluence_pages,

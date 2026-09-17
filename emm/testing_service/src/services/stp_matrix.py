@@ -48,7 +48,7 @@ from src.repositories import stp_cell as stp_cell_repo
 from src.repositories import stp_matrix_publication as repo
 from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
-from src.services import audit_service, confluence_client, permissions, secret_client
+from src.services import audit_service, confluence_client, permissions, secret_client, server_client
 from src.utils.ids import stp_matrix_publication_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -90,32 +90,40 @@ def _cell_style(bg: str | None, fg: str | None = None) -> str:
     return f' style="{style}"'
 
 
-def _hierarchy_titles(os_version_id: str) -> tuple[str | None, str]:
+def _hierarchy_titles(rc_number: str) -> tuple[str | None, str]:
     """`(parent_title | None, page_title)` — перенос ветвления `zefir.py:382-422`.
 
     Обычный релиз (4 сегмента) или hotfix (6 сегментов, 4-й — маркер `UU`):
     страница РЦ заводится под отдельной родительской страницей
     `STRESS_stp ⬝ {release}` (release — первые три сегмента, либо для hotfix
     первые три плюс пятый, `UU` в неё не входит), сама страница называется
-    буквально `os_version_id`. Формат, не подпадающий ни под один случай —
-    плоско, без промежуточного родителя, страница `STRESS_stp ⬝ {os_version_id}`
+    буквально номером РЦ. Формат, не подпадающий ни под один случай —
+    плоско, без промежуточного родителя, страница `STRESS_stp ⬝ {rc_number}`
     прямо под grandparent.
+
+    `rc_number` — номер РЦ (`"1.8.5.46"`), не `os_version_id`: id каталога
+    резолвится в версию вызывающим кодом через
+    `server_client.resolve_os_version_name`.
     """
-    parts = os_version_id.split(".")
+    parts = rc_number.split(".")
     if len(parts) == 6 and parts[3] == "UU":
         release = ".".join([parts[0], parts[1], parts[2], parts[4]])
-        return f"STRESS_stp ⬝ {release}", os_version_id
+        return f"STRESS_stp ⬝ {release}", rc_number
     if len(parts) == 4:
         release = ".".join(parts[:3])
-        return f"STRESS_stp ⬝ {release}", os_version_id
-    return None, f"STRESS_stp ⬝ {os_version_id}"
+        return f"STRESS_stp ⬝ {release}", rc_number
+    return None, f"STRESS_stp ⬝ {rc_number}"
 
 
 def render_matrix_html(
-    *, os_version_id: str, runs: list[StpTestRun], cases: list[StpTestCase],
+    *, rc_number: str, runs: list[StpTestRun], cases: list[StpTestCase],
     cells: list[StpCell],
 ) -> str:
     """Сводная таблица версия/ядро/режим/стенд × тест-кейс → статус.
+
+    `rc_number` — номер РЦ (`"1.8.5.46"`), не `os_version_id`: в заголовок
+    таблицы и в строку «Версия» идёт человеческая версия, id каталога сюда
+    попадать не должен.
 
     Легаси строит `pandas.DataFrame`, сортирует по (Режим, №стенда) и
     транспонирует, так что итоговые строки таблицы — исходные колонки
@@ -125,7 +133,7 @@ def render_matrix_html(
     (mode, stand_id) — see `stp_test_run_repo.list_by_department_and_os_version`.
     """
     if not runs:
-        return f"<h1>Прогресс выполнения тестового прогона {_escape(os_version_id)}</h1><p><em>Нет прогонов.</em></p>"
+        return f"<h1>Прогресс выполнения тестового прогона {_escape(rc_number)}</h1><p><em>Нет прогонов.</em></p>"
 
     status_by_run_and_case: dict[tuple[str, str], str] = {
         (cell.stp_test_run_id, cell.stp_test_case_id): cell.status for cell in cells
@@ -136,7 +144,7 @@ def render_matrix_html(
         cells_html = "".join(f"<td>{v}</td>" for v in values)
         return f"<tr><th>{_escape(label)}</th>{cells_html}</tr>"
 
-    version_row = _row("Версия", [_escape(os_version_id) for _ in runs])
+    version_row = _row("Версия", [_escape(rc_number) for _ in runs])
     kernel_row = _row("Ядро", [_escape(r.kernel) for r in runs])
     mode_cells = "".join(
         f"<td{_cell_style(_MODE_COLORS.get(r.mode))}>{_escape(r.mode)}</td>" for r in runs
@@ -159,7 +167,7 @@ def render_matrix_html(
         f"<tbody>{version_row}{kernel_row}{mode_row}{stand_row}{''.join(case_rows)}</tbody>"
         "</table>"
     )
-    return f"<h1>Прогресс выполнения тестового прогона {_escape(os_version_id)}</h1>{table}"
+    return f"<h1>Прогресс выполнения тестового прогона {_escape(rc_number)}</h1>{table}"
 
 
 async def _resolve_confluence_ctx(
@@ -211,7 +219,7 @@ async def _find_or_create_page(
 
 async def _publish_hierarchy(
     *, base_url: str, bearer_token: str, space: str, root_title: str,
-    os_version_id: str, body_html: str,
+    rc_number: str, body_html: str,
 ) -> tuple[str, str | None]:
     """Find-or-create grandparent → (опционально) parent → страница РЦ, затем update тела страницы РЦ.
 
@@ -224,7 +232,7 @@ async def _publish_hierarchy(
         parent_id=None, body_html="",
     )
 
-    parent_title, page_title = _hierarchy_titles(os_version_id)
+    parent_title, page_title = _hierarchy_titles(rc_number)
     parent_id = grandparent_id
     if parent_title is not None:
         parent_id = await _find_or_create_page(
@@ -334,11 +342,22 @@ async def publish_stp_matrix(
             status=StpMatrixPublicationStatus.SKIPPED_NO_TEST_RUNS, identity=identity,
         )
 
+    try:
+        rc_number = await server_client.resolve_os_version_name(os_version_id)
+    except AppException as exc:
+        logger.warning(
+            "stp_matrix.publish: cannot resolve os_version %s: %s", os_version_id, exc.message,
+        )
+        return await _save(
+            db, existing, department_id, os_version_id,
+            status=StpMatrixPublicationStatus.FAILED, identity=identity, error=exc.message[:1024],
+        )
+
     cells = await stp_cell_repo.list_by_runs(db, [r.id for r in runs])
     case_ids = sorted({c.stp_test_case_id for c in cells})
     cases = await stp_test_case_repo.list_by_ids(db, case_ids)
 
-    body_html = render_matrix_html(os_version_id=os_version_id, runs=runs, cases=cases, cells=cells)
+    body_html = render_matrix_html(rc_number=rc_number, runs=runs, cases=cases, cells=cells)
 
     if existing is not None and existing.confluence_page_id and existing.body_snapshot == body_html:
         # Таблица не изменилась с прошлой публикации — Confluence не дёргаем.
@@ -353,7 +372,7 @@ async def publish_stp_matrix(
     try:
         page_id, parent_id = await _publish_hierarchy(
             base_url=base_url, bearer_token=bearer_token, space=space, root_title=root_title,
-            os_version_id=os_version_id, body_html=body_html,
+            rc_number=rc_number, body_html=body_html,
         )
     except AppException as exc:
         logger.warning(

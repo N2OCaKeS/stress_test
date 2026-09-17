@@ -17,7 +17,7 @@ from src.db.session import AsyncSessionLocal
 from src.repositories import department_integration_settings as dis_repo
 from src.repositories import run_summary_comment as rsc_repo
 from src.repositories import test_run as test_run_repo
-from src.services import confluence_client, run_summary as run_summary_svc, secret_client
+from src.services import confluence_client, run_summary as run_summary_svc, secret_client, server_client
 from src.utils.ids import department_integration_settings_id
 from src.utils.ids import run_summary_comment_id as new_rsc_id
 from src.utils.ids import test_run_id as new_test_run_id
@@ -71,6 +71,24 @@ async def _seed_integration_settings(
             "bitbucket_credential_id": bitbucket_credential_id,
         })
         await db.commit()
+
+
+@pytest.fixture(autouse=True)
+def mock_os_version_catalog(monkeypatch):
+    """`{os_version_id: name}` — карточка версии из server_service.
+
+    Autouse: заголовки строятся из НОМЕРА РЦ, а `test_runs.os_version_id` —
+    это id каталога, так что каждый путь `post_run_summary` резолвит версию.
+    Дефолт `name == id` сохраняет старые фикстуры, где id уже записан
+    человеческой версией.
+    """
+    names: dict[str, str] = {}
+
+    async def fake_get_os_version(os_version_id: str) -> dict:
+        return {"id": os_version_id, "name": names.get(os_version_id, os_version_id)}
+
+    monkeypatch.setattr(server_client, "get_os_version", fake_get_os_version)
+    return names
 
 
 @pytest.fixture
@@ -159,6 +177,52 @@ class TestRenderTitles:
         stp_title, blog_title = run_summary_svc.render_titles("1.8")
         assert stp_title == "STRESS_report ⬝ 1.8"
         assert blog_title == "1.8 оперативного обновления Astra Linux SE 1.8"
+
+
+class TestTitlesUseVersionNotCatalogId:
+    """`test_runs.os_version_id` — внутренний id (`osv_<hex>`), а не версия;
+    в заголовок обязан попадать номер РЦ из карточки server_service."""
+
+    async def test_catalog_id_is_resolved_to_the_version_string(
+        self, mock_confluence, mock_secret_client, mock_os_version_catalog,
+    ):
+        calls, _state = mock_confluence
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+        os_version_id = "osv_3f2a1b4c5d6e7f8091a2b3c4d5e6f701"
+        mock_os_version_catalog[os_version_id] = "1.8.6.38"
+        run_id = await _seed_test_run(department_id="dep_osv", os_version_id=os_version_id)
+        await _seed_integration_settings("dep_osv")
+
+        async with AsyncSessionLocal() as db:
+            result = await run_summary_svc.post_run_summary(db, run_id)
+
+        assert result.status == RunSummaryCommentStatus.POSTED
+        assert calls["find_page"] == ["STRESS_report ⬝ 1.8.6"]
+        assert calls["find_blog"] == ["1.8.6.38 оперативного обновления Astra Linux SE 1.8.6"]
+        assert all(os_version_id not in title for title in calls["find_page"] + calls["find_blog"])
+
+    async def test_unresolvable_catalog_id_fails_instead_of_publishing_garbage(
+        self, mock_confluence, mock_secret_client, monkeypatch,
+    ):
+        calls, _state = mock_confluence
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+
+        async def boom(os_version_id: str) -> dict:
+            from src.core.exceptions import NotFoundError
+
+            raise NotFoundError(
+                error_code="SERVER_SERVICE_OBJECT_NOT_FOUND", message="no such os_version",
+            )
+
+        monkeypatch.setattr(server_client, "get_os_version", boom)
+        run_id = await _seed_test_run(department_id="dep_osv_gone", os_version_id="osv_deadbeef")
+        await _seed_integration_settings("dep_osv_gone")
+
+        async with AsyncSessionLocal() as db:
+            result = await run_summary_svc.post_run_summary(db, run_id)
+
+        assert result.status == RunSummaryCommentStatus.FAILED
+        assert calls["find_page"] == []
 
 
 # ── _resolve_confluence_bearer ───────────────────────────────────────────────

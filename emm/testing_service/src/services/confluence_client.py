@@ -5,10 +5,19 @@
 зоной ответственности вызывающего сервиса (`services/run_summary.py`), этот
 модуль ничего не знает про departments. Тот же паттерн, что `zephyr_client.py`.
 
+Инстанс — Server/Data Center (`life.astralinux.ru`), поэтому база путей —
+`/rest/api/content` без префикса `/wiki`: `/wiki` существует только у
+Atlassian Cloud. Легаси ходит туда же через `atlassian.Confluence(url=
+f'https://{CONFLUENCE_URL}')` (`allta_app/libs/libconfluence.py`,
+`reports/departament_reports/libreport.py`), что даёт ровно `/rest/api/...`.
+Авторизация — `Authorization: Bearer <PAT>` (`core/http.bearer_header`), тот
+же заголовок, что ставит `atlassian-python-api` при передаче `token=` —
+Cloud-схема «email + API-token в Basic» здесь неприменима.
+
 **Не проверено против живой Confluence** — реализация построена по публичной
-документации Confluence Server/Data Center REST API (`/wiki/rest/api/content`),
-не по работающему легаси-коду (легаси использовал `atlassian-python-api`,
-здесь — прямой `httpx`, по требованию сессии). Особенно не проверено:
+документации Confluence Server/Data Center REST API, не по работающему
+легаси-коду (легаси использовал `atlassian-python-api`, здесь — прямой
+`httpx`, по требованию сессии). Особенно не проверено:
 optimistic-locking контракт `update_comment` (требуется `version.number` на
 единицу больше текущего — реализовано согласно документации, но не обкатано
 на реальном инстансе) и структура `container` при создании комментария к
@@ -28,7 +37,7 @@ from src.core.http import bearer_header
 
 logger = logging.getLogger("testing_service.confluence_client")
 
-_CONTENT_PATH = "/wiki/rest/api/content"
+_CONTENT_PATH = "/rest/api/content"
 _PAGE_SIZE = 50
 
 
@@ -44,7 +53,7 @@ def _base(base_url: str) -> str:
 async def find_page_id(
     *, base_url: str, bearer_token: str, space: str, title: str,
 ) -> str | None:
-    """`GET /wiki/rest/api/content?spaceKey=..&title=..&type=page` → id страницы.
+    """`GET /rest/api/content?spaceKey=..&title=..&type=page` → id страницы.
 
     `None` — страница не найдена, сеть недоступна, либо неожиданный ответ.
     Best-effort: caller (`services/run_summary.py`) трактует это как
@@ -79,7 +88,7 @@ async def find_page_id(
 async def find_blogpost_id(
     *, base_url: str, bearer_token: str, space: str, title: str,
 ) -> str | None:
-    """`GET /wiki/rest/api/content?spaceKey=..&type=blogpost` постранично → id поста.
+    """`GET /rest/api/content?spaceKey=..&type=blogpost` постранично → id поста.
 
     Точное совпадение заголовка, тот же приём, что легаси `libconfluence.py`
     (перебор всех blog-постов пространства, а не поиск по `title`-параметру —
@@ -123,7 +132,7 @@ async def find_blogpost_id(
 async def get_comments(
     *, base_url: str, bearer_token: str, content_id: str,
 ) -> list[dict]:
-    """`GET /wiki/rest/api/content/{id}/child/comment?expand=version,body.storage`.
+    """`GET /rest/api/content/{id}/child/comment?expand=version,body.storage`.
 
     Возвращает все дочерние комментарии контента (нужно найти текущий
     `version.number` своего комментария перед `update_comment`). Поднимает
@@ -165,7 +174,7 @@ async def add_comment(
     *, base_url: str, bearer_token: str, content_id: str, body_html: str,
     container_type: str = "blogpost",
 ) -> str:
-    """`POST /wiki/rest/api/content` (`type=comment`) → id созданного комментария.
+    """`POST /rest/api/content` (`type=comment`) → id созданного комментария.
 
     `container_type` — тип контента, к которому крепится комментарий; здесь
     всегда `"blogpost"` (единственный вызывающий сценарий — комментарий к
@@ -215,7 +224,7 @@ async def add_comment(
 async def update_comment(
     *, base_url: str, bearer_token: str, comment_id: str, body_html: str, version: int,
 ) -> None:
-    """`PUT /wiki/rest/api/content/{id}` — заменить тело существующего комментария.
+    """`PUT /rest/api/content/{id}` — заменить тело существующего комментария.
 
     `version` — ТЕКУЩИЙ `version.number` комментария (как вернул
     `get_comments`), не следующий: Confluence требует в теле запроса
@@ -263,7 +272,7 @@ async def update_comment(
 
 
 async def get_page_version(*, base_url: str, bearer_token: str, page_id: str) -> int:
-    """`GET /wiki/rest/api/content/{id}?expand=version` → текущий `version.number`.
+    """`GET /rest/api/content/{id}?expand=version` → текущий `version.number`.
 
     Нужен перед `update_page` — Confluence требует `version.number` строго на
     единицу больше текущего (optimistic locking), тот же контракт, что и у
@@ -299,7 +308,7 @@ async def get_page_version(*, base_url: str, bearer_token: str, page_id: str) ->
 async def create_page(
     *, base_url: str, bearer_token: str, space: str, title: str, parent_id: str | None, body_html: str,
 ) -> str:
-    """`POST /wiki/rest/api/content` (`type=page`) → id созданной страницы.
+    """`POST /rest/api/content` (`type=page`) → id созданной страницы.
 
     `parent_id` — id родительской страницы (легаси резолвит его по
     `parent_page_title` через `find_page_id` до вызова этой функции);
@@ -351,7 +360,7 @@ async def create_page(
 async def update_page(
     *, base_url: str, bearer_token: str, page_id: str, title: str, body_html: str, version: int,
 ) -> None:
-    """`PUT /wiki/rest/api/content/{id}` — заменить тело существующей страницы.
+    """`PUT /rest/api/content/{id}` — заменить тело существующей страницы.
 
     `version` — ТЕКУЩИЙ `version.number` (как вернул `get_page_version`), не
     следующий — прибавление единицы сделано здесь, симметрично `update_comment`.

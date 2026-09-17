@@ -74,9 +74,16 @@ _STAND_WRONG_DEPARTMENT = "STAND_WRONG_DEPARTMENT"
 def _derive_release(os_version_id: str) -> str:
     """Дублирует `services/stp.py::_derive_release` — тот же приём, что и
     `stp_add_test.py::_resolve_jira_ctx` уже применяет к `_resolve_jira_bearer`:
-    крохотный чистый хелпер дублируется, а не импортируется из чужой зоны."""
+    крохотный чистый хелпер дублируется, а не импортируется из чужой зоны.
+
+    Правило легаси: 4 сегмента → первые три, хотфикс из 6 сегментов с `UU` на
+    четвёртом месте → первые пять. Поиск обязан ходить в ту же папку, в
+    которую пишет `stp.py`, иначе легаси-раны не находятся.
+    """
     parts = os_version_id.split(".")
-    return ".".join(parts[:2]) if len(parts) >= 2 else os_version_id
+    if len(parts) == 6 and parts[3] == "UU":
+        return ".".join(parts[:5])
+    return ".".join(parts[:3]) if len(parts) >= 3 else os_version_id
 
 
 async def _resolve_jira_ctx(db: AsyncSession, department_id: str) -> tuple[str, str] | None:

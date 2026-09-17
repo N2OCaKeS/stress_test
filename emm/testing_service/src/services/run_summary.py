@@ -45,7 +45,7 @@ from src.models import RunSummaryComment
 from src.repositories import department_integration_settings as dis_repo
 from src.repositories import run_summary_comment as repo
 from src.repositories import test_run as test_run_repo
-from src.services import audit_service, confluence_client, secret_client
+from src.services import audit_service, confluence_client, secret_client, server_client
 from src.utils.ids import run_summary_comment_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -69,6 +69,16 @@ def render_titles(rc_number: str) -> tuple[str, str]:
     Формат RC, не подпадающий ни под один из этих двух случаев (в легаси не
     встречался), трактуется как обычный релиз с версией из доступных
     сегментов — консервативный дефолт, не падение.
+
+    `rc_number` — номер РЦ (`"1.8.5.46"`), не `os_version_id`: id каталога
+    резолвится в версию вызывающим кодом через
+    `server_client.resolve_os_version_name`.
+
+    TODO: легаси ставил в начало заголовка ещё и номер РЦ вида `RC3`
+    (`allta_conf['build_rc_relation'][version]`), поэтому реальный заголовок
+    у него — `"RC3 оперативного обновления Astra Linux SE 1.8.6"`. В emm у
+    `os_versions` такого поля нет, источник номера — открытый вопрос к
+    владельцу, поэтому префикс здесь пока не ставится.
     """
     parts = rc_number.split(".")
     if len(parts) == 6 and parts[3] == "UU":
@@ -158,7 +168,8 @@ async def _do_post_run_summary(
         return await _save(db, existing, run.id, status=RunSummaryCommentStatus.FAILED)
     base_url, bearer_token = ctx
 
-    stp_title, blog_title = render_titles(run.os_version_id)
+    rc_number = await server_client.resolve_os_version_name(run.os_version_id)
+    stp_title, blog_title = render_titles(rc_number)
 
     stp_page_id = await confluence_client.find_page_id(
         base_url=base_url, bearer_token=bearer_token, space=_CONFLUENCE_SPACE, title=stp_title,

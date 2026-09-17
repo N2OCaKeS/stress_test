@@ -217,6 +217,26 @@ async def get_os_version(os_version_id: str) -> dict:
     return await _get(f"{_OS_VERSIONS_PATH}/{os_version_id}")
 
 
+async def resolve_os_version_name(os_version_id: str) -> str:
+    """`osv_<hex>` → человеческая строка версии (`"1.8.5.46"`).
+
+    `test_runs.os_version_id`/`stp_test_runs.os_version_id` хранят внутренний
+    id каталога, а заголовки Confluence, имена и папки Zephyr строятся из
+    самого номера РЦ — путать их нельзя, иначе наружу уходит `osv_3f2a…`
+    вместо `1.8.5.46`. Исключение (server_service недоступен/версия удалена)
+    наружу НЕ гасится: подставить id вместо версии значит опубликовать
+    заведомо неверный заголовок, лучше видимый `status=failed`.
+    """
+    version = await get_os_version(os_version_id)
+    name = str(version.get("name") or "").strip()
+    if not name:
+        raise ServiceUnavailableError(
+            error_code="OS_VERSION_NAME_MISSING",
+            message=f"server_service returned no name for os_version {os_version_id}",
+        )
+    return name
+
+
 def _internal_headers() -> dict[str, str]:
     """Заголовки для канала брони/подготовки — `SERVER_SERVICE_INTERNAL_API_KEY`.
 

@@ -2,6 +2,7 @@
 
 import csv
 import json
+from pathlib import Path
 from allta import PageBuilder, ConfluencePublisher
 
 from kernel_conf import (
@@ -294,6 +295,7 @@ def usage_os_publisher(username,
     ]
     builder.add_chart(chart_spec=graphics, columns=2)
 
+    Path(preview_path).parent.mkdir(parents=True, exist_ok=True)
     builder.render_to_file(path=preview_path)
 
     publish_result = reporter.publish_results_from_params(

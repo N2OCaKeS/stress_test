@@ -1990,6 +1990,8 @@ tests:
     department_id: null
     pinned_stand_token: stand12
     starter_suffix: null
+    # source: dev_allta_app:allta_app/allta_back.py:118-121 (TEST_TIMEOUTS['auditd-u'] = 20 ч)
+    timeout_seconds: 72000
     command:
       - kind: literal
         literal_value: "--username"
@@ -2107,6 +2109,8 @@ tests:
     department_id: null
     pinned_stand_token: stand13
     starter_suffix: null
+    # source: dev_allta_app:allta_app/allta_back.py:118-121 (TEST_TIMEOUTS['syslog-ng-cwl'] = 36 ч)
+    timeout_seconds: 129600
     command:
       # source: dev_allta_app:allta_app/backup_image.py:374-376 (-cwl идёт ПОСЛЕ -tcv)
       - kind: literal

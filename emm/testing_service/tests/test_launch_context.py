@@ -189,6 +189,16 @@ class TestAlltaCatalogResolves:
             content = await resolve_dates_content(db, test.id, ctx)
         assert "-sn 3" in content
 
+    async def test_legacy_per_test_timeouts_are_imported(self, imported_allta_catalog):
+        """Легаси `allta_back.py:118-121` — `TEST_TIMEOUTS = {'syslog-ng-cwl': 36,
+        'auditd-u': 20}` часов, дефолт 12ч. Без явного `timeout_seconds` оба
+        теста убивались бы на 12-м часу и засчитывались как провал."""
+        async with AsyncSessionLocal() as db:
+            useraud = await test_definition_repo.get_by_code(db, "auditd.useraud")
+            cwl = await test_definition_repo.get_by_code(db, "syslog_ng.check_write_log")
+        assert useraud.timeout_seconds == 20 * 3600
+        assert cwl.timeout_seconds == 36 * 3600
+
     async def test_stand3_tests_are_pinned_and_others_report_missing_stand(
         self, imported_allta_catalog,
     ):

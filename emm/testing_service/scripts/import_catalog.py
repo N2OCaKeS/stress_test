@@ -304,6 +304,7 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
                 pinned_stand_id=pinned_stand_id,
                 changelog_component=item.get("changelog_component"),
                 starter_suffix=item.get("starter_suffix"),
+                timeout_seconds=item.get("timeout_seconds"),
             )
             obj = await test_definition.create_test_definition(db, _SYSTEM_IDENTITY, payload)
         except Exception as exc:  # noqa: BLE001 — одна плохая запись не должна ронять импорт

@@ -126,6 +126,16 @@ class TestCreateOsVersion:
         body = resp.json()
         assert body["kernels"] == []
         assert body["is_urgent_update"] is False
+        assert body["rc_number"] is None
+
+    async def test_admin_creates_with_rc_number(self, client, admin_role_token_a):
+        resp = await client.post(
+            BASE,
+            headers=_hdr(admin_role_token_a),
+            json=_payload(name="astra-1.8-rc", rc_number="RC3"),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["rc_number"] == "RC3"
 
     async def test_duplicate_name_conflict(self, client, admin_role_token_a):
         resp = await client.post(
@@ -419,6 +429,24 @@ class TestUpdateOsVersion:
         body = resp.json()
         assert body["kernels"] == ["6.1.0-9"]
         assert body["is_urgent_update"] is True
+
+    async def test_admin_sets_and_clears_rc_number(self, client, admin_role_token_a):
+        created = await client.post(
+            BASE, headers=_hdr(admin_role_token_a), json=_payload(name="osv-upd-rc"),
+        )
+        ov_id = created.json()["id"]
+
+        resp = await client.patch(
+            f"{BASE}/{ov_id}", headers=_hdr(admin_role_token_a), json={"rc_number": "RC5"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["rc_number"] == "RC5"
+
+        resp2 = await client.patch(
+            f"{BASE}/{ov_id}", headers=_hdr(admin_role_token_a), json={"rc_number": None},
+        )
+        assert resp2.status_code == 200, resp2.text
+        assert resp2.json()["rc_number"] is None
 
     async def test_reader_cannot_update(self, client, reader_token_a, admin_role_token_a):
         created = await client.post(

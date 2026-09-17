@@ -113,6 +113,14 @@ class OsVersionCreate(BaseModel):
         default=False,
         description="Срочный хотфикс вне обычного цикла РЦ (legacy UU), а не плановый релиз.",
     )
+    rc_number: str | None = Field(
+        default=None, max_length=32,
+        description=(
+            "Номер РЦ (legacy \"RC3\") — ручная метка, не выводится ни из чего "
+            "алгоритмически. Используется testing_service в заголовке "
+            "end-of-run комментария."
+        ),
+    )
     build_version: str | None = Field(
         default=None,
         description=(
@@ -156,6 +164,10 @@ class OsVersionUpdate(BaseModel):
     is_urgent_update: bool | None = Field(
         default=None,
         description="Сменить флаг срочного хотфикса (legacy UU).",
+    )
+    rc_number: str | None = Field(
+        default=None, max_length=32,
+        description="Сменить номер РЦ (legacy \"RC3\"). Явный `null` снимает метку.",
     )
 
     @field_validator("repositories")
@@ -260,5 +272,6 @@ class OsVersionResponse(BaseModel):
     is_urgent_update: bool = Field(
         default=False, description="Срочный хотфикс вне обычного цикла РЦ (legacy UU).",
     )
+    rc_number: str | None = Field(default=None, description="Номер РЦ (legacy \"RC3\"), если проставлен.")
     discovered_at: datetime = Field(description="Когда версия добавлена в каталог.")
     updated_at: datetime = Field(description="Когда последний раз изменена.")

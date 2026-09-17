@@ -31,6 +31,13 @@ class OsVersion(Base):
     is_urgent_update: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    # Номер РЦ (legacy `"RC3"`) — короткая метка, которую владелец присваивает
+    # версии вручную (в allta_app это делалось командой telegram-бота
+    # `/addrc`/`/adduurc`; здесь то же самое действие, просто через форму).
+    # Не выводится из `name` никаким алгоритмом — источника для этого нет ни
+    # тут, ни в легаси. Используется testing_service как префикс заголовка
+    # end-of-run комментария в Confluence.
+    rc_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
     discovered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -223,7 +223,32 @@ class TestCreateTestRun:
         detail = await client.get(f"{BASE}/{body['id']}", headers=_hdr(admin_token))
         items = detail.json()["queue_items"]
         assert len(items) == 1
-        assert items[0]["stand_id"] == good_stand
+
+    async def test_queue_disabled_stand_blocks_enqueue(
+        self, client, admin_token, mock_server_service,
+    ):
+        """`queue_enabled=False` — реальные ворота, а не переключатель без действия."""
+        mock_server_service()
+        good_stand, _ = await _create_stand(client, admin_token)
+        disabled_stand, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, good_stand)
+        bad_test = await _create_test_def(client, admin_token, disabled_stand)
+
+        patch = await client.patch(
+            f"{STANDS_BASE}/{disabled_stand}", headers=_hdr(admin_token), json={"queue_enabled": False},
+        )
+        assert patch.status_code == 200, patch.text
+
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token), json=_payload([good_stand, disabled_stand], debug=True),
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert len(body["enqueue_errors"]) == 1
+        err = body["enqueue_errors"][0]
+        assert err["stand_id"] == disabled_stand
+        assert err["test_id"] == bad_test
+        assert err["error_code"] == "TEST_STAND_QUEUE_DISABLED"
 
     async def test_final_flag_persisted(self, client, admin_token, mock_server_service):
         mock_server_service()

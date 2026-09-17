@@ -156,6 +156,11 @@ async def enqueue(
             error_code="TEST_STAND_INACTIVE",
             message="Test stand is not active",
         )
+    if not stand.queue_enabled:
+        raise ConflictError(
+            error_code="TEST_STAND_QUEUE_DISABLED",
+            message="Test stand is not enrolled in the queue",
+        )
 
     ctx = dict(launch_context or {})
     missing = [key for key in _REQUIRED_LAUNCH_CONTEXT_KEYS if not ctx.get(key)]

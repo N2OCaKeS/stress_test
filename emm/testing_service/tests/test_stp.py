@@ -246,10 +246,20 @@ class TestDeriveRelease:
         assert f"/stress_test/{stp_svc._derive_release(rc)}/{rc}" == "/stress_test/1.8.5/1.8.5.46"
 
     def test_uu_hotfix_keeps_five_segments(self):
-        assert stp_svc._derive_release("1.7.3.UU.1.2") == "1.7.3.UU.1"
+        assert stp_svc._derive_release("1.7.3.UU.1.2", is_urgent_update=True) == "1.7.3.UU.1"
+
+    def test_uu_marker_case_insensitive(self):
+        """Владелец может ввести версию как `uu` — сравнение не должно от этого ломаться."""
+        assert stp_svc._derive_release("1.7.3.uu.1.2", is_urgent_update=True) == "1.7.3.uu.1"
+
+    def test_uu_shape_without_flag_is_not_hotfix(self):
+        """`is_urgent_update=False` — структурные ворота: 6-сегментная строка,
+        случайно похожая на хотфикс, не должна сворачиваться в укороченный
+        формат, если сама OS-версия хотфиксом не помечена."""
+        assert stp_svc._derive_release("1.7.3.UU.1.2", is_urgent_update=False) == "1.7.3"
 
     def test_six_segments_without_uu_marker_is_ordinary(self):
-        assert stp_svc._derive_release("1.8.5.46.7.8") == "1.8.5"
+        assert stp_svc._derive_release("1.8.5.46.7.8", is_urgent_update=True) == "1.8.5"
 
     def test_short_format_falls_back_without_raising(self):
         assert stp_svc._derive_release("1.8") == "1.8"
@@ -260,7 +270,11 @@ class TestDeriveRelease:
         from src.services import stp_pull_from_life as pull_svc
 
         for rc in ("1.8.5.46", "1.7.3.UU.1.2", "1.8.5.46.7.8", "1.8", "1.8.5"):
-            assert stp_svc._derive_release(rc) == pull_svc._derive_release(rc), rc
+            for urgent in (False, True):
+                assert (
+                    stp_svc._derive_release(rc, is_urgent_update=urgent)
+                    == pull_svc._derive_release(rc, is_urgent_update=urgent)
+                ), (rc, urgent)
 
 
 # ── Zephyr client — retry без environment на 400 ────────────────────────────

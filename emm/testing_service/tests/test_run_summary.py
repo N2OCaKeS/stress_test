@@ -73,22 +73,40 @@ async def _seed_integration_settings(
         await db.commit()
 
 
+class _OsVersionCatalog(dict):
+    """`{os_version_id: name}` (через обычный `[]`) + `.rc_numbers`/`.urgent`
+    для явного управления полями, которых не было до волны с номером РЦ."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.rc_numbers: dict[str, str | None] = {}
+        self.urgent: dict[str, bool] = {}
+
+
 @pytest.fixture(autouse=True)
 def mock_os_version_catalog(monkeypatch):
-    """`{os_version_id: name}` — карточка версии из server_service.
+    """Карточка версии из server_service.
 
     Autouse: заголовки строятся из НОМЕРА РЦ, а `test_runs.os_version_id` —
     это id каталога, так что каждый путь `post_run_summary` резолвит версию.
     Дефолт `name == id` сохраняет старые фикстуры, где id уже записан
-    человеческой версией.
+    человеческой версией. `rc_number` по умолчанию — `"RC-test"` (не `None`)
+    — иначе все существующие фикстуры без явного мнения о номере РЦ упёрлись
+    бы в новый `SKIPPED_NO_RC_NUMBER`; тест на сам этот статус выставляет
+    `rc_numbers[id] = None` явно.
     """
-    names: dict[str, str] = {}
+    catalog = _OsVersionCatalog()
 
     async def fake_get_os_version(os_version_id: str) -> dict:
-        return {"id": os_version_id, "name": names.get(os_version_id, os_version_id)}
+        return {
+            "id": os_version_id,
+            "name": catalog.get(os_version_id, os_version_id),
+            "rc_number": catalog.rc_numbers.get(os_version_id, "RC-test"),
+            "is_urgent_update": catalog.urgent.get(os_version_id, False),
+        }
 
     monkeypatch.setattr(server_client, "get_os_version", fake_get_os_version)
-    return names
+    return catalog
 
 
 @pytest.fixture
@@ -158,25 +176,41 @@ def mock_confluence(monkeypatch):
 
 class TestRenderTitles:
     def test_ordinary_release_four_segments(self):
-        stp_title, blog_title = run_summary_svc.render_titles("1.8.5.46")
+        stp_title, blog_title = run_summary_svc.render_titles("1.8.5.46", "RC3")
         assert stp_title == "STRESS_report ⬝ 1.8.5"
-        assert blog_title == "1.8.5.46 оперативного обновления Astra Linux SE 1.8.5"
+        assert blog_title == "RC3 оперативного обновления Astra Linux SE 1.8.5"
 
     def test_hotfix_six_segments_with_uu_marker(self):
-        stp_title, blog_title = run_summary_svc.render_titles("1.8.5.UU.46.1")
+        stp_title, blog_title = run_summary_svc.render_titles(
+            "1.8.5.UU.46.1", "RC7", is_urgent_update=True,
+        )
         assert stp_title == "STRESS_report ⬝ 1.8.5.46"
-        assert blog_title == "1.8.5.UU.46.1 срочного обновления Astra Linux SE 1.8.5.46"
+        assert blog_title == "RC7 срочного обновления Astra Linux SE 1.8.5.46"
+
+    def test_uu_marker_case_insensitive(self):
+        _stp_title, blog_title = run_summary_svc.render_titles(
+            "1.8.5.uu.46.1", "RC7", is_urgent_update=True,
+        )
+        assert blog_title == "RC7 срочного обновления Astra Linux SE 1.8.5.46"
+
+    def test_hotfix_shape_without_flag_is_ordinary(self):
+        # `is_urgent_update=False` — структурные ворота, строка сама по себе не решает.
+        stp_title, blog_title = run_summary_svc.render_titles("1.8.5.UU.46.1", "RC7")
+        assert stp_title == "STRESS_report ⬝ 1.8.5"
+        assert "оперативного обновления" in blog_title
 
     def test_six_segments_without_uu_marker_is_treated_as_ordinary(self):
         # 4-й сегмент не "UU" — не хотфикс-формат, дефолтная ветка.
-        stp_title, blog_title = run_summary_svc.render_titles("1.8.5.46.7.8")
+        stp_title, blog_title = run_summary_svc.render_titles(
+            "1.8.5.46.7.8", "RC3", is_urgent_update=True,
+        )
         assert stp_title == "STRESS_report ⬝ 1.8.5"
         assert "оперативного обновления" in blog_title
 
     def test_unusual_short_format_falls_back_without_raising(self):
-        stp_title, blog_title = run_summary_svc.render_titles("1.8")
+        stp_title, blog_title = run_summary_svc.render_titles("1.8", "RC3")
         assert stp_title == "STRESS_report ⬝ 1.8"
-        assert blog_title == "1.8 оперативного обновления Astra Linux SE 1.8"
+        assert blog_title == "RC3 оперативного обновления Astra Linux SE 1.8"
 
 
 class TestTitlesUseVersionNotCatalogId:
@@ -198,8 +232,46 @@ class TestTitlesUseVersionNotCatalogId:
 
         assert result.status == RunSummaryCommentStatus.POSTED
         assert calls["find_page"] == ["STRESS_report ⬝ 1.8.6"]
-        assert calls["find_blog"] == ["1.8.6.38 оперативного обновления Astra Linux SE 1.8.6"]
+        assert calls["find_blog"] == ["RC-test оперативного обновления Astra Linux SE 1.8.6"]
         assert all(os_version_id not in title for title in calls["find_page"] + calls["find_blog"])
+
+    async def test_rc_label_is_separate_from_version_in_the_title(
+        self, mock_confluence, mock_secret_client, mock_os_version_catalog,
+    ):
+        """Легаси-заголовок несёт ОБА значения разом — `"RC3 ... 1.8.6"`, не
+        версию, продублированную дважды."""
+        calls, _state = mock_confluence
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+        os_version_id = "osv_rc_label"
+        mock_os_version_catalog[os_version_id] = "1.8.6.38"
+        mock_os_version_catalog.rc_numbers[os_version_id] = "RC3"
+        run_id = await _seed_test_run(department_id="dep_rc_label", os_version_id=os_version_id)
+        await _seed_integration_settings("dep_rc_label")
+
+        async with AsyncSessionLocal() as db:
+            result = await run_summary_svc.post_run_summary(db, run_id)
+
+        assert result.status == RunSummaryCommentStatus.POSTED
+        assert calls["find_blog"] == ["RC3 оперативного обновления Astra Linux SE 1.8.6"]
+
+    async def test_no_rc_number_is_skipped_not_posted_with_garbage(
+        self, mock_confluence, mock_secret_client, mock_os_version_catalog,
+    ):
+        """OS-версия без проставленного номера РЦ — видимый skip, а не
+        публикация заголовка без префикса."""
+        calls, _state = mock_confluence
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+        os_version_id = "osv_no_rc"
+        mock_os_version_catalog[os_version_id] = "1.8.6.38"
+        mock_os_version_catalog.rc_numbers[os_version_id] = None
+        run_id = await _seed_test_run(department_id="dep_no_rc", os_version_id=os_version_id)
+        await _seed_integration_settings("dep_no_rc")
+
+        async with AsyncSessionLocal() as db:
+            result = await run_summary_svc.post_run_summary(db, run_id)
+
+        assert result.status == RunSummaryCommentStatus.SKIPPED_NO_RC_NUMBER
+        assert calls["find_page"] == []
 
     async def test_unresolvable_catalog_id_fails_instead_of_publishing_garbage(
         self, mock_confluence, mock_secret_client, monkeypatch,

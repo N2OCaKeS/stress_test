@@ -43,6 +43,7 @@ server.py`): виден сервер своего отдела либо тот, 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 import httpx
 
@@ -217,8 +218,19 @@ async def get_os_version(os_version_id: str) -> dict:
     return await _get(f"{_OS_VERSIONS_PATH}/{os_version_id}")
 
 
-async def resolve_os_version_name(os_version_id: str) -> str:
-    """`osv_<hex>` → человеческая строка версии (`"1.8.5.46"`).
+@dataclass(frozen=True)
+class OsVersionInfo:
+    """Человеческие атрибуты OS-версии, нужные testing_service за пределами
+    самого `os_version_id` — один `GET` вместо нескольких на каждый нужный
+    признак."""
+
+    name: str
+    is_urgent_update: bool
+    rc_number: str | None
+
+
+async def resolve_os_version_info(os_version_id: str) -> OsVersionInfo:
+    """`osv_<hex>` → `(имя, is_urgent_update, номер РЦ)`.
 
     `test_runs.os_version_id`/`stp_test_runs.os_version_id` хранят внутренний
     id каталога, а заголовки Confluence, имена и папки Zephyr строятся из
@@ -226,6 +238,10 @@ async def resolve_os_version_name(os_version_id: str) -> str:
     вместо `1.8.5.46`. Исключение (server_service недоступен/версия удалена)
     наружу НЕ гасится: подставить id вместо версии значит опубликовать
     заведомо неверный заголовок, лучше видимый `status=failed`.
+
+    `rc_number` (легаси `"RC3"`) — ручная метка, которую владелец выставляет
+    на самой OS-версии в `server_service`; может отсутствовать (`None`), пока
+    не проставлена.
     """
     version = await get_os_version(os_version_id)
     name = str(version.get("name") or "").strip()
@@ -234,7 +250,15 @@ async def resolve_os_version_name(os_version_id: str) -> str:
             error_code="OS_VERSION_NAME_MISSING",
             message=f"server_service returned no name for os_version {os_version_id}",
         )
-    return name
+    rc_number = str(version.get("rc_number") or "").strip() or None
+    return OsVersionInfo(
+        name=name, is_urgent_update=bool(version.get("is_urgent_update", False)), rc_number=rc_number,
+    )
+
+
+async def resolve_os_version_name(os_version_id: str) -> str:
+    """`osv_<hex>` → человеческая строка версии (`"1.8.5.46"`). См. `resolve_os_version_info`."""
+    return (await resolve_os_version_info(os_version_id)).name
 
 
 def _internal_headers() -> dict[str, str]:

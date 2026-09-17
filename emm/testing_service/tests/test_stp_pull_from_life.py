@@ -74,7 +74,13 @@ class TestDeriveRelease:
         assert f"/stress_test/{pull_svc._derive_release(rc)}/{rc}" == "/stress_test/1.8.5/1.8.5.46"
 
     def test_uu_hotfix_keeps_five_segments(self):
-        assert pull_svc._derive_release("1.7.3.UU.1.2") == "1.7.3.UU.1"
+        assert pull_svc._derive_release("1.7.3.UU.1.2", is_urgent_update=True) == "1.7.3.UU.1"
+
+    def test_uu_marker_case_insensitive(self):
+        assert pull_svc._derive_release("1.7.3.uu.1.2", is_urgent_update=True) == "1.7.3.uu.1"
+
+    def test_uu_shape_without_flag_is_not_hotfix(self):
+        assert pull_svc._derive_release("1.7.3.UU.1.2", is_urgent_update=False) == "1.7.3"
 
     def test_short_format_falls_back_without_raising(self):
         assert pull_svc._derive_release("1.8") == "1.8"

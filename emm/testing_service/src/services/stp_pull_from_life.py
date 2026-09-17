@@ -73,7 +73,7 @@ _STAND_NOT_FOUND = "STAND_NOT_FOUND"
 _STAND_WRONG_DEPARTMENT = "STAND_WRONG_DEPARTMENT"
 
 
-def _derive_release(rc_number: str) -> str:
+def _derive_release(rc_number: str, *, is_urgent_update: bool = False) -> str:
     """Дублирует `services/stp.py::_derive_release` — тот же приём, что и
     `stp_add_test.py::_resolve_jira_ctx` уже применяет к `_resolve_jira_bearer`:
     крохотный чистый хелпер дублируется, а не импортируется из чужой зоны.
@@ -82,10 +82,13 @@ def _derive_release(rc_number: str) -> str:
     четвёртом месте → первые пять. Поиск обязан ходить в ту же папку, в
     которую пишет `stp.py`, иначе легаси-раны не находятся. Принимает
     человеческий номер РЦ (`rc_number`), не `os_version_id` — резолвится
-    вызывающим через `server_client.resolve_os_version_name`.
+    вызывающим через `server_client.resolve_os_version_info`.
+
+    `is_urgent_update` — тот же структурный флаг-ворота и регистронезависимое
+    сравнение с `UU`, что и в `stp.py::_derive_release` — см. его докстринг.
     """
     parts = rc_number.split(".")
-    if len(parts) == 6 and parts[3] == "UU":
+    if is_urgent_update and len(parts) == 6 and parts[3].upper() == "UU":
         return ".".join(parts[:5])
     return ".".join(parts[:3]) if len(parts) >= 3 else rc_number
 
@@ -180,8 +183,9 @@ async def _search_folder(
             message="department_integration_settings not configured or credential reveal failed",
         )
     base_url, bearer_token = jira_ctx
-    rc_number = await server_client.resolve_os_version_name(os_version_id)
-    release = _derive_release(rc_number)
+    os_version_info = await server_client.resolve_os_version_info(os_version_id)
+    rc_number = os_version_info.name
+    release = _derive_release(rc_number, is_urgent_update=os_version_info.is_urgent_update)
     folder = f"/stress_test/{release}/{rc_number}"
     summaries = await zephyr_client.search_test_runs(base_url=base_url, bearer_token=bearer_token, folder=folder)
     return base_url, bearer_token, folder, summaries

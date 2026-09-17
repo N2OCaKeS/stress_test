@@ -85,7 +85,7 @@ async def _filter_by_changelog(
     return [t for t in tests if not t.changelog_component or t.changelog_component in changed_set]
 
 
-def _derive_release(rc: str) -> str:
+def _derive_release(rc: str, *, is_urgent_update: bool = False) -> str:
     """Родительская папка Zephyr по номеру РЦ: `1.8.5.46` → `1.8.5`.
 
     Правило легаси (`liballta.py::TestrunManager.create_test_run`): обычный
@@ -96,13 +96,20 @@ def _derive_release(rc: str) -> str:
     ветку дерева папок Jira садится ран — легаси-раны того же РЦ лежат именно
     там.
 
+    `is_urgent_update` — структурный флаг `os_versions.is_urgent_update`
+    (сервер знает, хотфикс это или нет, а не только по виду строки — легаси
+    хранил только строку и парсинг был единственным сигналом; emm флаг есть,
+    используем его как ворота: без него 6-сегментная строка, случайно не
+    являющаяся хотфиксом, не свернёт в укороченный формат). Сравнение с `UU`
+    регистронезависимое — владелец может ввести версию как `uu`.
+
     Формат, не подпадающий ни под один случай (в легаси такого не было, там
     `release` просто оставался неинициализированным), сводим к первым трём
     сегментам — тот же консервативный дефолт, что у
     `run_summary.render_titles`.
     """
     parts = rc.split(".")
-    if len(parts) == 6 and parts[3] == "UU":
+    if is_urgent_update and len(parts) == 6 and parts[3].upper() == "UU":
         return ".".join(parts[:5])
     return ".".join(parts[:3]) if len(parts) >= 3 else rc
 
@@ -333,8 +340,8 @@ async def _reconcile_existing_run(
 
 
 async def _reconcile_stand_runs(
-    db: AsyncSession, *, os_version_id: str, rc_number: str, mode: str, kernel: str, scope: str,
-    department_id: str,
+    db: AsyncSession, *, os_version_id: str, rc_number: str, is_urgent_update: bool, mode: str,
+    kernel: str, scope: str, department_id: str,
 ) -> tuple[list[StpTestRun], list[dict]]:
     tests = await test_definition_repo.list_by_department_pinned(db, department_id)
     # Полный набор — это все тесты со статусом «Рабочий» и СВОИМ режимом,
@@ -357,7 +364,7 @@ async def _reconcile_stand_runs(
     for t in tests:
         by_stand[t.pinned_stand_id].append(t)
 
-    release = _derive_release(rc_number)
+    release = _derive_release(rc_number, is_urgent_update=is_urgent_update)
     stand_tokens = {
         s.id: (s.legacy_token or s.id)
         for s in await test_stand_repo.list_by_ids(db, list(by_stand.keys()))
@@ -450,14 +457,16 @@ async def generate_stp_runs(
 
     # Резолвится один раз на вызов (не на каждую пару режим/ядро) — Jira видит
     # человеческую версию РЦ, не внутренний id каталога ОС.
-    rc_number = await server_client.resolve_os_version_name(os_version_id)
+    os_version_info = await server_client.resolve_os_version_info(os_version_id)
+    rc_number = os_version_info.name
 
     all_runs: list[StpTestRun] = []
     all_errors: list[dict] = []
     for selected_kernel in kernels:
         for selected_mode in modes:
             runs, errors = await _reconcile_stand_runs(
-                db, os_version_id=os_version_id, rc_number=rc_number, mode=selected_mode,
+                db, os_version_id=os_version_id, rc_number=rc_number,
+                is_urgent_update=os_version_info.is_urgent_update, mode=selected_mode,
                 kernel=selected_kernel, scope=scope, department_id=department_id,
             )
             all_runs.extend(runs)

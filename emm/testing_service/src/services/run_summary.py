@@ -55,40 +55,40 @@ _CONFLUENCE_SPACE = "AL"
 _COMMENT_TITLE = "Нагрузочное тестирование"
 
 
-def render_titles(rc_number: str) -> tuple[str, str]:
-    """`(stp_page_title, blog_post_title)` по версии RC — легаси-шаблон (§9.2).
+def render_titles(version: str, rc_label: str, *, is_urgent_update: bool = False) -> tuple[str, str]:
+    """`(stp_page_title, blog_post_title)` — легаси-шаблон (§9.2).
 
     Обычный релиз (4 сегмента `X.Y.Z.W`): версия релиза — первые три
-    сегмента, заголовок блога — "... оперативного обновления Astra Linux SE
-    {X.Y.Z}". Срочное/hotfix-обновление (6 сегментов, 4-й сегмент буквально
-    `UU` — маркер-разделитель, не часть номера): версия собирается из первых
-    трёх сегментов плюс пятого (`X.Y.Z.W`, сам маркер `UU` в неё не входит),
-    заголовок блога — "... срочного обновления Astra Linux SE {X.Y.Z.W}".
-    STP-страница ищется по заголовку `"STRESS_report ⬝ {версия}"` с той же
-    версией, что и в заголовке блога.
+    сегмента, заголовок блога — "{RC} оперативного обновления Astra Linux SE
+    {X.Y.Z}". Срочное/hotfix-обновление (`is_urgent_update`, версия из 6
+    сегментов, 4-й сегмент буквально `UU`/`uu` — маркер-разделитель, не часть
+    номера): версия собирается из первых трёх сегментов плюс пятого
+    (`X.Y.Z.W`, сам маркер `UU` в неё не входит), заголовок блога — "{RC}
+    срочного обновления Astra Linux SE {X.Y.Z.W}". STP-страница ищется по
+    заголовку `"STRESS_report ⬝ {версия}"` с той же версией, что и в
+    заголовке блога.
 
-    Формат RC, не подпадающий ни под один из этих двух случаев (в легаси не
-    встречался), трактуется как обычный релиз с версией из доступных
-    сегментов — консервативный дефолт, не падение.
+    `{RC}` — легаси `rc_number` (`"RC3"`) — ручная метка на самой OS-версии
+    (`os_versions.rc_number` в `server_service`), ОТДЕЛЬНАЯ от `version`
+    (`"1.8.5.46"`) — легаси заголовок `"RC3 оперативного обновления Astra
+    Linux SE 1.8.5"` несёт оба значения сразу, путать их нельзя.
 
-    `rc_number` — номер РЦ (`"1.8.5.46"`), не `os_version_id`: id каталога
-    резолвится в версию вызывающим кодом через
-    `server_client.resolve_os_version_name`.
+    Формат `version`, не подпадающий ни под один из этих двух случаев (в
+    легаси не встречался), трактуется как обычный релиз с версией из
+    доступных сегментов — консервативный дефолт, не падение.
 
-    TODO: легаси ставил в начало заголовка ещё и номер РЦ вида `RC3`
-    (`allta_conf['build_rc_relation'][version]`), поэтому реальный заголовок
-    у него — `"RC3 оперативного обновления Astra Linux SE 1.8.6"`. В emm у
-    `os_versions` такого поля нет, источник номера — открытый вопрос к
-    владельцу, поэтому префикс здесь пока не ставится.
+    `version`/`is_urgent_update` — резолвятся вызывающим кодом через
+    `server_client.resolve_os_version_info` (не путать `os_version_id` с
+    версией — id каталога никогда не должен попадать в заголовок).
     """
-    parts = rc_number.split(".")
-    if len(parts) == 6 and parts[3] == "UU":
-        version = ".".join([parts[0], parts[1], parts[2], parts[4]])
-        blog_title = f"{rc_number} срочного обновления Astra Linux SE {version}"
+    parts = version.split(".")
+    if is_urgent_update and len(parts) == 6 and parts[3].upper() == "UU":
+        release = ".".join([parts[0], parts[1], parts[2], parts[4]])
+        blog_title = f"{rc_label} срочного обновления Astra Linux SE {release}"
     else:
-        version = ".".join(parts[:3]) if len(parts) >= 3 else rc_number
-        blog_title = f"{rc_number} оперативного обновления Astra Linux SE {version}"
-    stp_title = f"STRESS_report ⬝ {version}"
+        release = ".".join(parts[:3]) if len(parts) >= 3 else version
+        blog_title = f"{rc_label} оперативного обновления Astra Linux SE {release}"
+    stp_title = f"STRESS_report ⬝ {release}"
     return stp_title, blog_title
 
 
@@ -169,8 +169,13 @@ async def _do_post_run_summary(
         return await _save(db, existing, run.id, status=RunSummaryCommentStatus.FAILED)
     base_url, bearer_token = ctx
 
-    rc_number = await server_client.resolve_os_version_name(run.os_version_id)
-    stp_title, blog_title = render_titles(rc_number)
+    os_version_info = await server_client.resolve_os_version_info(run.os_version_id)
+    if not os_version_info.rc_number:
+        return await _save(db, existing, run.id, status=RunSummaryCommentStatus.SKIPPED_NO_RC_NUMBER)
+    stp_title, blog_title = render_titles(
+        os_version_info.name, os_version_info.rc_number,
+        is_urgent_update=os_version_info.is_urgent_update,
+    )
 
     stp_page_id = await confluence_client.find_page_id(
         base_url=base_url, bearer_token=bearer_token, space=_CONFLUENCE_SPACE, title=stp_title,

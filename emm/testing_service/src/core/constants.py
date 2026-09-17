@@ -273,13 +273,16 @@ class RunSummaryCommentStatus(StrEnum):
     `posted` — комментарий создан либо обновлён (либо не менялся с прошлого
     прогона и Confluence не дёргали лишний раз). `skipped_no_stp_page`/
     `skipped_no_blog` — легаси-поведение (тихий no-op), но видимое здесь, а
-    не потерянное молча. `failed` — интеграция не настроена, reveal не
-    прошёл, либо сетевой сбой Confluence.
+    не потерянное молча. `skipped_no_rc_number` — на самой OS-версии не
+    проставлен `rc_number` (ручная метка, легаси `"RC3"`); без неё заголовок
+    блога заведомо не совпадёт с постом легаси, публиковать нечего. `failed`
+    — интеграция не настроена, reveal не прошёл, либо сетевой сбой Confluence.
     """
 
     POSTED = "posted"
     SKIPPED_NO_BLOG = "skipped_no_blog"
     SKIPPED_NO_STP_PAGE = "skipped_no_stp_page"
+    SKIPPED_NO_RC_NUMBER = "skipped_no_rc_number"
     FAILED = "failed"
 
 

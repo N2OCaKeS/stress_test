@@ -49,6 +49,7 @@ from src.repositories import stp_composition as stp_composition_repo
 from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
 from src.repositories import test_definition as test_definition_repo
+from src.repositories import test_stand as test_stand_repo
 from src.services import audit_service, changelog_service, permissions, secret_client, zephyr_client
 from src.services.zephyr_client import ZephyrRunItem
 from src.utils.ids import stp_cell_id as new_cell_id
@@ -179,6 +180,7 @@ async def get_stp_composition_effective(
 async def _create_stand_run(
     db: AsyncSession, *,
     department_id: str, os_version_id: str, mode: str, kernel: str, stand_id: str, release: str,
+    stand_token: str,
     pairs: list[tuple],
     target_codes: set[str],
 ) -> tuple[StpTestRun | None, dict | None]:
@@ -209,7 +211,9 @@ async def _create_stand_run(
         ))
 
     folder = f"/stress_test/{release}/{os_version_id}"
-    name = f"{os_version_id}_{mode}_{kernel}_{stand_id}"
+    # Четвёртый сегмент — человеческое имя стенда (`stand3`), как у легаси:
+    # по нему же `stp_pull_from_life` разбирает чужие раны обратно.
+    name = f"{os_version_id}_{mode}_{kernel}_{stand_token}"
     try:
         zephyr_test_run_key = await zephyr_client.create_test_run(
             base_url=base_url, bearer_token=bearer_token, folder=folder, name=name, items=items,
@@ -351,6 +355,10 @@ async def _reconcile_stand_runs(
         by_stand[t.pinned_stand_id].append(t)
 
     release = _derive_release(os_version_id)
+    stand_tokens = {
+        s.id: (s.legacy_token or s.id)
+        for s in await test_stand_repo.list_by_ids(db, list(by_stand.keys()))
+    }
     touched: list[StpTestRun] = []
     errors: list[dict] = []
 
@@ -375,7 +383,9 @@ async def _reconcile_stand_runs(
         if existing_run is None:
             run, error = await _create_stand_run(
                 db, department_id=department_id, os_version_id=os_version_id, mode=mode, kernel=kernel,
-                stand_id=stand_id, release=release, pairs=pairs, target_codes=target_codes,
+                stand_id=stand_id, release=release,
+                stand_token=stand_tokens.get(stand_id, stand_id),
+                pairs=pairs, target_codes=target_codes,
             )
             if error is not None:
                 errors.append(error)

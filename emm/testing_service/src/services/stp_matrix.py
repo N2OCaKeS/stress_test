@@ -48,6 +48,7 @@ from src.repositories import stp_cell as stp_cell_repo
 from src.repositories import stp_matrix_publication as repo
 from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
+from src.repositories import test_stand as test_stand_repo
 from src.services import audit_service, confluence_client, permissions, secret_client, server_client
 from src.utils.ids import stp_matrix_publication_id as new_id
 
@@ -117,7 +118,7 @@ def _hierarchy_titles(rc_number: str) -> tuple[str | None, str]:
 
 def render_matrix_html(
     *, rc_number: str, runs: list[StpTestRun], cases: list[StpTestCase],
-    cells: list[StpCell],
+    cells: list[StpCell], stand_labels: dict[str, str] | None = None,
 ) -> str:
     """Сводная таблица версия/ядро/режим/стенд × тест-кейс → статус.
 
@@ -129,11 +130,23 @@ def render_matrix_html(
     транспонирует, так что итоговые строки таблицы — исходные колонки
     (Версия/Ядро/Режим/№стенда + тест-кейсы), а столбцы — исходные строки
     (уникальные прогоны). Здесь тот же итоговый вид собирается напрямую,
-    без промежуточного DataFrame: `runs` уже отсортированы репозиторием по
-    (mode, stand_id) — see `stp_test_run_repo.list_by_department_and_os_version`.
+    без промежуточного DataFrame.
+
+    `stand_labels` — `test_stands.id` → человеческое имя стенда (`stand3`).
+    В ячейку «№ стенда» идёт оно, а не внутренний uuid, и по нему же
+    сортируются столбцы: легаси упорядочивал прогоны строкой имени стенда,
+    а сортировка по uuid'у случайна и меняется от отдела к отделу. Стенд без
+    алиаса печатается своим id — столбец хотя бы остаётся различимым.
     """
     if not runs:
         return f"<h1>Прогресс выполнения тестового прогона {_escape(rc_number)}</h1><p><em>Нет прогонов.</em></p>"
+
+    labels = stand_labels or {}
+
+    def _label(run: StpTestRun) -> str:
+        return labels.get(run.stand_id) or run.stand_id
+
+    runs = sorted(runs, key=lambda r: (r.mode, _label(r)))
 
     status_by_run_and_case: dict[tuple[str, str], str] = {
         (cell.stp_test_run_id, cell.stp_test_case_id): cell.status for cell in cells
@@ -150,7 +163,7 @@ def render_matrix_html(
         f"<td{_cell_style(_MODE_COLORS.get(r.mode))}>{_escape(r.mode)}</td>" for r in runs
     )
     mode_row = f"<tr><th>Режим</th>{mode_cells}</tr>"
-    stand_row = _row("№ стенда", [_escape(r.stand_id) for r in runs])
+    stand_row = _row("№ стенда", [_escape(_label(r)) for r in runs])
 
     case_rows: list[str] = []
     for case in cases_sorted:
@@ -357,7 +370,13 @@ async def publish_stp_matrix(
     case_ids = sorted({c.stp_test_case_id for c in cells})
     cases = await stp_test_case_repo.list_by_ids(db, case_ids)
 
-    body_html = render_matrix_html(rc_number=rc_number, runs=runs, cases=cases, cells=cells)
+    stands = await test_stand_repo.list_by_ids(db, sorted({r.stand_id for r in runs}))
+    stand_labels = {s.id: s.legacy_token for s in stands if s.legacy_token}
+
+    body_html = render_matrix_html(
+        rc_number=rc_number, runs=runs, cases=cases, cells=cells,
+        stand_labels=stand_labels,
+    )
 
     if existing is not None and existing.confluence_page_id and existing.body_snapshot == body_html:
         # Таблица не изменилась с прошлой публикации — Confluence не дёргаем.

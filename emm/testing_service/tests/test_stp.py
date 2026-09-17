@@ -578,6 +578,47 @@ class TestStpGenerate:
         assert len(cells) == 1
         assert cells[0].status == StpCellStatus.NOT_RUN
 
+    async def test_run_name_uses_stand_alias_when_present(
+        self, client, admin_token, mock_server_service, mock_zephyr, mock_secret_client, dept_a,
+    ):
+        """Четвёртый токен имени рана — `stand3`, как у легаси, а не uuid.
+
+        По нему же `stp_pull_from_life` разбирает раны обратно, поэтому
+        расхождение здесь ломает выгрузку из life.
+        """
+        mock_server_service()
+        stand_id, _ = await _create_stand(
+            client, admin_token, department_id=dept_a, legacy_token="stand3",
+        )
+        _test_id, code = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
+        await _seed_stp_test_case(code, zephyr_id="BT-T1")
+        mock_secret_client["cred_x"] = ("jira_bot", "tok123")
+        await _seed_integration_settings(dept_a)
+
+        resp = await client.post(
+            f"{STP_BASE}/generate", headers=_hdr(admin_token),
+            json={"os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0", "scope": "full", "department_id": dept_a},
+        )
+        assert resp.status_code == 200, resp.text
+        assert mock_zephyr["create"][0]["name"] == "1.8.5.46_orel_6.1.0_stand3"
+
+    async def test_run_name_falls_back_to_stand_id_without_alias(
+        self, client, admin_token, mock_server_service, mock_zephyr, mock_secret_client, dept_a,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token, department_id=dept_a)
+        _test_id, code = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
+        await _seed_stp_test_case(code, zephyr_id="BT-T1")
+        mock_secret_client["cred_x"] = ("jira_bot", "tok123")
+        await _seed_integration_settings(dept_a)
+
+        resp = await client.post(
+            f"{STP_BASE}/generate", headers=_hdr(admin_token),
+            json={"os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0", "scope": "full", "department_id": dept_a},
+        )
+        assert resp.status_code == 200, resp.text
+        assert mock_zephyr["create"][0]["name"] == f"1.8.5.46_orel_6.1.0_{stand_id}"
+
     async def test_full_scope_excludes_non_ready_tests(
         self, client, admin_token, mock_server_service, mock_zephyr, mock_secret_client, dept_a,
     ):

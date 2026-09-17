@@ -127,6 +127,34 @@ class TestPreview:
         assert item["composition"]["case_count"] == 2
         assert item["composition"]["new_case_count"] == 2
 
+    async def test_legacy_stand_token_matches_stand_by_alias(
+        self, client, admin_token, mock_server_service, mock_secret_client, mock_zephyr_pull, dept_a,
+    ):
+        """Легаси-раны несут в имени `stand3`, а не внутренний `stand_<hex>`.
+
+        До появления `test_stands.legacy_token` прямое сравнение с id не
+        совпадало никогда — вся выгрузка уходила в «нужна ручная сверка».
+        """
+        mock_server_service()
+        stand_id, _ = await _create_stand(
+            client, admin_token, department_id=dept_a, legacy_token="stand3",
+        )
+        await _seed_integration_settings(dept_a)
+        mock_secret_client["cred_x"] = ("jira_bot", "tok123")
+        rc = f"1.9.0.{uuid.uuid4().hex[:6]}"
+        mock_zephyr_pull["runs"] = [_run_summary(f"{rc}_orel_6.1.0_stand3", key="BT-R9")]
+        mock_zephyr_pull["details"]["BT-R9"] = _run_detail("BT-R9", [("BT-T1", "pass")])
+
+        resp = await client.post(
+            f"{PULL_BASE}/preview", headers=_hdr(admin_token),
+            json={"os_version_id": rc, "department_id": dept_a},
+        )
+        assert resp.status_code == 200, resp.text
+        item = resp.json()["items"][0]
+        assert item["parsed_stand_token"] == "stand3"
+        assert item["stand_id"] == stand_id
+        assert item["needs_manual_mapping"] is False
+
     async def test_unparseable_name_needs_manual_mapping(
         self, client, admin_token, mock_server_service, mock_secret_client, mock_zephyr_pull, dept_a,
     ):

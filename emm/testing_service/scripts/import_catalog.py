@@ -34,11 +34,22 @@ pass-through вызовом к `server_service` (`GET /servers/{id}`, тем ж�
 видит нужные сервера в server_service; без токена стенды пропускаются с
 понятной ошибкой на каждую позицию, а не тихо.
 
+Привязка теста к стенду. В файле лежит легаси-ИМЯ стенда
+(`pinned_stand_token: stand3`), а не внутренний id — id генерируется в момент
+импорта, в файле его знать неоткуда. Стенды заводятся раньше тестов, поэтому к
+моменту разбора `tests` имя уже резолвится через `test_stands.legacy_token`.
+Если стенда с таким именем в этой установке нет (легаси гонял 7 стендов, в dev
+инвентаризирован один), тест всё равно создаётся — без привязки, и в конце
+печатается поимённый список таких тестов, чтобы это не выглядело как «всё
+прошло успешно».
+
 Идемпотентность: `code`/`server_id`, которые уже есть в БД — пропуск с
-пометкой skip, не падение и не дубль. Одна плохая позиция (опечатка в
-variable_code, недостижимый server_service, конфликт по коду) не должна
-останавливать обработку остальных — каждая позиция оборачивается отдельно,
-в конце печатается сводка created/skipped/failed.
+пометкой skip, не падение и не дубль. Единственное исключение — пустой
+`legacy_token` у уже существующего стенда: он дозаполняется, иначе привязка
+тестов не сойдётся никогда. Одна плохая позиция (опечатка в variable_code,
+недостижимый server_service, конфликт по коду) не должна останавливать
+обработку остальных — каждая позиция оборачивается отдельно, в конце
+печатается сводка created/skipped/failed.
 """
 
 from __future__ import annotations
@@ -103,7 +114,11 @@ class ImportStats:
 
     def fail(self, msg: str, exc: Exception) -> None:
         self.failed += 1
-        text = f"{msg}: {exc}"
+        # `AppException` — dataclass, его `str()` пуст: без явного разбора в
+        # логе оставалось «test X: » и ничего больше.
+        code = getattr(exc, "error_code", None)
+        detail = f"{code}: {getattr(exc, 'message', '')} {getattr(exc, 'details', '')}" if code else str(exc)
+        text = f"{msg}: {type(exc).__name__} {detail}".rstrip()
         self.errors.append(text)
         print(f"  ! {text}", file=sys.stderr)
 
@@ -148,6 +163,20 @@ async def _import_stands(
 
         existing = await test_stand_repo.get_by_server_id(db, server_id)
         if existing is not None:
+            token = item.get("legacy_token")
+            if token and not existing.legacy_token and not dry_run:
+                # Единственное, что дозаполняется на повторном прогоне: имя
+                # стенда появилось позже самого стенда (первый импорт шёл без
+                # него), и без дозаписи привязка тестов так и не сойдётся.
+                # Остальные поля существующего стенда не трогаем — импорт
+                # остаётся импортом, а не синхронизацией.
+                await test_stand_repo.update(db, existing, {"legacy_token": token})
+                await db.commit()
+                stats.skip(
+                    f"stand server_id={server_id} уже существует (id={existing.id}), "
+                    f"проставлен legacy_token={token}"
+                )
+                continue
             stats.skip(f"stand server_id={server_id} уже существует (id={existing.id})")
             continue
 
@@ -157,6 +186,7 @@ async def _import_stands(
 
         payload = TestStandCreate(
             server_id=server_id,
+            legacy_token=item.get("legacy_token"),
             queue_enabled=item.get("queue_enabled", True),
             is_active=item.get("is_active", True),
         )
@@ -166,7 +196,10 @@ async def _import_stands(
             await db.rollback()
             stats.fail(f"stand server_id={server_id}", exc)
             continue
-        stats.ok(f"stand server_id={server_id} → {obj.id} (department_id={obj.department_id})")
+        stats.ok(
+            f"stand server_id={server_id} → {obj.id} "
+            f"(department_id={obj.department_id}, legacy_token={obj.legacy_token})"
+        )
 
 
 async def _resolve_command_slots(db, commands: list[dict]) -> list[TestCommandArgCreate]:
@@ -201,10 +234,36 @@ async def _resolve_command_slots(db, commands: list[dict]) -> list[TestCommandAr
     return resolved
 
 
+async def _resolve_pinned_stand(db, item: dict) -> tuple[str | None, str | None]:
+    """`(pinned_stand_id, unresolved_token)` для одной позиции каталога.
+
+    Файл каталога несёт легаси-ИМЯ стенда (`pinned_stand_token: stand3`), а не
+    внутренний id — id генерируется на импорте, в yaml его знать неоткуда.
+    Явный `pinned_stand_id` (если кто-то всё же его проставил) сильнее.
+
+    Стенда с таким именем в этой установке может не быть — легаси гонял 7
+    стендов, в dev инвентаризирован один. Это не ошибка позиции: тест всё
+    равно нужен в каталоге, просто без привязки. Имя возвращается вторым
+    элементом, чтобы вызывающий сказал о нём вслух.
+    """
+    explicit = item.get("pinned_stand_id")
+    if explicit:
+        return explicit, None
+    token = item.get("pinned_stand_token")
+    if not token:
+        return None, None
+    stand = await test_stand_repo.get_by_legacy_token(db, token)
+    if stand is None:
+        return None, token
+    return stand.id, None
+
+
 async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportStats) -> None:
     if not items:
         return
     print(f"\nТесты ({len(items)}):")
+
+    unresolved_stands: dict[str, list[str]] = {}
 
     for item in items:
         code = item.get("code")
@@ -223,6 +282,10 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
             stats.fail(f"test {code}", exc)
             continue
 
+        pinned_stand_id, unresolved_token = await _resolve_pinned_stand(db, item)
+        if unresolved_token:
+            unresolved_stands.setdefault(unresolved_token, []).append(code)
+
         if dry_run:
             stats.ok(f"[dry-run] test {code} — будет создан ({len(slots)} слот(ов))")
             continue
@@ -238,7 +301,7 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
                 ),
                 mode=item.get("mode") or "orel",
                 department_id=item.get("department_id"),
-                pinned_stand_id=item.get("pinned_stand_id"),
+                pinned_stand_id=pinned_stand_id,
                 changelog_component=item.get("changelog_component"),
                 starter_suffix=item.get("starter_suffix"),
             )
@@ -256,6 +319,16 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
             continue
 
         stats.ok(f"test {code} → {obj.id} ({len(slots)} слот(ов))")
+
+    if unresolved_stands:
+        print(
+            "\nБез привязки к стенду — в этой установке нет стенда с таким "
+            "legacy_token (обычный, не debug, запуск такого теста даст "
+            "TEST_NOT_PINNED_TO_STAND):"
+        )
+        for token in sorted(unresolved_stands):
+            codes = unresolved_stands[token]
+            print(f"  ? {token}: {len(codes)} тест(ов) — {', '.join(sorted(codes))}")
 
 
 async def _drain_pending_audit_tasks() -> None:
@@ -277,11 +350,24 @@ async def _drain_pending_audit_tasks() -> None:
 
 
 async def run(
-    path: Path, *, bearer_token: str | None, dry_run: bool, override_stand_server_id: str | None = None,
+    path: Path, *, bearer_token: str | None, dry_run: bool,
+    override_stand_server_id: str | None = None,
+    stand_legacy_token: str | None = None,
 ) -> int:
     data = _load(path)
     stands = data.get("stands") or []
     tests = data.get("tests") or []
+
+    if stand_legacy_token:
+        # Единственный dev-стенд легаси-имени не имеет (в yaml `legacy_token:
+        # null`), но без имени не собирается ни `-sn`, ни привязка тестов.
+        # Флаг позволяет назвать его на импорте, не правя файл каталога.
+        if len(stands) != 1:
+            raise SystemExit(
+                f"--stand-legacy-token требует ровно одну запись в `stands`, "
+                f"найдено {len(stands)}"
+            )
+        stands[0]["legacy_token"] = stand_legacy_token
 
     if override_stand_server_id:
         # dev-стек генерирует server_id заново на каждом `make seed` — фиксированный
@@ -335,6 +421,14 @@ def main() -> int:
              "Требует ровно одну запись в `stands`. Можно задать через "
              "IMPORT_OVERRIDE_STAND_SERVER_ID.",
     )
+    parser.add_argument(
+        "--stand-legacy-token",
+        default=os.environ.get("IMPORT_STAND_LEGACY_TOKEN"),
+        help="Присвоить единственной записи `stands` легаси-имя стенда "
+             "(`stand3`..`stand14`). Без него тесты каталога не находят свой "
+             "стенд по `pinned_stand_token` и импортируются без привязки. "
+             "Можно задать через IMPORT_STAND_LEGACY_TOKEN.",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -345,6 +439,7 @@ def main() -> int:
     return asyncio.run(run(
         args.path, bearer_token=args.bearer_token, dry_run=args.dry_run,
         override_stand_server_id=args.override_stand_server_id,
+        stand_legacy_token=args.stand_legacy_token,
     ))
 
 

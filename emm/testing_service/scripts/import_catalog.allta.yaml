@@ -72,8 +72,9 @@
 # самое, что `args.STAND`, которое просто строка вида "stand4" для
 # `stands_ip`/сообщений) присутствует почти везде тоже — смоделирован как
 # `variable_code: STAND` (единственная существующая "стенд"-переменная
-# testing_service; резолвер для неё ещё не реализован — когда появится,
-# нужно свериться, что он отдаёт "голый" номер стенда, а не "standN").
+# testing_service). Резолвер — `services/launch_context.py::stand_number`:
+# берёт цифры из `test_stands.legacy_token`, то есть отдаёт именно "голый"
+# номер, как требует `choices=[...]` целевых скриптов.
 #
 # Jira/Confluence-флаги (`--username`/`--token`/`--confluence-space`/
 # `--confluence-parent-page`/`--confluence-new-page`/`-fti`/`-tcyc`/`-tcas`/
@@ -94,9 +95,45 @@
 # `stp_test_cases.zephyr_id` (join по code) — полная таблица соответствий
 # code → BT-Txxx приведена в отчёте obsidian/reports/, заводить их — отдельный
 # скрипт/волна.
+#
+# `pinned_stand_token` вместо `pinned_stand_id` — привязка теста к стенду
+# перенесена из легаси `stands_groups` (`allta_image_conf.py:441-452`, тот же
+# набор, что расписан по режимам в `topics`, :416-431). В yaml лежит ИМЯ
+# стенда (`stand3`..`stand14`), а не внутренний id: id генерируется на импорте
+# и в файле его знать неоткуда. Импортёр находит стенд по
+# `test_stands.legacy_token` и кладёт в `pinned_stand_id` его id; если стенда
+# с таким именем в этой установке нет — тест создаётся без привязки, и
+# импортёр говорит об этом отдельной строкой, а не молчит. 57 тестов из 61
+# имеют легаси-привязку; у tantor vanilla/kernels и обоих overflow её не было
+# и в легаси (их гоняли вручную).
+#
+# `-fti` (`FOLDER_TREE_ID`) получил статический `override_value: "none"`.
+# Легаси брал его из `cycle_tree_index()` — словаря «версия → id папки
+# Zephyr», который наполнял отдельный бот; в emm такого словаря нет и он не
+# нужен: конечный скрипт всё равно ходит в Jira с `--username none`, а своя
+# отчётность в Zephyr живёт в `services/stp*.py`. Тот же приём, что уже
+# применён к `--username`/`--token`/`--confluence-space`/`-ba`.
+#
+# Остальные четыре переменные (`PARENT_PAGE`, `CONFLUENCE_NEW_PAGE`,
+# `TEST_CYCLE_NAME`, `TEST_CASE_NAME`, `STAND`) НЕ имеют `override_value` — они
+# зависят от РЦ/ядра/режима/стенда конкретного запуска и считаются в
+# `services/launch_context.py` в момент `claim_next`, буквально по формулам
+# легаси. `STAND` при этом требует, чтобы у стенда был заполнен
+# `legacy_token`: целевые скрипты объявляют `-sn` через
+# `choices=['1','3','4',…]` и голого номера, кроме как из имени стенда, взять
+# неоткуда.
 
 stands:
+  # `legacy_token` — имя стенда в allta_app (`stand3`..`stand14`). Здесь null
+  # сознательно: единственный инвентаризированный в dev сервер —
+  # `test-server-01` из `emm/scripts/seed_dev.py`, обычный SSH-таргет, а не
+  # какой-то из легаси-стендов, и угадывать за владельца нечего. Пока поле
+  # пустое, 57 тестов импортируются без `pinned_stand_id` (импортёр перечислит
+  # их явно), а `-sn` для них не собирается. Проставить имя можно либо прямо
+  # здесь, либо флагом `--stand-legacy-token` (по образцу
+  # `--override-stand-server-id`), либо PATCH /test-stands/{id}.
   - server_id: srv_f1af39a9541f7a396e607df8faacf54f
+    legacy_token: null
     queue_enabled: true
     is_active: true
 
@@ -110,7 +147,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand4
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:333-335 (dates) + postgresql:postgresql/run.py:1-13 (else) + postgresql:postgresql/psb_run.py argparse
@@ -138,6 +175,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -173,7 +211,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand4
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:336-338
@@ -201,6 +239,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -240,7 +279,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: null   # в stands_groups легаси этого теста нет
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:339-341
@@ -268,6 +307,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -307,7 +347,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand4
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:348-350
@@ -335,6 +375,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -374,7 +415,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand4
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:351-353
@@ -406,6 +447,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -446,7 +488,7 @@ tests:
     readiness: draft
     mode: smolensk
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand4
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:299-302,422-424 (final else — НИ ОДИН
@@ -484,6 +526,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -515,7 +558,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand14
     starter_suffix: balance
     command:
       # source: dev_allta_app:allta_app/backup_image.py:345-347 (dates) +
@@ -550,6 +593,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -581,7 +625,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: oom
     command:
       # source: dev_allta_app:allta_app/backup_image.py:345-347 (тот же elif, что
@@ -610,6 +654,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -641,7 +686,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand14
     starter_suffix: balance
     command:
       # source: dev_allta_app:allta_app/backup_image.py:342-344 (PSQL_BALANCE in
@@ -671,6 +716,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -706,7 +752,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand14
     starter_suffix: balance
     command:
       # source: тот же elif, что и info_sys (backup_image.py:342-344), -tt info-sys-orel
@@ -734,6 +780,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -769,7 +816,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand14
     starter_suffix: kernel
     command:
       # source: dev_allta_app:allta_app/backup_image.py:895-941 (db_kernel_changer) +
@@ -807,6 +854,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -846,7 +894,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: null   # в stands_groups легаси этого теста нет
     starter_suffix: kernel
     command:
       # source: см. postgresql.kernels — тот же 4-фазный сценарий, database='tantor'
@@ -875,6 +923,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -918,7 +967,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand12
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:419-421 (-olap {PSQL_OLAP}) +
@@ -949,6 +998,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -990,7 +1040,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:299-302,422-424 (final else) +
@@ -1019,6 +1069,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1050,7 +1101,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       - kind: literal
@@ -1077,6 +1128,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1108,7 +1160,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand10
     starter_suffix: null
     command:
       - kind: literal
@@ -1135,6 +1187,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1166,7 +1219,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       - kind: literal
@@ -1193,6 +1246,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1224,7 +1278,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       - kind: literal
@@ -1251,6 +1305,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1282,7 +1337,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       - kind: literal
@@ -1309,6 +1364,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1340,7 +1396,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       - kind: literal
@@ -1367,6 +1423,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1398,7 +1455,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:299-302,359-361
@@ -1426,6 +1483,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1459,7 +1517,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       - kind: literal
@@ -1486,6 +1544,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1521,7 +1580,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand10
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:362-364 + cluster_file_systems:
@@ -1551,6 +1610,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1592,7 +1652,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand10
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:365-367
@@ -1620,6 +1680,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1659,7 +1720,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand10
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:368-370
@@ -1687,6 +1748,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1730,7 +1792,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand10
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:371-373
@@ -1758,6 +1820,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1801,7 +1864,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand12
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:314,356-358 (-aud → --testlist) +
@@ -1834,6 +1897,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1865,7 +1929,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand12
     starter_suffix: null
     command:
       - kind: literal
@@ -1892,6 +1956,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1923,7 +1988,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand12
     starter_suffix: null
     command:
       - kind: literal
@@ -1950,6 +2015,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1983,7 +2049,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand12
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:377-379 (TEST=='syslog-ng' or 'unix')
@@ -2011,6 +2077,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2038,7 +2105,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand13
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:374-376 (-cwl идёт ПОСЛЕ -tcv)
@@ -2066,6 +2133,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2097,7 +2165,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:377-379 (TEST=='unix')
@@ -2125,6 +2193,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2152,7 +2221,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:380-382 (-p parsec идёт ПОСЛЕ -tcv) +
@@ -2181,6 +2250,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2214,7 +2284,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: null   # в stands_groups легаси этого теста нет
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:354-355 (elif args.OVF — БЕЗ {sn}!) +
@@ -2232,6 +2302,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2259,7 +2330,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: null   # в stands_groups легаси этого теста нет
     starter_suffix: null
     command:
       # source: origin/overflow:overflow/ovf_run.py:268 (`elif args.OVF == 'sd':`)
@@ -2275,6 +2346,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2304,7 +2376,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:386-388 (elif PARSEC_IMPACT or PARSEC_IMPACT_AO)
@@ -2332,6 +2404,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2359,7 +2432,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: null
     command:
       # source: тот же elif (backup_image.py:386-388) — dates идентична parsec.impact_fs.
@@ -2391,6 +2464,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2418,7 +2492,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand12
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:389-391 (-ds идёт ПОСЛЕ -tcv)
@@ -2446,6 +2520,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2475,7 +2550,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand10
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:392-394 (-rsl идёт ПОСЛЕ -tcv)
@@ -2503,6 +2578,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2534,7 +2610,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand12
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:398-400 (-testname идёт ПОСЛЕ -tcv) +
@@ -2563,6 +2639,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2594,7 +2671,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand12
     starter_suffix: null
     command:
       # source: apache2:apache2/apache_run.py:104 (`if args.TESTNAME == 'apache_pam':`)
@@ -2622,6 +2699,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2653,7 +2731,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand10
     starter_suffix: null
     command:
       # source: apache2:apache2/apache_run.py:134 (`elif args.TESTNAME == 'apache_balance':`) —
@@ -2684,6 +2762,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2717,7 +2796,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand14
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:401-403 (-vbox {TCYCLE.split('_')[0]}
@@ -2748,6 +2827,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2784,7 +2864,7 @@ tests:
     readiness: draft
     mode: smolensk
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand14
     starter_suffix: null
     command:
       # source: virt:virt/test_run.py:151 (`elif args.TESTNAME == 'stealtime_sm':`)
@@ -2812,6 +2892,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2847,7 +2928,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: null
     command:
       # source: virt:virt/test_run.py:195 (`elif args.TESTNAME == 'fio':`, строчными — не 'FIO')
@@ -2875,6 +2956,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2910,7 +2992,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: null
     command:
       # source: virt:virt/test_run.py:227 (`elif args.TESTNAME == 'fio_large':`)
@@ -2938,6 +3020,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2973,7 +3056,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: null
     command:
       # source: virt:virt/test_run.py:246 (`elif args.TESTNAME == 'unixbench':`, не 'vUnixBench')
@@ -3001,6 +3084,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3036,7 +3120,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: null
     command:
       # source: virt:virt/test_run.py:265 (`elif args.TESTNAME == 'pingpong':`, не 'vPingPong')
@@ -3064,6 +3148,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3101,7 +3186,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:395-397 (-wa идёт ПОСЛЕ -tcv) +
@@ -3132,6 +3217,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3163,7 +3249,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:404-406 (--test {VPN} идёт ПОСЛЕ -tcv) +
@@ -3193,6 +3279,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3226,7 +3313,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:407-409 (-tt {MAIL}, choices=['imap','smtp']
@@ -3256,6 +3343,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3287,7 +3375,7 @@ tests:
     owner: null
     readiness: ready
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: null
     command:
       - kind: literal
@@ -3314,6 +3402,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3347,7 +3436,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand12
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:410-412 (-vbox {TCYCLE.split('_')[0]}
@@ -3377,6 +3466,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3412,7 +3502,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand11
     starter_suffix: null
     command:
       # source: network:network/test_run.py:142 (`elif args.TESTNAME == 'dhcp':`)
@@ -3440,6 +3530,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3477,7 +3568,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand12
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:413-415 (-vbox {TCYCLE.split('_')[0]}
@@ -3507,6 +3598,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3542,7 +3634,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand12
     starter_suffix: null
     command:
       # source: kernel:kernel/test_run.py:138 (`elif args.TESTNAME == 'xfs_memory_leak':`)
@@ -3570,6 +3662,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3607,7 +3700,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:943-964 (freeipa_authentication_test()) +
@@ -3647,6 +3740,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3678,7 +3772,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       # source: тот же freeipa_authentication_test() путь срабатывает для ЛЮБОГО
@@ -3708,6 +3802,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3739,7 +3834,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3
     starter_suffix: null
     command:
       - kind: literal
@@ -3766,6 +3861,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3799,7 +3895,7 @@ tests:
     owner: null
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand10
     starter_suffix: null
     command:
       # source: dev_allta_app:allta_app/backup_image.py:416-418 (-vbox {TCYCLE.split('_')[0]}
@@ -3830,6 +3926,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3866,7 +3963,7 @@ tests:
     readiness: draft
     mode: smolensk
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand10
     starter_suffix: null
     command:
       # source: aeb_run.py (137 строк, полностью прочитан) НЕ ИМЕЕТ отдельной
@@ -3900,6 +3997,7 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
+        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable

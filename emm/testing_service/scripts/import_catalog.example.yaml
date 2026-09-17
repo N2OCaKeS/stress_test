@@ -19,6 +19,7 @@
 
 stands:
   - server_id: srv_example_0001      # реальный Server.id из server_service
+    legacy_token: stand3             # имя стенда в allta_app; UNIQUE, можно null
     queue_enabled: true
     is_active: true
     # department_id НЕ указывается — create_test_stand резолвит его сам
@@ -26,6 +27,7 @@ stands:
     # значение из этого файла нельзя и не нужно.
 
   - server_id: vm_example_0002       # виртуальный стенд — тот же формат,
+    legacy_token: null               # стенд, которого в allta_app не было
     queue_enabled: true              # server_service не различает Server/Vm
     is_active: true                  # на уровне test_stands.server_id.
 
@@ -37,7 +39,7 @@ tests:
     owner: "example-team"
     readiness: draft
     department_id: null              # null — платформенный тест, без владельца
-    pinned_stand_id: null            # null — не привязан, только для демонстрации
+    pinned_stand_token: null         # имя стенда (`stand3`); null — не привязан
     command:
       - kind: literal
         literal_value: "/home/u/bin/example_test.sh"
@@ -51,7 +53,7 @@ tests:
     owner: "example-team"
     readiness: draft
     department_id: null
-    pinned_stand_id: null
+    pinned_stand_token: stand3       # резолвится в test_stands.legacy_token
     command:
       - kind: literal
         literal_value: "/home/u/bin/example_run.py"

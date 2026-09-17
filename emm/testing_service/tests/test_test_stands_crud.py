@@ -180,6 +180,26 @@ class TestCreate:
         assert body["queue_enabled"] is False
         assert body["is_active"] is False
 
+    async def test_legacy_token_persisted_and_unique(self, client, admin_token, mock_server_service):
+        token = f"stand{uuid.uuid4().hex[:4]}"
+        first = await _create_stand(client, admin_token, mock_server_service, legacy_token=token)
+        assert first.status_code == 201, first.text
+        assert first.json()["legacy_token"] == token
+
+        second = await _create_stand(client, admin_token, mock_server_service, legacy_token=token)
+        assert second.status_code == 409, second.text
+        assert second.json()["error_code"] == "TEST_STAND_DUPLICATE"
+
+    async def test_blank_legacy_token_becomes_null(self, client, admin_token, mock_server_service):
+        """Пустая строка из формы — «имени нет»; иначе второй безымянный стенд
+        упрётся в UNIQUE (NULL с NULL не конфликтует, а '' с '' — да)."""
+        first = await _create_stand(client, admin_token, mock_server_service, legacy_token="")
+        second = await _create_stand(client, admin_token, mock_server_service, legacy_token="  ")
+        assert first.status_code == 201, first.text
+        assert second.status_code == 201, second.text
+        assert first.json()["legacy_token"] is None
+        assert second.json()["legacy_token"] is None
+
     async def test_user_without_role_gets_403(self, client, no_role_token):
         resp = await client.post(BASE, headers=_hdr(no_role_token), json=_payload())
         assert resp.status_code == 403
@@ -293,6 +313,29 @@ class TestUpdate:
         body = resp.json()
         assert body["queue_enabled"] is False
         assert body["is_active"] is False
+
+    async def test_admin_sets_legacy_token(self, client, admin_token, mock_server_service):
+        stand_id = await self._create(client, admin_token, mock_server_service)
+        token = f"stand{uuid.uuid4().hex[:4]}"
+        resp = await client.patch(
+            f"{BASE}/{stand_id}", headers=_hdr(admin_token), json={"legacy_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["legacy_token"] == token
+
+    async def test_duplicate_legacy_token_on_update_is_409(
+        self, client, admin_token, mock_server_service,
+    ):
+        token = f"stand{uuid.uuid4().hex[:4]}"
+        taken = await _create_stand(client, admin_token, mock_server_service, legacy_token=token)
+        assert taken.status_code == 201, taken.text
+        stand_id = await self._create(client, admin_token, mock_server_service)
+
+        resp = await client.patch(
+            f"{BASE}/{stand_id}", headers=_hdr(admin_token), json={"legacy_token": token},
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error_code"] == "TEST_STAND_DUPLICATE"
 
     async def test_server_id_field_is_ignored(self, client, admin_token, mock_server_service):
         stand_id = await self._create(client, admin_token, mock_server_service)

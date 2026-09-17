@@ -39,6 +39,18 @@ from src.utils.ids import test_stand_id as new_id
 logger = logging.getLogger(__name__)
 
 
+def _normalize_legacy_token(value: str | None) -> str | None:
+    """Пустая строка из формы — это «имени нет», а не имя длиной ноль.
+
+    Без этого UNIQUE не даст завести второй безымянный стенд: пустые строки
+    между собой конфликтуют, в отличие от NULL.
+    """
+    if value is None:
+        return None
+    token = value.strip()
+    return token or None
+
+
 async def create_test_stand(
     db: AsyncSession,
     identity: Identity,
@@ -98,6 +110,7 @@ async def create_test_stand(
     data["id"] = new_id()
     data["department_id"] = department_id
     data["created_by"] = identity.user_id
+    data["legacy_token"] = _normalize_legacy_token(data.get("legacy_token"))
     try:
         obj = await repo.create(db, data)
         await db.commit()
@@ -115,7 +128,7 @@ async def create_test_stand(
         raise ConflictError(
             error_code="TEST_STAND_DUPLICATE",
             message="This server is already registered as a test stand",
-            details={"hint": "уникальное поле — server_id"},
+            details={"hint": "уникальные поля — server_id и legacy_token"},
         ) from exc
     await db.refresh(obj)
     audit_service.emit(
@@ -235,10 +248,26 @@ async def update_test_stand(
         )
 
     changes = payload.model_dump(exclude_unset=True, mode="json")
+    if "legacy_token" in changes:
+        changes["legacy_token"] = _normalize_legacy_token(changes["legacy_token"])
     if not changes:
         return obj
-    await repo.update(db, obj, changes)
-    await db.commit()
+    try:
+        await repo.update(db, obj, changes)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        audit_service.emit(
+            "test_stand.update",
+            target_id=stand_id, target_type="test_stand",
+            status="failure", allowed=True,
+            details={"reason": "duplicate", "fields": list(changes.keys())},
+        )
+        raise ConflictError(
+            error_code="TEST_STAND_DUPLICATE",
+            message="Another test stand already uses this legacy_token",
+            details={"legacy_token": changes.get("legacy_token")},
+        ) from exc
     await db.refresh(obj)
     audit_service.emit(
         "test_stand.update",

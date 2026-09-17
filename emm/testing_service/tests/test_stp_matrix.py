@@ -201,6 +201,43 @@ class TestRenderMatrixHtml:
         assert "#dafee6" in html
         assert "#e4f1fc" in html  # подсветка режима orel
 
+    def test_stand_row_uses_alias_and_sorts_by_it(self):
+        """«№ стенда» — человеческое имя, и по нему же порядок столбцов.
+
+        Легаси упорядочивал прогоны строкой имени стенда; сортировка по
+        внутреннему uuid случайна и меняется от отдела к отделу.
+        """
+        from src.models import StpTestCase, StpTestRun
+
+        run_b = StpTestRun(
+            id="run_b", os_version_id="1.8.5.46", mode="orel", kernel="6.1.0", stand_id="stand_bbb",
+        )
+        run_a = StpTestRun(
+            id="run_a", os_version_id="1.8.5.46", mode="orel", kernel="6.1.0", stand_id="stand_aaa",
+        )
+        case = StpTestCase(id="case_1", code="pg", title="PostgreSQL")
+
+        html = stp_matrix_svc.render_matrix_html(
+            rc_number="1.8.5.46", runs=[run_b, run_a], cases=[case], cells=[],
+            stand_labels={"stand_bbb": "stand4", "stand_aaa": "stand10"},
+        )
+        assert "stand_bbb" not in html
+        assert "stand_aaa" not in html
+        # stand10 < stand4 лексикографически — ровно как у легаси
+        assert html.index("stand10") < html.index("stand4")
+
+    def test_stand_without_alias_falls_back_to_internal_id(self):
+        from src.models import StpTestCase, StpTestRun
+
+        run = StpTestRun(
+            id="run_1", os_version_id="1.8.5.46", mode="orel", kernel="6.1.0", stand_id="stand_zzz",
+        )
+        case = StpTestCase(id="case_1", code="pg", title="PostgreSQL")
+        html = stp_matrix_svc.render_matrix_html(
+            rc_number="1.8.5.46", runs=[run], cases=[case], cells=[], stand_labels={},
+        )
+        assert "stand_zzz" in html
+
     def test_no_runs_yields_placeholder(self):
         html = stp_matrix_svc.render_matrix_html(
             rc_number="1.8.5.46", runs=[], cases=[], cells=[],

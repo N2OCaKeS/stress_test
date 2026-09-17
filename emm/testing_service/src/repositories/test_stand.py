@@ -20,6 +20,20 @@ async def get_by_server_id(db: AsyncSession, server_id: str) -> TestStand | None
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_by_legacy_token(db: AsyncSession, legacy_token: str) -> TestStand | None:
+    """SELECT по UNIQUE legacy_token (`stand3`..`stand14` из allta_app)."""
+    stmt = select(TestStand).where(TestStand.legacy_token == legacy_token)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def list_by_ids(db: AsyncSession, stand_ids: list[str]) -> list[TestStand]:
+    """SELECT пачкой по PK — чтобы отчёты не делали N+1 ради одного алиаса."""
+    if not stand_ids:
+        return []
+    stmt = select(TestStand).where(TestStand.id.in_(stand_ids))
+    return list((await db.execute(stmt)).scalars())
+
+
 def _apply_filters(
     stmt,
     *,

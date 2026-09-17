@@ -38,12 +38,20 @@ class TestStandCreate(BaseModel):
         ..., min_length=1, max_length=64,
         description="Server/Vm.id из server_service. UNIQUE.",
     )
+    legacy_token: str | None = Field(
+        default=None, max_length=32,
+        description=(
+            "Имя стенда в allta_app (`stand3`..`stand14`). UNIQUE. Нужно для "
+            "совместимости с легаси: имя Zephyr-рана, «№ стенда» в СТП-матрице "
+            "и позиционный `-sn` в команде теста. Пусто — стенд заведён уже в emm."
+        ),
+    )
     queue_enabled: bool = Field(default=True, description="Участвует ли стенд в очереди тестов.")
     is_active: bool = Field(default=True, description="Активен ли стенд.")
 
 
 class TestStandUpdate(BaseModel):
-    """Тело PATCH /test-stands/{stand_id}. Изменяемы только `queue_enabled`/`is_active`.
+    """Тело PATCH /test-stands/{stand_id}. Изменяемы `queue_enabled`/`is_active`/`legacy_token`.
 
     `server_id` в схеме нет — если клиент всё же пришлёт его в теле запроса,
     Pydantic молча отбросит поле как неизвестное, PATCH его не увидит.
@@ -51,6 +59,10 @@ class TestStandUpdate(BaseModel):
 
     queue_enabled: bool | None = Field(default=None, description="Сменить участие в очереди.")
     is_active: bool | None = Field(default=None, description="Сменить активность.")
+    legacy_token: str | None = Field(
+        default=None, max_length=32,
+        description="Проставить/сменить легаси-имя стенда (`stand3`..`stand14`).",
+    )
 
 
 class TestStandResponse(BaseModel):
@@ -67,6 +79,9 @@ class TestStandResponse(BaseModel):
     server_id: str = Field(description="Server/Vm.id из server_service.")
     department_id: str = Field(
         description="Отдел-владелец — скопирован с Server.department_id в момент создания стенда.",
+    )
+    legacy_token: str | None = Field(
+        default=None, description="Имя стенда в allta_app (`stand3`..`stand14`), если известно.",
     )
     queue_enabled: bool = Field(description="Участвует ли стенд в очереди тестов.")
     is_active: bool = Field(description="Активен ли стенд.")

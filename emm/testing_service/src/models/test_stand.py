@@ -33,6 +33,12 @@ class TestStand(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     server_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     department_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # Человеческое имя стенда из allta_app (`stand3`..`stand14`). Внутренний
+    # `id` — `stand_<32hex>`, его нельзя ни сопоставить с именем прогона в
+    # Zephyr (легаси кладёт туда `stand3`), ни показать оператору в СТП-
+    # матрице. NULL — стенд, которого в легаси не было; тогда везде работает
+    # fallback на `id`, а `-sn` для теста собрать не из чего.
+    legacy_token: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
     queue_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Soft-FK на auth_service identity (`usr_<hex>`/`bot_<hex>`).

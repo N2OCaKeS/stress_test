@@ -134,11 +134,14 @@ def _server_hdr(identity: str, secret: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {secret}", "X-Service-Identity": identity}
 
 
-async def _create_stand(client, admin_token, department_id="dep_a") -> tuple[str, str]:
+async def _create_stand(
+    client, admin_token, department_id="dep_a", *, legacy_token: str | None = None,
+) -> tuple[str, str]:
     server_id = f"srv_{uuid.uuid4().hex[:10]}"
-    resp = await client.post(
-        STANDS_BASE, headers=_hdr(admin_token), json={"server_id": server_id},
-    )
+    payload: dict = {"server_id": server_id}
+    if legacy_token is not None:
+        payload["legacy_token"] = legacy_token
+    resp = await client.post(STANDS_BASE, headers=_hdr(admin_token), json=payload)
     assert resp.status_code == 201, resp.text
     return resp.json()["id"], server_id
 
@@ -598,6 +601,64 @@ class TestClaim:
         assert resp.status_code == 200, resp.text
         payload = resp.json()["item"]
         assert payload["dates_content"] == f"--run Тест очереди_1.8.5_orel_6.1.0_{stand_id}"
+
+
+class TestImportedCatalogNormalLaunch:
+    """Обычный (не debug) запуск теста из настоящего каталога allta_app.
+
+    Регрессия сразу на два P0: тест не был привязан ни к какому стенду
+    (`TEST_NOT_PINNED_TO_STAND` на постановке) и не имел значений для пяти
+    переменных команды (`LAUNCH_CONTEXT_VARIABLE_MISSING` на claim'е).
+    Синтетический слот из соседних тестов ни того, ни другого не ловит.
+    """
+
+    async def test_reaches_worker_with_legacy_shaped_command(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+    ):
+        from pathlib import Path
+
+        from scripts.import_catalog import run as import_run
+        from src.repositories import test_definition as test_definition_repo
+        from src.repositories import test_stand as stand_repo
+
+        catalog = Path(__file__).resolve().parents[1] / "scripts" / "import_catalog.allta.yaml"
+
+        mock_server_service(host="10.9.9.9")
+        await mock_git_token()
+        server_id = f"srv_{uuid.uuid4().hex[:10]}"
+        exit_code = await import_run(
+            catalog, bearer_token="dbos_pat_fake_admin_token", dry_run=False,
+            override_stand_server_id=server_id, stand_legacy_token="stand3",
+        )
+        assert exit_code == 0
+
+        ctx = {"RC": "1.8.5.46", "KERNEL": "6.1.0", "MODE": "orel"}
+        async with AsyncSessionLocal() as db:
+            stand = await stand_repo.get_by_server_id(db, server_id)
+            test = await test_definition_repo.get_by_code(db, "file_systems.xfs")
+            assert test.pinned_stand_id == stand.id
+            # Стенд не передаётся — берётся из привязки, это и есть обычный запуск.
+            item = await queue_svc.enqueue(db, _identity(), test.id, launch_context=ctx)
+
+        await client.post(
+            f"{CALLBACK_BASE}/{item.prepare_request_id}/completed",
+            headers=_server_hdr("server_service", SERVER_SECRET),
+            json={
+                "correlation_id": item.id, "succeeded": True,
+                "test_username": "u", "test_password": "s3cr3t",
+                "test_ssh_private_key": "-----KEY-----",
+            },
+        )
+
+        resp = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+        assert resp.status_code == 200, resp.text
+        dates = resp.json()["item"]["dates_content"]
+        assert "-sn 3" in dates
+        assert "-tcyc 1.8.5.46_orel_6.1.0_stand3" in dates
+        assert '-tcas "file system benchmark. XFS"' not in dates  # кавычек резолвер не ставит
+        assert "file system benchmark. XFS" in dates
+        assert "STRESS_report 1.8.5.46 ⬝ Файловые системы" in dates
+        assert "-fti none" in dates
 
 
 class TestCompleted:

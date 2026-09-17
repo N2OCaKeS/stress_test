@@ -267,6 +267,12 @@ def usage_os_publisher(username,
         load_rows = list(csv.DictReader(load_file))
     sample_count = min(len(idle_rows), len(load_rows))
 
+    # 33 метрики на полном разрешении (600 точек) кладут тело страницы за лимит
+    # Confluence REST (5 242 880 байт на запрос) — прореживаем до ~120 точек на график.
+    CHART_MAX_POINTS = 120
+    chart_step = max(1, sample_count // CHART_MAX_POINTS)
+    sample_indices = range(0, sample_count, chart_step)
+
     graphics = [
         {
             "title": label,
@@ -287,7 +293,7 @@ def usage_os_publisher(username,
                     "idle": float(idle_rows[i][column]),
                     "load": float(load_rows[i][column]),
                 }
-                for i in range(sample_count)
+                for i in sample_indices
             ],
             "view_table": False,
         }

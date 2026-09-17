@@ -94,8 +94,14 @@ export function Dropdown(props: DropdownProps) {
     const maxLeft = Math.max(GAP, window.innerWidth - width - GAP);
     const left = Math.min(r.left, maxLeft);
 
-    // Если снизу не помещается, а сверху места больше — открываем вверх.
-    const estimatedHeight = Math.min(maxHeight, 320) + (searchable ? 40 : 0) + 44;
+    // Первый проход — попап ещё не в DOM, реальной высоты не знаем, берём
+    // грубую оценку только чтобы решить, вверх или вниз, и не мигнуть не
+    // туда. Как только попап смонтирован, второй эффект ниже подменяет
+    // `top` точным измеренным `offsetHeight` — иначе при коротком списке
+    // (оценка почти всегда больше факта) поповер открытый вверх повисает
+    // с отступом от поля, будто оторван от триггера.
+    const measured = popRef.current?.offsetHeight;
+    const estimatedHeight = measured ?? Math.min(maxHeight, 320) + (searchable ? 40 : 0) + 44;
     const spaceBelow = window.innerHeight - r.bottom;
     const openAbove = spaceBelow < estimatedHeight && r.top > spaceBelow;
     const top = openAbove ? Math.max(GAP, r.top - estimatedHeight - GAP) : r.bottom + GAP;
@@ -106,6 +112,14 @@ export function Dropdown(props: DropdownProps) {
   useLayoutEffect(() => {
     if (open) place();
   }, [open, place]);
+
+  // Коррекция вторым проходом реальной высотой попапа (см. комментарий в
+  // `place`) — срабатывает сразу после того, как попап впервые попал в DOM
+  // по оценочной позиции, и успевает отработать до отрисовки кадра.
+  useLayoutEffect(() => {
+    if (open && pos) place();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, !!pos]);
 
   useEffect(() => {
     if (!open) return;

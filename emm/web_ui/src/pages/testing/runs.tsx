@@ -541,13 +541,12 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
   const toast = useToast();
   const versionsQ = useQuery(() => listOsVersions({ limit: 500 }), []);
   const [rc, setRc] = useState("");
-  const [final, setFinal] = useState(false);
   const [full, setFull] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit() {
     if (!rc) return;
-    const body: TestRunCreateRequest = { os_version_id: rc, final, full };
+    const body: TestRunCreateRequest = { os_version_id: rc, full };
     setSubmitting(true);
     try {
       const res = await createTestRun(body);
@@ -589,7 +588,7 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
             onClick={handleSubmit}
             disabled={submitting || !rc}
           >
-            {submitting ? "Запускаем…" : `Запустить прогон${final ? " (финальный)" : ""}`}
+            {submitting ? "Запускаем…" : "Запустить прогон"}
           </Button>
         </>
       }
@@ -611,14 +610,6 @@ export function LaunchRunModal({ state, onClose }: { state: RunsState; onClose: 
             Тесты, стенды и ядра берутся из активного состава СТП этого РЦ отдела — здесь их выбирать не нужно.
             Режим безопасности — свой у каждого теста, кампания может смешивать Орёл и Смоленск.
           </div>
-
-          <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
-            <Checkbox checked={final} onChange={(e) => setFinal(e.target.checked)} className="mt-0.5" />
-            <span>
-              <span className="text-sm font-medium block">Финальный прогон</span>
-              <span className="text-xs text-dim">Блокирует релиз РЦ до получения результата; отображается отдельным флагом в кампаниях</span>
-            </span>
-          </label>
 
           <label className="surface-2 border border-token rounded p-3 flex items-start gap-2 cursor-pointer">
             <Checkbox checked={full} onChange={(e) => setFull(e.target.checked)} className="mt-0.5" />

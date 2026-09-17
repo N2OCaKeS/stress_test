@@ -22,8 +22,10 @@ vi.mock("@/api/testing/testStands", () => ({
 vi.mock("@/api/server/osVersions", () => ({ listOsVersions: async () => ({ items: [{ id: "osv_1", name: "1.8.5", kernels: ["6.1"] }] }) }));
 
 const triggerStatisticsRecalcMock = vi.fn();
+const getStatisticsStatusMock = vi.fn();
 vi.mock("@/api/testing/statistics", () => ({
   triggerStatisticsRecalc: (...args: unknown[]) => triggerStatisticsRecalcMock(...args),
+  getStatisticsStatus: (...args: unknown[]) => getStatisticsStatusMock(...args),
 }));
 const ITEMS = [
   { id: "adhoc-2026090701", test_id: "t1", stand_id: "s1", test_run_id: null, retry_of_id: null, debug_mode: true, state: "running", rc: "1.8.5", kernel: "6.1", mode: "orel", created_at: "2026-09-07T06:40:00Z", started_at: "2026-09-07T06:40:00Z", finished_at: null, error: null },
@@ -120,6 +122,10 @@ beforeEach(() => {
     status: "running", triggered_by: "manual", test_run_id: null,
     started_at: "2026-09-15T10:00:00Z", finished_at: null, error: null, updated_at: null,
   });
+  getStatisticsStatusMock.mockResolvedValue({
+    status: "idle", triggered_by: null, test_run_id: null,
+    started_at: null, finished_at: null, error: null, updated_at: null,
+  });
   sockets = [];
   vi.stubGlobal("WebSocket", FakeWebSocket as unknown as typeof WebSocket);
 });
@@ -191,6 +197,22 @@ describe("AdhocMiddlePanel — реальные одиночные запуск�
     fireEvent.click(screen.getByRole("button", { name: /Пересчитать статистику/ }));
     await waitFor(() => expect(triggerStatisticsRecalcMock).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(/запущен в фоне/)).toBeInTheDocument();
+  });
+
+  it("индикатор «Идёт расчёт статистики» виден только пока фактически идёт пересчёт", async () => {
+    getStatisticsStatusMock.mockResolvedValueOnce({
+      status: "running", triggered_by: "manual", test_run_id: null,
+      started_at: "2026-09-15T10:00:00Z", finished_at: null, error: null, updated_at: null,
+    });
+    renderHarness();
+    await screen.findAllByText("adhoc-2026090701");
+    expect(await screen.findByText("Идёт расчёт статистики…")).toBeInTheDocument();
+  });
+
+  it("нет индикатора расчёта статистики, если пересчёт не идёт", async () => {
+    renderHarness();
+    await screen.findAllByText("adhoc-2026090701");
+    expect(screen.queryByText("Идёт расчёт статистики…")).not.toBeInTheDocument();
   });
 
   it("показывает ошибку тостом, если запуск пересчёта статистики отклонён", async () => {

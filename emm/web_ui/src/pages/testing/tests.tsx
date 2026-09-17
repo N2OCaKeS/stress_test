@@ -660,7 +660,7 @@ function TestFormModal({
             className="surface-2 border border-token rounded px-2 py-1 mono text-sm"
             value={timeoutSeconds}
             onChange={(e) => setTimeoutSeconds(e.target.value)}
-            placeholder="по умолчанию (час)"
+            placeholder="по умолчанию (12 часов)"
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">

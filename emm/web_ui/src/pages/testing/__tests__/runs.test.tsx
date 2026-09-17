@@ -245,7 +245,6 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     await waitFor(() =>
       expect(createTestRunMock).toHaveBeenCalledWith({
         os_version_id: "osv_real",
-        final: false,
         full: false,
       }),
     );
@@ -281,7 +280,6 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     await waitFor(() =>
       expect(createTestRunMock).toHaveBeenCalledWith({
         os_version_id: "osv_real",
-        final: false,
         full: true,
       }),
     );

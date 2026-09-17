@@ -551,7 +551,9 @@ function StatisticsRecalcPanel({ collapsed }: { collapsed: boolean }) {
     };
   }, []);
 
-  if (status === null) return null;
+  // Индикатор, не постоянная плашка — виден только пока пересчёт реально
+  // идёт, а не последний известный итог (idle/succeeded/failed).
+  if (status === null || status.status !== "running") return null;
   const meta = STATISTICS_STATUS_META[status.status] ?? STATISTICS_STATUS_META.idle;
   const lastAt = status.finished_at ?? status.started_at;
   const tooltip = [

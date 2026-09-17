@@ -6,7 +6,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
 import { useQuery } from "@/api/auth/useQuery";
 import { listQueueItems, retryQueueItem } from "@/api/testing/queueItems";
-import { triggerStatisticsRecalc } from "@/api/testing/statistics";
+import { getStatisticsStatus, triggerStatisticsRecalc } from "@/api/testing/statistics";
 import { listOsVersions } from "@/api/server/osVersions";
 import { listTestDefinitions } from "@/api/testing/testDefinitions";
 import { listTestStands, getTestStand } from "@/api/testing/testStands";
@@ -147,6 +147,28 @@ export function AdhocMiddlePanel({ state }: { state: AdhocState }) {
   const [launchOpen, setLaunchOpen] = useState(false);
   const toast = useToast();
   const [recalcPending, setRecalcPending] = useState(false);
+  // Живой индикатор фонового пересчёта (не только локальное "кнопка нажата,
+  // ждём ответа сервера" — пересчёт может идти и по другой причине, тот же
+  // индикатор, что и на левой панели, показывается только пока реально
+  // выполняется, не последний известный итог.
+  const [recalcRunning, setRecalcRunning] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    async function poll() {
+      try {
+        const status = await getStatisticsStatus();
+        if (!cancelled) setRecalcRunning(status.status === "running");
+      } catch {
+        // best-effort индикатор — тихо оставляем предыдущее значение при сбое опроса
+      }
+    }
+    poll();
+    const timer = setInterval(poll, 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
   async function handleRecalc() {
     if (recalcPending) return;
     setRecalcPending(true);
@@ -232,6 +254,12 @@ export function AdhocMiddlePanel({ state }: { state: AdhocState }) {
           <BarChart3 className="w-3.5 h-3.5" />
           {recalcPending ? "Запускаем…" : "Пересчитать статистику"}
         </Button>
+        {recalcRunning && (
+          <div className="text-xs text-dim mt-1 flex items-center gap-1.5">
+            <BarChart3 className="w-3.5 h-3.5 animate-pulse" />
+            Идёт расчёт статистики…
+          </div>
+        )}
       </div>
       {launchOpen && <StandaloneLaunchModal onClose={() => setLaunchOpen(false)} onLaunched={(id) => { state.setOffset(0); state.setSearch(""); state.setStatusFilter("all"); state.setSelectedId(id); state.refresh(); setLaunchOpen(false); }} />}
     </aside>

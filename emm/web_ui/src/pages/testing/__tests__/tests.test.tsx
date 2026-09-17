@@ -292,7 +292,7 @@ describe("TestsWorkzone — каталог тестов из API", () => {
     fireEvent.change(screen.getByPlaceholderText("filesystem / ext4 fill+remove cycle"), {
       target: { value: "network / iperf3 throughput" },
     });
-    fireEvent.change(screen.getByPlaceholderText("по умолчанию (час)"), {
+    fireEvent.change(screen.getByPlaceholderText("по умолчанию (12 часов)"), {
       target: { value: "120" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Создать" }));

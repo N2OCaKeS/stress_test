@@ -646,45 +646,6 @@ function PoolOverviewPanel({
                 </div>
               </div>
 
-              {overview.stands.length > 0 && (
-                <div className="surface-2 border border-token rounded overflow-hidden">
-                  <table className="mini">
-                    <thead>
-                      <tr>
-                        <th>Стенд</th>
-                        <th>Статус</th>
-                        <th>Ping</th>
-                        <th>Занятость</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...overview.stands]
-                        .sort((a, b) => POOL_STATUS_ORDER.indexOf(a.status) - POOL_STATUS_ORDER.indexOf(b.status))
-                        .map((s) => {
-                          const meta = POOL_STATUS_META[s.status];
-                          const Icon = meta.icon;
-                          return (
-                            <tr key={s.stand_id}>
-                              <td className="mono">{s.server_id}</td>
-                              <td>
-                                <Badge kind={meta.badge} className="inline-flex items-center gap-1">
-                                  <Icon className="w-3 h-3" />
-                                  {meta.label}
-                                </Badge>
-                              </td>
-                              <td className="text-xs text-dim">
-                                {s.ping_checked_at
-                                  ? `${s.ping_reachable ? "отвечает" : "не отвечает"} · ${new Date(s.ping_checked_at).toLocaleTimeString()}`
-                                  : "нет данных"}
-                              </td>
-                              <td className="text-xs text-dim">{s.busy_service_name ?? (s.busy_state ?? "—")}</td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
             </>
           )}
         </div>
@@ -886,7 +847,7 @@ function LaunchTestModal({
   const stand = pickableStands.find((item) => item.id === standId) ?? pickableStands[0];
   const tests = stand ? testsForStand(stand, debugMode) : [];
   const [selectedTests, setSelectedTests] = useState<string[]>(tests.slice(0, 2));
-  const [prepareEnv, setPrepareEnv] = useState(true);
+  const [prepareEnv, setPrepareEnv] = useState(false);
   const [rcId, setRcId] = useState(rcOptions[0] ?? "");
 
   const switchStand = (nextStandId: number) => {

@@ -88,10 +88,6 @@ export function Testing() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            <Link to="/testing" className={`btn btn-sm inline-flex items-center gap-2 ${activeId === "overview" ? "btn-primary" : ""}`}>
-              <ListChecks className="w-4 h-4" />
-              <span>Рабочая зона</span>
-            </Link>
             {SUBSECTIONS.map((s) => {
               const Icon = s.icon;
               return (

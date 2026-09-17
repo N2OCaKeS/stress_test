@@ -387,6 +387,22 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── HR-отчёт по активности: авто-генерация 1 числа месяца ────────────────
+
+    activity_report_auto_generate_interval_seconds: float = Field(
+        default=3600.0,
+        ge=1.0,
+        alias="ACTIVITY_REPORT_AUTO_GENERATE_INTERVAL_SECONDS",
+        description=(
+            "Период фонового `asyncio`-цикла проверки авто-генерации HR-отчёта "
+            "(см. `main.py::_activity_report_auto_generate_loop`). Тот же "
+            "приём, что и у ротации логов — свой цикл в lifespan вместо "
+            "taskiq-scheduler'а. Часовой период достаточен: тик, попавший на "
+            "1 число месяца, запускает генерацию; повторные тики в тот же "
+            "день — no-op благодаря проверке уже существующего отчёта."
+        ),
+    )
+
     # ── Validators ────────────────────────────────────────────────────────────
 
     @field_validator("service_api_keys", mode="before")

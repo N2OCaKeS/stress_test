@@ -16,10 +16,12 @@ import pytest
 
 from src.core.exceptions import NotFoundError, ServiceUnavailableError
 from src.db.session import AsyncSessionLocal
+from src.repositories import department_activity_report as report_repo
 from src.repositories import department_integration_settings as dis_repo
+from src.repositories import department_test_settings as dts_repo
 from src.services import activity_report as svc
 from src.services import bitbucket_client, confluence_client, jira_report_client, secret_client, tempo_client
-from src.utils.ids import department_integration_settings_id
+from src.utils.ids import department_integration_settings_id, department_test_settings_id
 from tests.conftest import auth_hdr as _hdr
 
 REPORTS_BASE = "/api/testing/v1/departments/{dept}/activity-reports"
@@ -463,3 +465,84 @@ class TestListActivityReports:
     async def test_anonymous_401(self, client):
         resp = await client.get(REPORTS_BASE.format(dept="dep_a"))
         assert resp.status_code == 401, resp.text
+
+
+# ── previous_month_period / run_auto_generate_tick (авто-генерация, задача 9) ──
+
+
+async def _enable_auto_generate(department_id: str) -> None:
+    async with AsyncSessionLocal() as db:
+        await dts_repo.create(db, {
+            "id": department_test_settings_id(),
+            "department_id": department_id,
+            "retry_enabled": True,
+            "test_username": "u",
+            "activity_report_auto_generate": True,
+        })
+        await db.commit()
+
+
+class TestPreviousMonthPeriod:
+    def test_regular_month(self):
+        assert svc.previous_month_period(datetime(2026, 10, 1)) == "2026-09"
+
+    def test_january_wraps_to_previous_year(self):
+        assert svc.previous_month_period(datetime(2026, 1, 15)) == "2025-12"
+
+
+class TestRunAutoGenerateTick:
+    async def test_noop_when_not_first_of_month(self):
+        async with AsyncSessionLocal() as db:
+            processed = await svc.run_auto_generate_tick(db, datetime(2026, 10, 15))
+        assert processed == []
+
+    async def test_generates_only_for_enabled_departments(
+        self, mock_secret_client, mock_confluence_pages, mock_empty_sources,
+    ):
+        dept_on, dept_off = "dep_auto_on", "dep_auto_off"
+        await _seed_settings(dept_on)
+        await _seed_settings(dept_off)
+        await _enable_auto_generate(dept_on)
+        mock_secret_client["cred_primary"] = ("bot", "jira_tok")
+        mock_secret_client["cred_bitbucket"] = ("bb", "pass")
+
+        async with AsyncSessionLocal() as db:
+            processed = await svc.run_auto_generate_tick(db, datetime(2026, 10, 1))
+
+        assert processed == [dept_on]
+        async with AsyncSessionLocal() as db:
+            assert await report_repo.exists_for_period(db, dept_on, "2026-09") is True
+            assert await report_repo.exists_for_period(db, dept_off, "2026-09") is False
+
+    async def test_second_tick_same_day_does_not_duplicate(
+        self, mock_secret_client, mock_confluence_pages, mock_empty_sources,
+    ):
+        dept = "dep_auto_dup"
+        await _seed_settings(dept)
+        await _enable_auto_generate(dept)
+        mock_secret_client["cred_primary"] = ("bot", "jira_tok")
+        mock_secret_client["cred_bitbucket"] = ("bb", "pass")
+
+        async with AsyncSessionLocal() as db:
+            first_pass = await svc.run_auto_generate_tick(db, datetime(2026, 10, 1))
+        assert first_pass == [dept]
+
+        async with AsyncSessionLocal() as db:
+            second_pass = await svc.run_auto_generate_tick(db, datetime(2026, 10, 1))
+        assert second_pass == []
+
+        async with AsyncSessionLocal() as db:
+            reports, total = [], 0
+            reports = await report_repo.list_by_department(db, dept)
+            total = await report_repo.count_by_department(db, dept)
+        assert total == 1
+        assert reports[0].period == "2026-09"
+
+    async def test_unconfigured_department_is_skipped_not_raised(self):
+        dept = "dep_auto_unconfigured"
+        await _enable_auto_generate(dept)
+
+        async with AsyncSessionLocal() as db:
+            processed = await svc.run_auto_generate_tick(db, datetime(2026, 10, 1))
+
+        assert processed == []

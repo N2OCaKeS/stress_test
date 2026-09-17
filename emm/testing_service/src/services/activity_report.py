@@ -45,6 +45,7 @@ from src.models import DepartmentActivityReport, DepartmentIntegrationSettings, 
 from src.repositories import department_activity_report as report_repo
 from src.repositories import department_integration_settings as dis_repo
 from src.repositories import department_report_member as member_repo
+from src.repositories import department_test_settings as dts_repo
 from src.services import audit_service, bitbucket_client, confluence_client, jira_report_client, permissions
 from src.services import secret_client, tempo_client
 from src.utils.ids import department_activity_report_id as new_report_id
@@ -387,27 +388,22 @@ async def _publish_page(
     return existing_id
 
 
-async def generate_report(
-    db: AsyncSession, identity: Identity, department_id: str, period: str,
+async def _generate_report_impl(
+    db: AsyncSession, department_id: str, period: str, *, generated_by: str | None, trigger: str,
 ) -> DepartmentActivityReport:
-    """Ручная генерация HR-отчёта отдела за `period` (`POST .../activity-reports/generate`).
+    """Общее тело генерации, без RBAC — вызывающая сторона решает, кто может её звать.
 
-    Заменяет легаси-паттерн "поправить MONTH в коде и перезапустить скрипт".
-    RBAC — `permissions.require_department_action`: department_admin своего
-    отдела ИЛИ носитель `admin` service-роли `testing_service` в этом же
-    отделе, cross-department вызов отбивается ещё до чтения настроек.
+    `generated_by` — `identity.user_id` для ручного запуска, `None` для
+    автоматического (нет пользователя-инициатора). `trigger` попадает в
+    audit-детали ("manual"/"auto"), чтобы отличить кнопку от cron'а в логе.
     """
-    await permissions.require_department_action(
-        db, identity, department_id, EntityType.DEPARTMENT_ACTIVITY_REPORT, Action.CREATE,
-    )
-
     settings = await dis_repo.get_by_department(db, department_id)
     if settings is None or not settings.confluence_report_page_space or not settings.confluence_base_url:
         audit_service.emit(
             "department_activity_report.generate",
             target_type="department_activity_report",
             status="failure", allowed=True,
-            details={"department_id": department_id, "period": period, "reason": "not_configured"},
+            details={"department_id": department_id, "period": period, "reason": "not_configured", "trigger": trigger},
         )
         raise DomainValidationError(
             error_code="ACTIVITY_REPORT_NOT_CONFIGURED",
@@ -421,7 +417,7 @@ async def generate_report(
         "id": new_report_id(),
         "department_id": department_id,
         "period": period,
-        "generated_by": identity.user_id,
+        "generated_by": generated_by,
         "status": DepartmentActivityReportStatus.GENERATING,
     })
     await db.commit()
@@ -447,7 +443,7 @@ async def generate_report(
             "department_activity_report.generate",
             target_id=report.id, target_type="department_activity_report",
             status="success", allowed=True,
-            details={"department_id": department_id, "period": period, "warnings": warnings},
+            details={"department_id": department_id, "period": period, "warnings": warnings, "trigger": trigger},
         )
     except AppException as exc:
         logger.warning(
@@ -462,9 +458,90 @@ async def generate_report(
             "department_activity_report.generate",
             target_id=report.id, target_type="department_activity_report",
             status="failure", allowed=True,
-            details={"department_id": department_id, "period": period, "error_code": exc.error_code},
+            details={"department_id": department_id, "period": period, "error_code": exc.error_code, "trigger": trigger},
         )
     return report
+
+
+async def generate_report(
+    db: AsyncSession, identity: Identity, department_id: str, period: str,
+) -> DepartmentActivityReport:
+    """Ручная генерация HR-отчёта отдела за `period` (`POST .../activity-reports/generate`).
+
+    Заменяет легаси-паттерн "поправить MONTH в коде и перезапустить скрипт".
+    RBAC — `permissions.require_department_action`: department_admin своего
+    отдела ИЛИ носитель `admin` service-роли `testing_service` в этом же
+    отделе, cross-department вызов отбивается ещё до чтения настроек.
+    """
+    await permissions.require_department_action(
+        db, identity, department_id, EntityType.DEPARTMENT_ACTIVITY_REPORT, Action.CREATE,
+    )
+    return await _generate_report_impl(db, department_id, period, generated_by=identity.user_id, trigger="manual")
+
+
+async def generate_report_auto(db: AsyncSession, department_id: str, period: str) -> DepartmentActivityReport:
+    """Системная генерация из фоновой ежемесячной проверки — без RBAC.
+
+    Вызывается только из `run_auto_generate_tick`, никогда напрямую по HTTP:
+    инициатор здесь не пользователь, а cron, поэтому `require_department_action`
+    не применим (ему нужен реальный `identity`) и не нужен — доступ к этой
+    функции сам по себе ограничен тем, что она не выставлена ни одним роутом.
+    """
+    return await _generate_report_impl(db, department_id, period, generated_by=None, trigger="auto")
+
+
+def previous_month_period(now: datetime) -> str:
+    """`'YYYY-MM'` календарного месяца, предшествующего `now`."""
+    year, month = now.year, now.month
+    if month == 1:
+        year, month = year - 1, 12
+    else:
+        month -= 1
+    return f"{year:04d}-{month:02d}"
+
+
+async def run_auto_generate_tick(db: AsyncSession, now_msk: datetime) -> list[str]:
+    """Один проход фоновой авто-генерации (задача 9 — "1 октября → отчёт за сентябрь").
+
+    Срабатывает только 1 числа месяца (по МСК); отчёт заводится за предыдущий
+    календарный месяц для отделов с `department_test_settings.activity_report_auto_generate=True`.
+    Идемпотентно: если отчёт за этот `(department_id, period)` уже заводился
+    (в том числе неудачно), повторной генерации не будет — если фоновая
+    проверка сработала дважды за тот же день, ничего не задублируется.
+    Возвращает id отделов, для которых в этом проходе реально запустили
+    генерацию (используется тестами и для лога).
+    """
+    if now_msk.day != 1:
+        return []
+
+    period = previous_month_period(now_msk)
+    department_ids = await dts_repo.list_auto_generate_department_ids(db)
+    processed: list[str] = []
+    for department_id in department_ids:
+        if await report_repo.exists_for_period(db, department_id, period):
+            continue
+        try:
+            await generate_report_auto(db, department_id, period)
+        except AppException as exc:
+            await db.rollback()
+            logger.warning(
+                "activity_report auto-generate skipped dept=%s period=%s: %s",
+                department_id, period, exc.message,
+            )
+            continue
+        except Exception as exc:  # noqa: BLE001 — один сбойный отдел не должен ронять весь тик
+            # `db` — общая сессия на весь тик (по одной на отдел было бы
+            # избыточно); rollback обязателен, иначе транзакция остаётся
+            # aborted и следующий отдел в этом же цикле упадёт на первом же
+            # запросе.
+            await db.rollback()
+            logger.warning(
+                "activity_report auto-generate unexpected error dept=%s period=%s: %s: %s",
+                department_id, period, type(exc).__name__, exc,
+            )
+            continue
+        processed.append(department_id)
+    return processed
 
 
 async def list_reports(

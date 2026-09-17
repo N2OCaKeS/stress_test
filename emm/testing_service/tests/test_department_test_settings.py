@@ -30,7 +30,7 @@ class TestGetDefaults:
         assert body["department_id"] == dept
         assert body["retry_enabled"] is True
         assert body["test_username"] == "u"
-        assert body["activity_report_schedule"] is None
+        assert body["activity_report_auto_generate"] is False
 
     async def test_open_to_any_authenticated_role(self, client, guest_token):
         resp = await client.get(f"{BASE}/{_dept()}", headers=_hdr(guest_token))
@@ -68,13 +68,13 @@ class TestUpsert:
 
         second = await client.put(
             f"{BASE}/{dept}", headers=_hdr(admin_token),
-            json={"activity_report_schedule": "weekly"},
+            json={"activity_report_auto_generate": True},
         )
         assert second.status_code == 200, second.text
         body = second.json()
         assert body["retry_enabled"] is False
         assert body["test_username"] == "tester"
-        assert body["activity_report_schedule"] == "weekly"
+        assert body["activity_report_auto_generate"] is True
 
     async def test_put_requires_update_permission(self, client, guest_token):
         resp = await client.put(

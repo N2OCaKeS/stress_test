@@ -791,7 +791,7 @@ class TestStpEventDrivenStatus:
 
             await dts_repo.create(db, {
                 "id": department_test_settings_id(), "department_id": dept_a,
-                "retry_enabled": False, "test_username": "u", "activity_report_schedule": None,
+                "retry_enabled": False, "test_username": "u", "activity_report_auto_generate": False,
             })
             await db.commit()
 

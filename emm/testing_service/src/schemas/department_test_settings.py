@@ -18,9 +18,12 @@ class DepartmentTestSettingsUpdate(BaseModel):
         default=None, min_length=1, max_length=32,
         description="Имя пользователя исполнения теста на стенде (передаётся в prepare-for-test).",
     )
-    activity_report_schedule: str | None = Field(
-        default=None, max_length=128,
-        description="Расписание HR-отчёта (заглушка под волну 10 — логика не реализована).",
+    activity_report_auto_generate: bool | None = Field(
+        default=None,
+        description=(
+            "Включить фоновую ежемесячную генерацию HR-отчёта за предыдущий месяц "
+            "(1 числа каждого месяца)."
+        ),
     )
 
 
@@ -33,6 +36,8 @@ class DepartmentTestSettingsResponse(BaseModel):
     department_id: str = Field(description="Отдел, к которому относятся настройки.")
     retry_enabled: bool = Field(description="Ретраить ли провалившийся прогон один раз.")
     test_username: str = Field(description="Имя пользователя исполнения теста на стенде.")
-    activity_report_schedule: str | None = Field(default=None, description="Расписание HR-отчёта.")
+    activity_report_auto_generate: bool = Field(
+        description="Фоновая ежемесячная генерация HR-отчёта за предыдущий месяц включена.",
+    )
     created_at: datetime | None = Field(default=None)
     updated_at: datetime | None = Field(default=None)

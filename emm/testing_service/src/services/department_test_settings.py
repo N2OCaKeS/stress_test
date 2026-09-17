@@ -20,6 +20,7 @@ from src.utils.ids import department_test_settings_id as new_id
 
 DEFAULT_RETRY_ENABLED = True
 DEFAULT_TEST_USERNAME = "u"
+DEFAULT_ACTIVITY_REPORT_AUTO_GENERATE = False
 
 
 async def get_settings_row(db: AsyncSession, department_id: str) -> DepartmentTestSettings | None:
@@ -41,7 +42,7 @@ async def get_effective(db: AsyncSession, department_id: str) -> dict:
             "department_id": department_id,
             "retry_enabled": DEFAULT_RETRY_ENABLED,
             "test_username": DEFAULT_TEST_USERNAME,
-            "activity_report_schedule": None,
+            "activity_report_auto_generate": DEFAULT_ACTIVITY_REPORT_AUTO_GENERATE,
             "created_at": None,
             "updated_at": None,
         }
@@ -50,7 +51,7 @@ async def get_effective(db: AsyncSession, department_id: str) -> dict:
         "department_id": row.department_id,
         "retry_enabled": row.retry_enabled,
         "test_username": row.test_username,
-        "activity_report_schedule": row.activity_report_schedule,
+        "activity_report_auto_generate": row.activity_report_auto_generate,
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
@@ -84,7 +85,9 @@ async def upsert(
             "department_id": department_id,
             "retry_enabled": changes.pop("retry_enabled", DEFAULT_RETRY_ENABLED),
             "test_username": changes.pop("test_username", DEFAULT_TEST_USERNAME),
-            "activity_report_schedule": changes.pop("activity_report_schedule", None),
+            "activity_report_auto_generate": changes.pop(
+                "activity_report_auto_generate", DEFAULT_ACTIVITY_REPORT_AUTO_GENERATE,
+            ),
         }
         row = await repo.create(db, data)
     elif changes:

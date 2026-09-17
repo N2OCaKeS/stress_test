@@ -300,7 +300,7 @@ class TestAggregateStatus:
                 "department_id": "dep_a",
                 "retry_enabled": False,
                 "test_username": "u",
-                "activity_report_schedule": None,
+                "activity_report_auto_generate": False,
             })
             await db.commit()
 

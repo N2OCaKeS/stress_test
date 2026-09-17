@@ -122,6 +122,34 @@ async def _log_rotation_loop(interval_seconds: float) -> None:
             logger.warning("log rotation loop failed: %s", exc)
 
 
+async def _activity_report_auto_generate_loop(interval_seconds: float) -> None:
+    """Фоновая проверка авто-генерации HR-отчёта (§9 UI-бэклога) — раз в
+    `interval_seconds` смотрит, не наступило ли 1 число месяца по МСК, и для
+    отделов с `department_test_settings.activity_report_auto_generate=True`
+    заводит отчёт за предыдущий месяц, если его ещё не было. Тот же приём,
+    что и `_log_rotation_loop` — обычный `asyncio.create_task` в lifespan,
+    полноценный taskiq-scheduler для этого не нужен.
+    """
+    from zoneinfo import ZoneInfo
+
+    from src.db.session import AsyncSessionLocal
+    from src.services import activity_report
+
+    msk = ZoneInfo("Europe/Moscow")
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+        except asyncio.CancelledError:
+            return
+        try:
+            async with AsyncSessionLocal() as db:
+                await activity_report.run_auto_generate_tick(db, datetime.now(msk))
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:  # noqa: BLE001 — периодическая job не должна ронять процесс
+            logger.warning("activity report auto-generate loop failed: %s", exc)
+
+
 async def _drain_pending_audit_tasks() -> None:
     """Дать шанс дойти до сети in-flight audit-emit task'ам перед закрытием пула."""
     pending = [t for t in audit_service._pending_audit_tasks if not t.done()]
@@ -167,6 +195,9 @@ def create_application() -> FastAPI:
         rotation_task = asyncio.create_task(
             _log_rotation_loop(settings.log_rotation_interval_seconds)
         )
+        activity_report_task = asyncio.create_task(
+            _activity_report_auto_generate_loop(settings.activity_report_auto_generate_interval_seconds)
+        )
 
         try:
             yield
@@ -174,6 +205,12 @@ def create_application() -> FastAPI:
             rotation_task.cancel()
             try:
                 await rotation_task
+            except asyncio.CancelledError:
+                pass
+
+            activity_report_task.cancel()
+            try:
+                await activity_report_task
             except asyncio.CancelledError:
                 pass
 

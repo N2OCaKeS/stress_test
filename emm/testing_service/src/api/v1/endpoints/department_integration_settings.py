@@ -14,7 +14,9 @@ from src.schemas.department_integration_settings import (
     DepartmentIntegrationSettingsResponse,
     DepartmentIntegrationSettingsUpdate,
 )
+from src.schemas.jira_sprint_board import JiraSprintBoardResponse
 from src.services import department_integration_settings as svc
+from src.services import jira_sprint_board as sprint_board_svc
 
 router = APIRouter(prefix="/department-integration-settings")
 
@@ -65,3 +67,25 @@ async def upsert_department_integration_settings(
     """PUT настроек отдела. Доступ: `(department_integration_settings, *, update)`."""
     obj = await svc.upsert(db, identity, department_id, body, token)
     return DepartmentIntegrationSettingsResponse.model_validate(obj)
+
+
+@router.get(
+    "/{department_id}/sprint-board",
+    response_model=JiraSprintBoardResponse,
+    summary="Дубль доски активного спринта Jira отдела (read-only)",
+    description=(
+        "Тянет активный спринт настроенной доски Jira и группирует его issue "
+        "по статусу. Только чтение — в Jira ничего не пишется. Отсутствие "
+        "настройки, активного спринта или недоступность Jira отдаётся как "
+        "`warning` в теле ответа, не как ошибка. Доступен любому "
+        "аутентифицированному актору, как и остальные GET этого файла."
+    ),
+    responses={401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."}},
+)
+async def get_department_sprint_board(
+    department_id: str,
+    identity: AuthenticatedIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> JiraSprintBoardResponse:
+    """Get доски активного спринта отдела. Любой аутентифицированный актор."""
+    return await sprint_board_svc.get_sprint_board(db, department_id)

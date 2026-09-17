@@ -7,6 +7,11 @@
 Разные наборы Jira REST API этого же инстанса, разные вызывающие сервисы —
 не стоило смешивать их в одном модуле.
 
+`get_active_sprint` — тоже Jira Agile REST, но отдельная операция от
+`get_sprint_ids`/`sprint_matches_month` (те ищут спринты за календарный
+месяц, этот — единственный активный сейчас), используется
+`services/jira_sprint_board.py` для read-only зеркала доски спринта.
+
 **Важная деталь легаси, воспроизведённая буквально**: заголовок
 `Authorization: {jira_token}` — токен кладётся В ГОЛОМ ВИДЕ, БЕЗ префикса
 `Bearer `. Это особенность конкретной инсталляции Jira (PAT, который сама
@@ -164,6 +169,45 @@ async def search_sprint_issues(*, base_url: str, jira_token: str, sprint_id: int
             error_code="JIRA_ERROR",
             message="Jira returned a non-JSON body searching sprint issues",
         ) from exc
+
+
+async def get_active_sprint(*, base_url: str, jira_token: str, board_id: str) -> dict | None:
+    """`GET /rest/agile/latest/board/{board_id}/sprint?state=active` → активный спринт доски.
+
+    `None`, если у доски сейчас нет активного спринта — это нормальный исход
+    ("нечего показывать"), не ошибка. Jira Agile REST в норме держит ровно
+    один активный спринт на доску; если вернулось несколько — берём первый
+    (порядок `values` не документирован, но для read-only зеркала доски
+    достаточно любого одного).
+    """
+    settings = get_settings()
+    url = f"{_base(base_url)}/rest/agile/latest/board/{board_id}/sprint"
+    async with build_client(settings.zephyr_request_timeout_seconds) as client:
+        try:
+            response = await client.get(
+                url, params={"state": "active"}, headers=_raw_auth_header(jira_token),
+            )
+        except httpx.HTTPError as exc:
+            raise ServiceUnavailableError(
+                error_code="JIRA_UNREACHABLE",
+                message=f"Unable to reach Jira: {type(exc).__name__}",
+            ) from exc
+    if response.status_code != 200:
+        logger.warning(
+            "jira_report: get_active_sprint(board=%s) failed status=%s", board_id, response.status_code,
+        )
+        raise ServiceUnavailableError(
+            error_code="JIRA_ERROR",
+            message=f"Jira returned {response.status_code} fetching active sprint for board {board_id}",
+        )
+    try:
+        values = response.json().get("values") or []
+    except ValueError as exc:
+        raise ServiceUnavailableError(
+            error_code="JIRA_ERROR",
+            message="Jira returned a non-JSON body fetching active sprint",
+        ) from exc
+    return values[0] if values else None
 
 
 async def get_issue_comments(*, base_url: str, jira_token: str, issue_key: str) -> list[dict]:

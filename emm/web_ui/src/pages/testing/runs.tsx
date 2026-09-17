@@ -95,6 +95,7 @@ const SUMMARY_COMMENT_META: Record<RunSummaryCommentStatus, { label: string; bad
   posted: { label: "отправлен в Confluence", badge: "ok" },
   skipped_no_blog: { label: "пропущен — не найден блог-пост", badge: "warn" },
   skipped_no_stp_page: { label: "пропущен — не найдена страница СТП", badge: "warn" },
+  skipped_no_rc_number: { label: "пропущен — у версии не проставлен номер РЦ", badge: "warn" },
   failed: { label: "ошибка отправки", badge: "danger" },
 };
 

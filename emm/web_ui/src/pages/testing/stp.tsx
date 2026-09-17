@@ -116,6 +116,7 @@ const MOCK_OS_VERSIONS: OsVersion[] = [
     repositories: [],
     kernels: ["6.12.24-1.el11", "6.12.18-std-def"],
     is_urgent_update: false,
+    rc_number: "RC46",
     discovered_at: "2026-09-03T00:00:00Z",
     updated_at: "2026-09-03T00:00:00Z",
   },

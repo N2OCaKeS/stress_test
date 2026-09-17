@@ -554,6 +554,7 @@ export type RunSummaryCommentStatus =
   | "posted"
   | "skipped_no_blog"
   | "skipped_no_stp_page"
+  | "skipped_no_rc_number"
   | "failed";
 
 /** Ответ `GET /test-runs/{id}/summary-comment`. Пустые поля — попытки ещё не было. */

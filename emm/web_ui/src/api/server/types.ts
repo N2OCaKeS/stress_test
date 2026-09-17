@@ -782,6 +782,8 @@ export interface OsVersion {
   kernels: string[];
   /** Срочный хотфикс вне обычного цикла РЦ (legacy UU), а не плановый релиз. */
   is_urgent_update: boolean;
+  /** Номер РЦ (legacy "RC3") — ручная метка, ничем не вычисляется. */
+  rc_number: string | null;
   discovered_at: Iso8601;
   updated_at: Iso8601;
 }
@@ -793,6 +795,7 @@ export interface OsVersionCreateRequest {
   repositories?: string[];
   kernels?: string[];
   is_urgent_update?: boolean;
+  rc_number?: string | null;
 }
 
 /** Тело PATCH /os-versions/{id}. Все поля опциональны. */
@@ -802,6 +805,7 @@ export interface OsVersionUpdateRequest {
   repositories?: string[] | null;
   kernels?: string[] | null;
   is_urgent_update?: boolean | null;
+  rc_number?: string | null;
 }
 
 /**

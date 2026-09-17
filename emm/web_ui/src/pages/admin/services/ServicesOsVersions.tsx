@@ -78,6 +78,7 @@ export function ServicesOsVersions() {
           repositories: ["https://download.astralinux.ru/astra/stable/1.7"],
           kernels: ["5.4.0-1"],
           is_urgent_update: false,
+          rc_number: "RC3",
           discovered_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
         },
@@ -88,6 +89,7 @@ export function ServicesOsVersions() {
           repositories: [],
           kernels: [],
           is_urgent_update: false,
+          rc_number: null,
           discovered_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
         },
@@ -322,6 +324,16 @@ function OsVersionDetail({
         }
       />
       <StatRow
+        k="rc_number"
+        v={
+          version.rc_number ? (
+            <span className="mono">{version.rc_number}</span>
+          ) : (
+            <span className="text-dim">не проставлен</span>
+          )
+        }
+      />
+      <StatRow
         k="discovered_at"
         v={<span className="mono">{formatMsk(version.discovered_at)}</span>}
       />
@@ -361,6 +373,7 @@ export function OsVersionForm({
   const [isUrgentUpdate, setIsUrgentUpdate] = useState(
     existing?.is_urgent_update ?? false,
   );
+  const [rcNumber, setRcNumber] = useState(existing?.rc_number ?? "");
   const [buildVersion, setBuildVersion] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -406,6 +419,7 @@ export function OsVersionForm({
           repositories: repos,
           kernels,
           is_urgent_update: isUrgentUpdate,
+          rc_number: rcNumber.trim() || null,
         };
         await updateOsVersion(existing.id, body);
         toast.success("Версия обновлена");
@@ -416,6 +430,7 @@ export function OsVersionForm({
           repositories: repos,
           kernels,
           is_urgent_update: isUrgentUpdate,
+          rc_number: rcNumber.trim() || undefined,
         };
         const created = await createOsVersion(body);
         toast.success("Версия зарегистрирована");
@@ -514,6 +529,18 @@ export function OsVersionForm({
             />
             <span>Срочное обновление (hotfix)</span>
           </label>
+        </FormRow>
+        <FormRow
+          label="rc_number"
+          hint="номер РЦ (legacy «RC3») — ручная метка, ничем не вычисляется; префикс заголовка end-of-run комментария в testing_service"
+        >
+          <input
+            className="input mono"
+            value={rcNumber}
+            onChange={(e) => setRcNumber(e.target.value)}
+            placeholder="RC3"
+            maxLength={32}
+          />
         </FormRow>
       </div>
       {err && <div className="alert-danger mt-3 text-xs">{err}</div>}

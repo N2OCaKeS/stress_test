@@ -33,6 +33,7 @@ const OS_A: OsVersion = {
   repositories: ["deb http://repo/orel stable main"],
   kernels: [],
   is_urgent_update: false,
+  rc_number: null,
   discovered_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };

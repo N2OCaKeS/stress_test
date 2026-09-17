@@ -22,7 +22,7 @@ from src.repositories import department_integration_settings as dis_repo
 from src.repositories import stp_cell as stp_cell_repo
 from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
-from src.services import changelog_service, secret_client, stp as stp_svc, zephyr_client
+from src.services import changelog_service, secret_client, server_client, stp as stp_svc, zephyr_client
 from src.services import queue as queue_svc
 from src.utils.ids import (
     department_integration_settings_id,
@@ -503,6 +503,26 @@ async def _seed_stp_test_case(code: str, *, zephyr_id="BT-T1"):
         })
         await db.commit()
         return obj.id
+
+
+@pytest.fixture(autouse=True)
+def mock_os_version_catalog(monkeypatch):
+    """`{os_version_id: name}` — карточка версии из server_service.
+
+    Autouse: `generate_stp_runs`/`_search_folder` резолвят человеческий номер
+    РЦ через `server_client.get_os_version` перед тем, как строить папку/имя
+    Zephyr-рана. Дефолт `name == id` сохраняет старые фикстуры, где id уже
+    записан человеческой версией (`"1.8.5.46"`). Дублирует одноимённую
+    фикстуру `test_stp_matrix.py`/`test_run_summary.py` — тот же приём, что и
+    `_derive_release` (крохотный хелпер дублируется, не импортируется).
+    """
+    names: dict[str, str] = {}
+
+    async def fake_get_os_version(os_version_id: str) -> dict:
+        return {"id": os_version_id, "name": names.get(os_version_id, os_version_id)}
+
+    monkeypatch.setattr(server_client, "get_os_version", fake_get_os_version)
+    return names
 
 
 @pytest.fixture

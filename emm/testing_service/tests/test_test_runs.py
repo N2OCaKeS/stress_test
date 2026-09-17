@@ -49,6 +49,7 @@ from tests.test_stp import (  # noqa: F401 — фикстуры переиспо
     _create_test_def_for_dept,
     _seed_integration_settings,
     _seed_stp_test_case,
+    mock_os_version_catalog,
     mock_secret_client,
     mock_zephyr,
 )

@@ -7,7 +7,8 @@ Zephyr, этот модуль только ЧИТАЕТ (`search_test_runs`/`get
 ни где-то ещё в этом модуле.
 
 Ключевой факт, на котором строится сопоставление: EMM сама называет свои
-Zephyr test-run'ы `f"{os_version_id}_{mode}_{kernel}_{stand_token}"`
+Zephyr test-run'ы `f"{rc_number}_{mode}_{kernel}_{stand_token}"` — первый
+токен человеческий номер РЦ, не внутренний `os_version_id`
 (`services/stp.py::_create_stand_run`), и легаси `allta_app` (`libs/zefir.py`,
 функция `dates()`) парсит имена ранее заведённых прогонов ТОЙ ЖЕ схемой:
 `name.replace('_', ' ').split(' ')`, token[0..3] = версия/режим/ядро/стенд.
@@ -58,7 +59,7 @@ from src.schemas.stp_pull_from_life import (
     StpPullRunComposition,
     StpPullRunResult,
 )
-from src.services import permissions, secret_client, zephyr_client
+from src.services import permissions, secret_client, server_client, zephyr_client
 from src.services.zephyr_client import ZephyrTestRunDetail, ZephyrTestRunSummary
 from src.utils.ids import stp_cell_id as new_cell_id
 from src.utils.ids import stp_pull_operation_id as new_pull_op_id
@@ -72,19 +73,21 @@ _STAND_NOT_FOUND = "STAND_NOT_FOUND"
 _STAND_WRONG_DEPARTMENT = "STAND_WRONG_DEPARTMENT"
 
 
-def _derive_release(os_version_id: str) -> str:
+def _derive_release(rc_number: str) -> str:
     """Дублирует `services/stp.py::_derive_release` — тот же приём, что и
     `stp_add_test.py::_resolve_jira_ctx` уже применяет к `_resolve_jira_bearer`:
     крохотный чистый хелпер дублируется, а не импортируется из чужой зоны.
 
     Правило легаси: 4 сегмента → первые три, хотфикс из 6 сегментов с `UU` на
     четвёртом месте → первые пять. Поиск обязан ходить в ту же папку, в
-    которую пишет `stp.py`, иначе легаси-раны не находятся.
+    которую пишет `stp.py`, иначе легаси-раны не находятся. Принимает
+    человеческий номер РЦ (`rc_number`), не `os_version_id` — резолвится
+    вызывающим через `server_client.resolve_os_version_name`.
     """
-    parts = os_version_id.split(".")
+    parts = rc_number.split(".")
     if len(parts) == 6 and parts[3] == "UU":
         return ".".join(parts[:5])
-    return ".".join(parts[:3]) if len(parts) >= 3 else os_version_id
+    return ".".join(parts[:3]) if len(parts) >= 3 else rc_number
 
 
 async def _resolve_jira_ctx(db: AsyncSession, department_id: str) -> tuple[str, str] | None:
@@ -110,7 +113,7 @@ async def _resolve_jira_ctx(db: AsyncSession, department_id: str) -> tuple[str, 
 
 
 def parse_run_name(name: str) -> tuple[str, str, str, str] | None:
-    """`"{os_version_id}_{mode}_{kernel}_{stand_token}"` → 4-tuple, либо `None`,
+    """`"{rc_number}_{mode}_{kernel}_{stand_token}"` → 4-tuple, либо `None`,
     если имя не подходит под эту конвенцию (§D8 — тогда caller кладёт запись в
     ведро «нужна ручная сверка», не падает и не пропускает её молча).
 
@@ -177,8 +180,9 @@ async def _search_folder(
             message="department_integration_settings not configured or credential reveal failed",
         )
     base_url, bearer_token = jira_ctx
-    release = _derive_release(os_version_id)
-    folder = f"/stress_test/{release}/{os_version_id}"
+    rc_number = await server_client.resolve_os_version_name(os_version_id)
+    release = _derive_release(rc_number)
+    folder = f"/stress_test/{release}/{rc_number}"
     summaries = await zephyr_client.search_test_runs(base_url=base_url, bearer_token=bearer_token, folder=folder)
     return base_url, bearer_token, folder, summaries
 

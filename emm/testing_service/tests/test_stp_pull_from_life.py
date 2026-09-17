@@ -24,7 +24,12 @@ from src.utils.ids import stp_cell_id as new_cell_id
 from src.utils.ids import stp_test_case_id as new_case_id
 from tests.conftest import auth_hdr as _hdr
 from tests.test_queue import _create_stand, mock_server_service, recorded_calls  # noqa: F401
-from tests.test_stp import STP_BASE, _seed_integration_settings, mock_secret_client  # noqa: F401
+from tests.test_stp import (  # noqa: F401
+    STP_BASE,
+    _seed_integration_settings,
+    mock_os_version_catalog,
+    mock_secret_client,
+)
 
 PULL_BASE = STP_BASE + "/pull-from-life"
 

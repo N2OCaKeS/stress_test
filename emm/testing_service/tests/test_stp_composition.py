@@ -24,6 +24,7 @@ from tests.test_stp import (
     _create_test_def_for_dept,
     _seed_integration_settings,
     _seed_stp_test_case,
+    mock_os_version_catalog,  # noqa: F401
     mock_secret_client,  # noqa: F401
     mock_zephyr,  # noqa: F401
 )

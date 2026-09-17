@@ -50,7 +50,7 @@ from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
 from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_stand as test_stand_repo
-from src.services import audit_service, changelog_service, permissions, secret_client, zephyr_client
+from src.services import audit_service, changelog_service, permissions, secret_client, server_client, zephyr_client
 from src.services.zephyr_client import ZephyrRunItem
 from src.utils.ids import stp_cell_id as new_cell_id
 from src.utils.ids import stp_composition_id as new_composition_id
@@ -180,8 +180,8 @@ async def get_stp_composition_effective(
 
 async def _create_stand_run(
     db: AsyncSession, *,
-    department_id: str, os_version_id: str, mode: str, kernel: str, stand_id: str, release: str,
-    stand_token: str,
+    department_id: str, os_version_id: str, rc_number: str, mode: str, kernel: str, stand_id: str,
+    release: str, stand_token: str,
     pairs: list[tuple],
     target_codes: set[str],
 ) -> tuple[StpTestRun | None, dict | None]:
@@ -211,10 +211,11 @@ async def _create_stand_run(
             test_case_key=case.zephyr_id, environment=kernel, assigned_to_key=assignee_key,
         ))
 
-    folder = f"/stress_test/{release}/{os_version_id}"
-    # Четвёртый сегмент — человеческое имя стенда (`stand3`), как у легаси:
-    # по нему же `stp_pull_from_life` разбирает чужие раны обратно.
-    name = f"{os_version_id}_{mode}_{kernel}_{stand_token}"
+    folder = f"/stress_test/{release}/{rc_number}"
+    # Первый сегмент имени — человеческий номер РЦ (не внутренний
+    # os_version_id), как у легаси; четвёртый — человеческое имя стенда
+    # (`stand3`), по нему же `stp_pull_from_life` разбирает чужие раны обратно.
+    name = f"{rc_number}_{mode}_{kernel}_{stand_token}"
     try:
         zephyr_test_run_key = await zephyr_client.create_test_run(
             base_url=base_url, bearer_token=bearer_token, folder=folder, name=name, items=items,
@@ -332,7 +333,8 @@ async def _reconcile_existing_run(
 
 
 async def _reconcile_stand_runs(
-    db: AsyncSession, *, os_version_id: str, mode: str, kernel: str, scope: str, department_id: str,
+    db: AsyncSession, *, os_version_id: str, rc_number: str, mode: str, kernel: str, scope: str,
+    department_id: str,
 ) -> tuple[list[StpTestRun], list[dict]]:
     tests = await test_definition_repo.list_by_department_pinned(db, department_id)
     # Полный набор — это все тесты со статусом «Рабочий» и СВОИМ режимом,
@@ -355,7 +357,7 @@ async def _reconcile_stand_runs(
     for t in tests:
         by_stand[t.pinned_stand_id].append(t)
 
-    release = _derive_release(os_version_id)
+    release = _derive_release(rc_number)
     stand_tokens = {
         s.id: (s.legacy_token or s.id)
         for s in await test_stand_repo.list_by_ids(db, list(by_stand.keys()))
@@ -383,8 +385,8 @@ async def _reconcile_stand_runs(
 
         if existing_run is None:
             run, error = await _create_stand_run(
-                db, department_id=department_id, os_version_id=os_version_id, mode=mode, kernel=kernel,
-                stand_id=stand_id, release=release,
+                db, department_id=department_id, os_version_id=os_version_id, rc_number=rc_number,
+                mode=mode, kernel=kernel, stand_id=stand_id, release=release,
                 stand_token=stand_tokens.get(stand_id, stand_id),
                 pairs=pairs, target_codes=target_codes,
             )
@@ -440,20 +442,23 @@ async def generate_stp_runs(
     )
 
     if kernel is None or mode is None:
-        from src.services import server_client
         kernels = [kernel] if kernel else await server_client.resolve_os_kernels(os_version_id)
         modes = [mode] if mode else ["orel", "smolensk"]
     else:
         kernels = [kernel]
         modes = [mode]
 
+    # Резолвится один раз на вызов (не на каждую пару режим/ядро) — Jira видит
+    # человеческую версию РЦ, не внутренний id каталога ОС.
+    rc_number = await server_client.resolve_os_version_name(os_version_id)
+
     all_runs: list[StpTestRun] = []
     all_errors: list[dict] = []
     for selected_kernel in kernels:
         for selected_mode in modes:
             runs, errors = await _reconcile_stand_runs(
-                db, os_version_id=os_version_id, mode=selected_mode, kernel=selected_kernel,
-                scope=scope, department_id=department_id,
+                db, os_version_id=os_version_id, rc_number=rc_number, mode=selected_mode,
+                kernel=selected_kernel, scope=scope, department_id=department_id,
             )
             all_runs.extend(runs)
             all_errors.extend(errors)

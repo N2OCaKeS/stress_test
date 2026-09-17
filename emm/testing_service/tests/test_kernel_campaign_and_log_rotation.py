@@ -68,6 +68,7 @@ async def test_stp_only_os_discovers_kernels_and_all_modes(
     await _seed_stp_test_case(code_smolensk, zephyr_id="BT-T2")
     discover = AsyncMock(return_value=["6.1.1-1-generic", "6.1.1-1-lowlatency"])
     monkeypatch.setattr(server_client, "resolve_os_kernels", discover)
+    monkeypatch.setattr(server_client, "get_os_version", AsyncMock(return_value={"name": "1.7.1.44"}))
     monkeypatch.setattr(stp, "_filter_by_changelog", AsyncMock(side_effect=lambda db, tests, rc, scope: tests))
     monkeypatch.setattr(secret_client, "reveal_credential", AsyncMock(return_value=("test_user", "test_token")))
     create = AsyncMock(side_effect=["BT-R1", "BT-R2", "BT-R3", "BT-R4"])

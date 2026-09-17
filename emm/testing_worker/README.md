@@ -13,9 +13,11 @@ MIGRATION.md`, §5/§5.5). Работа идёт не через taskiq task-han
 фоновый asyncio-loop (`src/services/queue_loop.py`), который в цикле:
 
 1. забирает готовое задание (`POST /internal/queue/claim`);
-2. подключается к стенду по SSH под тестовыми кредами и исполняет
+2. кладёт на стенд по SFTP сам `starter.sh` (`src/assets/starter.sh` →
+   `/home/u/starter.sh`) и, если задание его несёт, `dates`-файл;
+3. подключается к стенду по SSH под тестовыми кредами и исполняет
    резолвленную команду (`src/services/ssh_executor.py`, `asyncssh`);
-3. сообщает исход (`POST /internal/queue/{id}/completed`).
+4. сообщает исход (`POST /internal/queue/{id}/completed`).
 
 `system.ping` остаётся как смоук-задача (не убран — не мешает, оставлен на
 случай если понадобится проверить, что broker вообще слушает очередь).
@@ -51,6 +53,8 @@ make run-testing-worker
 ```
 src/
   main.py           # broker + logging setup + WORKER_STARTUP/SHUTDOWN хуки polling-loop'а
+  assets/
+    starter.sh       # скрипт запуска теста, байт-в-байт из легаси allta_app; едет на стенд перед каждым прогоном
   core/
     broker.py        # taskiq ListQueueBroker + Redis result backend
     config.py         # Settings: REDIS_URL, TASKIQ_QUEUE_NAME, TESTING_SERVICE_URL/KEY, таймауты SSH, poll interval
@@ -58,7 +62,7 @@ src/
     http.py             # bearer_header() хелпер
     logging.py        # JSON-структурированное логирование (копия testing_service/src/core/logging.py)
   services/
-    queue_loop.py      # run_polling_loop() — claim → execute → report_completed, без сна между item'ами
+    queue_loop.py      # run_polling_loop() — claim → доставка starter.sh/dates → execute → report_completed, без сна между item'ами
     testing_client.py  # POST /internal/queue/claim, /internal/queue/{id}/completed
     ssh_executor.py     # asyncssh-исполнение резолвленной команды (shlex.join, без shell=True)
   tasks/

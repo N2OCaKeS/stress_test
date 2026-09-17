@@ -11,12 +11,17 @@
 
 1. `testing_client.claim()` — если очередь пуста (или testing_service
    недоступен), `item is None` → короткий сон и следующая попытка.
-2. Если `item` несёт `dates_content` — `ssh_executor.write_remote_file(...)`
-   кладёт его по SFTP на стенд (`/home/u/<dates_filename>`) ДО запуска
-   команды: `starter.sh` читает этот файл с диска, значит он обязан там
-   оказаться раньше. Провал записи — фатален для item'а целиком, `execute()`
-   не вызывается вообще, сразу `report_completed(succeeded=False)`.
-3. `ssh_executor.execute(...)` под кредами и хостом из `item` — единственный
+2. `ssh_executor.write_remote_file(...)` кладёт на стенд сам `starter.sh`
+   (`/home/u/starter.sh`, содержимое — `src/assets/starter.sh`). Стенд перед
+   прогоном откатывается на образ, поэтому рассчитывать на оставшуюся с
+   прошлого раза копию скрипта нельзя: команда `sudo bash /home/u/starter.sh`
+   запускает ровно тот файл, который положили здесь.
+3. Если `item` несёт `dates_content` — тем же способом на стенд уходит
+   `/home/u/<dates_filename>`: `starter.sh` читает этот файл с диска, значит
+   он обязан там оказаться раньше. Провал любой из двух записей — фатален для
+   item'а целиком, `execute()` не вызывается вообще, сразу
+   `report_completed(succeeded=False)`.
+4. `ssh_executor.execute(...)` под кредами и хостом из `item` — единственный
    SSH-вызов `sudo bash /home/u/starter.sh ...` (что именно исполняется,
    собрал `testing_service`, здесь просто argv). Пока команда выполняется,
    каждый накопленный кусок вывода уходит наружу через
@@ -27,14 +32,14 @@
    уходит kill (`sudo pkill -f starter.sh`), исполнение отменяется, и вместо
    обычного исхода уходит `completed(interrupted=...)`. Обрыв SSH-канала сам
    по себе процесс под `sudo` не гасит, поэтому kill именно явный.
-4. Если до исполнения дело дошло (`result.connected`) — один
+5. Если до исполнения дело дошло (`result.connected`) — один
    `testing_client.log_segment(...)` на весь тест, с полным выводом и
    замаскированной командой (`command_masked`, посчитан `testing_service`'ом
    при `claim`, см. §8.1). Провал на уровне SSH-коннекта сегмента не
    заводит — `completed(succeeded=False)` сам по себе достаточно
    информативен для этого случая.
-5. `testing_client.report_completed(...)` с исходом.
-6. Сразу следующая итерация, без сна — под нагрузкой воркер вычерпывает
+6. `testing_client.report_completed(...)` с исходом.
+7. Сразу следующая итерация, без сна — под нагрузкой воркер вычерпывает
    очередь максимально быстро; пауза нужна только когда реально нечего делать.
 
 Тело цикла обёрнуто в `try/except Exception`: неожиданная ошибка (баг в
@@ -49,6 +54,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import shlex
+from functools import lru_cache
+from pathlib import Path
 
 import asyncssh
 
@@ -58,6 +65,63 @@ from src.services import ssh_executor, testing_client
 logger = logging.getLogger("testing_worker.queue_loop")
 
 _COMMAND_SEGMENT_LABEL = "Выполнение теста"
+
+# Куда кладём скрипт на стенде. Тот же путь зашит в команду запуска на стороне
+# testing_service (`services/queue.py`, `_STARTER_SCRIPT_PATH`) — два конца
+# одного контракта, менять их можно только вместе.
+_STARTER_REMOTE_PATH = "/home/u/starter.sh"
+
+# Эталонный текст скрипта лежит рядом с кодом воркера и едет в образ вместе с
+# `src/` (см. docker/Dockerfile) — никаких загрузок по сети в момент запуска
+# теста.
+_STARTER_ASSET_PATH = Path(__file__).resolve().parents[1] / "assets" / "starter.sh"
+
+# Типы, которыми SFTP-запись сигналит о провале: ошибка протокола/канала,
+# сетевой обрыв, невалидный ключ (ValueError из write_remote_file) и таймаут.
+_WRITE_ERRORS = (asyncssh.Error, OSError, ValueError, asyncio.TimeoutError, TimeoutError)
+
+
+@lru_cache(maxsize=1)
+def _starter_script_content() -> str:
+    """Текст `starter.sh` с диска, прочитанный один раз за жизнь процесса."""
+    return _STARTER_ASSET_PATH.read_text(encoding="utf-8")
+
+
+async def _write_starter_script(item: dict, settings) -> str | None:
+    """SFTP-запись самого `starter.sh` на стенд перед его запуском.
+
+    Скрипт обязан приезжать на стенд каждый раз, а не считаться «уже там
+    лежащим»: перед прогоном стенд откатывается на образ (ACS/revert в
+    `prepare-for-test`), и что именно осталось в `/home/u` после отката —
+    свойство образа, а не нашей системы. Легаси по той же причине перезаливало
+    его на каждый запуск (`allta_app/backup_image.py:932,992`).
+
+    Контракт возврата — как у `_write_dates_file`: текст ошибки либо `None`.
+    """
+    try:
+        content = _starter_script_content()
+    except OSError as exc:
+        # Битая сборка образа (файл не доехал в `src/assets`) — чинится
+        # пересборкой, но item всё равно завершаем честным провалом.
+        logger.error("starter.sh asset is unreadable at %s: %s", _STARTER_ASSET_PATH, exc)
+        return f"starter.sh asset unreadable: {type(exc).__name__}"
+
+    try:
+        await ssh_executor.write_remote_file(
+            item["host"],
+            item["test_username"],
+            item["test_ssh_private_key"],
+            _STARTER_REMOTE_PATH,
+            content,
+            connect_timeout=settings.ssh_connect_timeout_seconds,
+        )
+    except _WRITE_ERRORS as exc:
+        logger.warning(
+            "queue item %s: failed to write %s over SFTP: %s",
+            item.get("queue_item_id"), _STARTER_REMOTE_PATH, type(exc).__name__,
+        )
+        return f"SFTP write of starter.sh failed: {type(exc).__name__}"
+    return None
 
 
 async def _write_dates_file(item: dict, settings) -> str | None:
@@ -84,7 +148,7 @@ async def _write_dates_file(item: dict, settings) -> str | None:
             dates_content,
             connect_timeout=settings.ssh_connect_timeout_seconds,
         )
-    except (asyncssh.Error, OSError, ValueError, asyncio.TimeoutError, TimeoutError) as exc:
+    except _WRITE_ERRORS as exc:
         logger.warning(
             "queue item %s: failed to write %s (%d bytes) over SFTP: %s",
             item.get("queue_item_id"), remote_path, len(dates_content), type(exc).__name__,
@@ -188,7 +252,11 @@ async def _run_one_item(item: dict) -> None:
     settings = get_settings()
     queue_item_id = item["queue_item_id"]
 
-    write_error = await _write_dates_file(item, settings)
+    # Сначала сам скрипт, потом его аргумент-файл — обе записи обязательны,
+    # первая же осечка заканчивает item, не доводя до `execute()`.
+    write_error = await _write_starter_script(item, settings)
+    if write_error is None:
+        write_error = await _write_dates_file(item, settings)
     if write_error is not None:
         await testing_client.report_completed(
             queue_item_id, succeeded=False, exit_code=None, error=write_error,

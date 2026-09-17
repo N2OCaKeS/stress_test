@@ -1475,4 +1475,4 @@ main()
     echo "OS CSV:   $os_csv"
 }
 
-main "$@"
+main "$1"

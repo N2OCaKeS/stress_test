@@ -15,6 +15,7 @@ from kernel_conf import (
     VM_TEST1_OUTPUT,
     VM_TEST2_OUTPUT,
     RESULTS_FILE,
+    USAGE_OS_IDLE_CSV,
     USAGE_OS_LOAD_CSV,
     USAGE_OS_MATH_MODEL_FILE,
     USAGE_OS_MATH_MODEL_METRICS,
@@ -542,9 +543,18 @@ class UsageOSResources:
     def start_test(self):
         print("\n\n\nНачинаем выполнение теста\n\n\n")
         print("\n\n\nСбор метрик без нагрузки\n\n\n")
-        SystemCommands.check_output_command(f"cd /home/u/git/stress_test/kernel/provision/ && sudo bash ./usage_os_resources.sh idle {self.testdir}/results")
+        idle_output = SystemCommands.check_output_command(f"cd /home/u/git/stress_test/kernel/provision/ && sudo bash ./usage_os_resources.sh idle {self.testdir}/results")
+        print(idle_output)
         print("\n\n\nСбор метрик с нагрузкой\n\n\n")
-        SystemCommands.check_output_command(f"cd /home/u/git/stress_test/kernel/provision/ && sudo bash ./usage_os_resources.sh load {self.testdir}/results")
+        load_output = SystemCommands.check_output_command(f"cd /home/u/git/stress_test/kernel/provision/ && sudo bash ./usage_os_resources.sh load {self.testdir}/results")
+        print(load_output)
+
+        if not Path(USAGE_OS_IDLE_CSV).is_file() or not Path(USAGE_OS_LOAD_CSV).is_file():
+            raise RuntimeError(
+                "usage_os_resources.sh не создал idle_os.csv/load_os.csv — тест не выполнен.\n"
+                f"Вывод idle:\n{idle_output}\n\nВывод load:\n{load_output}"
+            )
+
         print("\n\n\nТест завершен\n\n\n")
 
 

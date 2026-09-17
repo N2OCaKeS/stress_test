@@ -57,6 +57,7 @@ import { ServicesSecretAccess } from "./services/ServicesSecretAccess";
 import { ServicesSecretPermissions } from "./services/ServicesSecretPermissions";
 import { ServicesTestingPermissions } from "./services/ServicesTestingPermissions";
 import { ServicesTestingStands } from "./services/ServicesTestingStands";
+import { ServicesTestingSprintBoard } from "./services/ServicesTestingSprintBoard";
 import { ServicesStatisticsSettings } from "./services/ServicesStatisticsSettings";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
@@ -415,6 +416,17 @@ const STATIC_ITEMS: AdminItem[] = [
     content: ServicesTestingPermissions,
     visibleFor: (p) =>
       isAccountAdmin(p) || isDepAdmin(p) || hasTestingServiceAdmin(p),
+  },
+
+  {
+    id: "services.testing.sprint_board",
+    label: "Доска спринта",
+    hint: "Read-only зеркало активного спринта Jira отдела",
+    icon: Layers,
+    block: "services",
+    group: "testing",
+    content: ServicesTestingSprintBoard,
+    visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
   },
 
   // Services block — loging (service-specific pages; roles are dynamic).

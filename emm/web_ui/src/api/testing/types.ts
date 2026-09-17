@@ -312,6 +312,39 @@ export interface DepartmentIntegrationSettingsUpdateRequest {
   stp_matrix_confluence_root_page_title?: string | null;
 }
 
+// ── jira sprint board ─────────────────────────────────────────────────────
+
+/** Одна карточка issue на доске спринта. */
+export interface JiraSprintBoardIssue {
+  key: string;
+  summary: string;
+  status: string;
+  status_category: string | null;
+  assignee: string | null;
+  issue_type: string | null;
+}
+
+/** Колонка доски — все issue спринта с одинаковым статусом. */
+export interface JiraSprintBoardColumn {
+  status: string;
+  issues: JiraSprintBoardIssue[];
+}
+
+export interface JiraSprintInfo {
+  id: number;
+  name: string;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+/** Ответ `GET /department-integration-settings/{department_id}/sprint-board`. */
+export interface JiraSprintBoard {
+  configured: boolean;
+  sprint: JiraSprintInfo | null;
+  columns: JiraSprintBoardColumn[];
+  warning: string | null;
+}
+
 // ── department-report-members ─────────────────────────────────────────────
 
 /** Сотрудник отдела, учитываемый HR-отчётом по активности. */

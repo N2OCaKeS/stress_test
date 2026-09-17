@@ -14,6 +14,7 @@ vi.mock("@/api/client", async (importOriginal) => {
 
 import {
   getDepartmentIntegrationSettings,
+  getDepartmentSprintBoard,
   upsertDepartmentIntegrationSettings,
 } from "@/api/testing/departmentIntegrationSettings";
 
@@ -38,6 +39,13 @@ describe("departmentIntegrationSettings wrappers", () => {
     expect(apiPutMock).toHaveBeenCalledWith(
       "/testing/v1/department-integration-settings/dep_1",
       body,
+    );
+  });
+
+  it("sprint-board — GET по department_id", async () => {
+    await getDepartmentSprintBoard("dep_1");
+    expect(apiGetMock).toHaveBeenCalledWith(
+      "/testing/v1/department-integration-settings/dep_1/sprint-board",
     );
   });
 });

@@ -14,6 +14,7 @@ import { apiGet, apiPut } from "@/api/client";
 import type {
   DepartmentIntegrationSettings,
   DepartmentIntegrationSettingsUpdateRequest,
+  JiraSprintBoard,
 } from "@/api/testing/types";
 
 const BASE = "/testing/v1";
@@ -38,5 +39,18 @@ export function upsertDepartmentIntegrationSettings(
   return apiPut<DepartmentIntegrationSettings>(
     `${BASE}/department-integration-settings/${departmentId}`,
     body,
+  );
+}
+
+/**
+ * `GET /department-integration-settings/{department_id}/sprint-board` —
+ * read-only зеркало доски активного спринта Jira отдела, сгруппированное по
+ * статусу. Ничего не пишет в Jira. Отсутствие настройки/активного спринта/
+ * недоступность Jira отдаётся телом с `configured: false` либо непустым
+ * `warning`, не HTTP-ошибкой.
+ */
+export function getDepartmentSprintBoard(departmentId: string): Promise<JiraSprintBoard> {
+  return apiGet<JiraSprintBoard>(
+    `${BASE}/department-integration-settings/${departmentId}/sprint-board`,
   );
 }

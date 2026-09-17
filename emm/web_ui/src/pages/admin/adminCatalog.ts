@@ -16,6 +16,8 @@ import {
   HardDrive,
   KeyRound,
   Layers,
+  Link2,
+  ListChecks,
   LockOpen,
   ScanSearch,
   ServerIcon,
@@ -58,6 +60,9 @@ import { ServicesSecretPermissions } from "./services/ServicesSecretPermissions"
 import { ServicesTestingPermissions } from "./services/ServicesTestingPermissions";
 import { ServicesTestingStands } from "./services/ServicesTestingStands";
 import { ServicesTestingSprintBoard } from "./services/ServicesTestingSprintBoard";
+import { ServicesTestingIntegrationSettings } from "./services/ServicesTestingIntegrationSettings";
+import { ServicesTestingQueueSettings } from "./services/ServicesTestingQueueSettings";
+import { ServicesTestingReportMembers } from "./services/ServicesTestingReportMembers";
 import { ServicesStatisticsSettings } from "./services/ServicesStatisticsSettings";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
@@ -400,6 +405,39 @@ const STATIC_ITEMS: AdminItem[] = [
     block: "services",
     group: "testing",
     content: ServicesStatisticsSettings,
+    visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
+  },
+
+  {
+    id: "services.testing.integration_settings",
+    label: "Интеграции отдела",
+    hint: "Jira / Confluence / Bitbucket — базовые URL и credential id",
+    icon: Link2,
+    block: "services",
+    group: "testing",
+    content: ServicesTestingIntegrationSettings,
+    visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
+  },
+
+  {
+    id: "services.testing.queue_settings",
+    label: "Очередь и повторы",
+    hint: "Ретрай прогонов и учётка исполнения теста на стенде",
+    icon: ListChecks,
+    block: "services",
+    group: "testing",
+    content: ServicesTestingQueueSettings,
+    visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
+  },
+
+  {
+    id: "services.testing.report_members",
+    label: "Сотрудники для отчёта",
+    hint: "Кто учитывается в HR-отчёте по активности отдела",
+    icon: Users,
+    block: "services",
+    group: "testing",
+    content: ServicesTestingReportMembers,
     visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
   },
 

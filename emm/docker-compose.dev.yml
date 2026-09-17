@@ -483,7 +483,7 @@ services:
       TESTING_SERVICE_URL: http://testing_service:8004
       TESTING_SERVICE_INTERNAL_API_KEY: dev-testing-worker-internal-key-do-not-use-in-prod
       WORKER_LOG_LEVEL: INFO
-    command: ["taskiq", "worker", "src.main:broker"]
+    command: ["taskiq", "worker", "src.main:broker", "--workers", "2"]
     volumes:
       - ./testing_worker/src:/app/src
     depends_on:

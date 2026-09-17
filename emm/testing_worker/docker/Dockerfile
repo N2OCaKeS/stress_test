@@ -24,4 +24,4 @@ RUN poetry install --only main --no-root
 
 COPY src ./src
 
-CMD ["taskiq", "worker", "src.main:broker"]
+CMD ["taskiq", "worker", "src.main:broker", "--workers", "2"]

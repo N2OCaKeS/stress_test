@@ -3,6 +3,13 @@
 # 60-server-worker.yaml относительно 50-server-service.yaml. В отличие от
 # server-worker у testing-worker пока нет своей БД — ConfigMap и env
 # ограничены Redis-брокером + каналом очереди testing_service.
+#
+# `--workers 2` (как у server-worker) — без этого один процесс держит очередь
+# строго последовательной по всем стендам сразу: пока идёт тест на одном
+# стенде, `ready`-item другого стенда ждёт claim'а и рискует не уложиться в
+# `CREDS_STASH_TTL_SECONDS` (10 минут). `claim_next_ready()` берёт item
+# `SELECT ... FOR UPDATE SKIP LOCKED` — конкурентные процессы не мешают друг
+# другу и не могут забрать один item дважды, это штатно поддерживаемый режим.
 
 apiVersion: v1
 kind: ConfigMap
@@ -79,7 +86,7 @@ spec:
             - name: TESTING_SERVICE_INTERNAL_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: TESTING_SERVICE_INTERNAL_API_KEY }
-          command: ["taskiq", "worker", "src.main:broker"]
+          command: ["taskiq", "worker", "src.main:broker", "--workers", "2"]
           volumeMounts:
             - name: tmp
               mountPath: /tmp

@@ -505,17 +505,33 @@ class TestCampaignAggregation:
         ]) == RunStatus.RUNNING
         assert test_run_status.compute_status([QueueItemState.PAUSED]) == RunStatus.RUNNING
 
-    def test_skipped_is_terminal_but_not_an_outcome(self):
-        # Все элементы терминальны, исходы разные → partially_failed; отдельный
-        # агрегатный статус «частично пропущено» осознанно не заводится.
+    def test_skipped_does_not_fail_the_campaign(self):
+        # Пропуск — решение оператора, а не провал теста: без единого FAILED
+        # кампания успешна. Сколько именно пропущено, видно из progress.skipped.
         assert test_run_status.compute_status([
             QueueItemState.SKIPPED, QueueItemState.SUCCEEDED,
-        ]) == RunStatus.PARTIALLY_FAILED
+        ]) == RunStatus.SUCCEEDED
+        assert test_run_status.compute_status([
+            QueueItemState.SKIPPED,
+        ]) == RunStatus.SUCCEEDED
+        assert test_run_status.compute_status([
+            QueueItemState.SUCCEEDED,
+        ]) == RunStatus.SUCCEEDED
+
+    def test_real_failure_still_shows_through(self):
+        # Отдельный агрегатный статус «частично пропущено» не заводится, но
+        # настоящий провал обязан остаться видимым.
+        assert test_run_status.compute_status([
+            QueueItemState.FAILED,
+        ]) == RunStatus.FAILED
         assert test_run_status.compute_status([
             QueueItemState.SKIPPED, QueueItemState.FAILED,
         ]) == RunStatus.PARTIALLY_FAILED
         assert test_run_status.compute_status([
-            QueueItemState.SKIPPED,
+            QueueItemState.SUCCEEDED, QueueItemState.FAILED, QueueItemState.SKIPPED,
+        ]) == RunStatus.PARTIALLY_FAILED
+        assert test_run_status.compute_status([
+            QueueItemState.SUCCEEDED, QueueItemState.FAILED,
         ]) == RunStatus.PARTIALLY_FAILED
 
     def test_mixed_skipped_and_paused_is_still_running(self):
@@ -568,6 +584,6 @@ async def test_skip_of_a_campaign_item_recomputes_the_campaign_status(
     assert (await _get_item(item.id)).state == QueueItemState.SKIPPED
 
     async with AsyncSessionLocal() as db:
-        # Единственный элемент кампании терминален, но исхода не дал —
-        # существующая агрегация кладёт это в partially_failed.
-        assert (await db.get(TestRun, run_id)).status == RunStatus.PARTIALLY_FAILED
+        # Единственный элемент кампании пропущен — провалов нет, значит и
+        # кампания не провалена.
+        assert (await db.get(TestRun, run_id)).status == RunStatus.SUCCEEDED

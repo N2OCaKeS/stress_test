@@ -209,6 +209,39 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     expect(screen.getByText("Выполнено", { selector: "span.badge" })).toBeInTheDocument();
   });
 
+  it("пропущенный элемент показывается нейтрально, остановленный — как «На паузе»", async () => {
+    getTestRunMock.mockResolvedValue({
+      ...DETAIL,
+      progress: { total: 3, succeeded: 1, failed: 0, running: 0, skipped: 1, paused: 1 },
+      queue_items: [
+        { ...DETAIL.queue_items[1], queue_item_id: "qi_ok" },
+        { ...DETAIL.queue_items[0], queue_item_id: "qi_skip", state: "skipped" },
+        { ...DETAIL.queue_items[0], queue_item_id: "qi_pause", state: "paused" },
+      ],
+    });
+    renderHarness();
+    await screen.findByText("run_1");
+
+    const skipped = await screen.findByText("Пропущено", { selector: "span.badge" });
+    expect(skipped).toBeInTheDocument();
+    // Пропуск — не провал: бейдж не должен быть danger-красным.
+    expect(skipped.className).not.toContain("danger");
+    expect(screen.getByText("На паузе", { selector: "span.badge" })).toBeInTheDocument();
+    // Сырое имя состояния наружу больше не протекает.
+    expect(screen.queryByText("skipped", { selector: "span.badge" })).not.toBeInTheDocument();
+  });
+
+  it("строка прогресса показывает количество пропущенных", async () => {
+    getTestRunMock.mockResolvedValue({
+      ...DETAIL,
+      progress: { total: 3, succeeded: 1, failed: 0, running: 1, skipped: 2 },
+    });
+    renderHarness();
+    expect(
+      await screen.findByText(/Успешно: 1 · С ошибкой: 0 · Пропущено: 2 · Выполняются: 1/),
+    ).toBeInTheDocument();
+  });
+
   it("клик по второй кампании выбирает её и подгружает её детали", async () => {
     renderHarness();
     await screen.findByText("run_1");

@@ -51,16 +51,21 @@ def compute_status(states: list[str]) -> str:
 
     Пустой список (ни один стенд пула не дал ни одного item'а — все стенды
     оказались без закреплённых тестов) — `queued`, кампания заведена, но
-    работать ей не над чем. Любой нетерминальный item — `running`. Все
-    терминальны и совпадают — `succeeded`/`failed`. Терминальны, но
-    расходятся — `partially_failed`.
+    работать ей не над чем. Любой нетерминальный item — `running`.
+
+    Из терминальных исходов к провалу тянет только `FAILED`: чистый `FAILED`
+    даёт `failed`, `FAILED` вперемешку с чем угодно — `partially_failed`. Всё
+    остальное (`SUCCEEDED`, `SUCCEEDED` + `SKIPPED`, да хоть сплошной
+    `SKIPPED`) — `succeeded`: пропуск это решение оператора, а не провал
+    теста. Отдельного агрегатного статуса под пропуск не заводим — сколько
+    item'ов пропущено, видно из `progress.skipped` в карточке прогона.
     """
     if not states:
         return TestRunStatus.QUEUED
     if any(state in ACTIVE_QUEUE_STATES for state in states):
         return TestRunStatus.RUNNING
     outcomes = set(states)
-    if outcomes == {QueueItemState.SUCCEEDED}:
+    if QueueItemState.FAILED not in outcomes:
         return TestRunStatus.SUCCEEDED
     if outcomes == {QueueItemState.FAILED}:
         return TestRunStatus.FAILED

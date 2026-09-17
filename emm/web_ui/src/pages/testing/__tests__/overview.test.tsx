@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ToastProvider } from "@/contexts/ToastContext";
@@ -132,6 +132,22 @@ function renderOverview(runsState: RunsState = fakeRunsState()) {
       </ThemeProvider>
     </MemoryRouter>,
   );
+}
+
+/**
+ * Нажать кнопку в открытом ConfirmDialog. Ищем именно его, а не первый
+ * попавшийся `role="dialog"`: confirm может всплыть поверх модалки очереди,
+ * и тогда на странице два диалога сразу.
+ */
+async function clickInConfirm(label: RegExp) {
+  const dialog = await screen.findByText(/будет принудительно убит/);
+  const box = dialog.closest(".modal-content") as HTMLElement | null;
+  if (!box) throw new Error("ConfirmDialog не найден");
+  // Клик резолвит промис confirm'а, продолжение которого само дёргает
+  // состояние — без act вокруг него React ругается на обновление вне act.
+  await act(async () => {
+    fireEvent.click(within(box).getByRole("button", { name: label }));
+  });
 }
 
 describe("TestingOverview — mock mode (demo)", () => {
@@ -321,19 +337,39 @@ describe("TestingOverview — live mode (testing_service)", () => {
     expect(screen.queryByRole("button", { name: /Продолжить/ })).not.toBeInTheDocument();
   });
 
-  it("«Пропустить» зовёт skip по id активного item'а", async () => {
+  it("«Пропустить» зовёт skip по id активного item'а после подтверждения", async () => {
     mockQueues([queueItem({ id: "qi_42" })]);
     renderOverview();
     fireEvent.click(await screen.findByRole("button", { name: /Пропустить/ }));
+    expect(await screen.findByText("Пропустить тест")).toBeInTheDocument();
+    expect(skipQueueItemMock).not.toHaveBeenCalled();
+    await clickInConfirm(/Пропустить/);
     await waitFor(() => expect(skipQueueItemMock).toHaveBeenCalledWith("qi_42"));
     expect(pauseQueueItemMock).not.toHaveBeenCalled();
   });
 
-  it("«Остановить» зовёт pause по id активного item'а", async () => {
+  it("«Остановить» зовёт pause по id активного item'а после подтверждения", async () => {
     mockQueues([queueItem({ id: "qi_43" })]);
     renderOverview();
     fireEvent.click(await screen.findByRole("button", { name: /Остановить/ }));
+    expect(await screen.findByText("Остановить тест")).toBeInTheDocument();
+    expect(pauseQueueItemMock).not.toHaveBeenCalled();
+    await clickInConfirm(/Остановить/);
     await waitFor(() => expect(pauseQueueItemMock).toHaveBeenCalledWith("qi_43"));
+  });
+
+  it("отмена подтверждения не трогает API — ни skip, ни pause", async () => {
+    mockQueues([queueItem({ id: "qi_44" })]);
+    renderOverview();
+    fireEvent.click(await screen.findByRole("button", { name: /Пропустить/ }));
+    await clickInConfirm(/Отмена/);
+    fireEvent.click(screen.getByRole("button", { name: /Остановить/ }));
+    await clickInConfirm(/Отмена/);
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(skipQueueItemMock).not.toHaveBeenCalled();
+    expect(pauseQueueItemMock).not.toHaveBeenCalled();
   });
 
   it("пока interrupt_action не снят — кнопки дизейблены и виден статус «Останавливается…»", async () => {
@@ -391,6 +427,18 @@ describe("TestingOverview — live mode (testing_service)", () => {
     );
     expect(await screen.findByText("qi_60")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Удалить/ })).not.toBeInTheDocument();
+  });
+
+  it("«Пропустить» из модалки очереди тоже спрашивает подтверждение", async () => {
+    mockQueues([queueItem({ id: "qi_61" })], []);
+    renderOverview();
+    fireEvent.click((await screen.findAllByRole("button", { name: /Очередь/ }))[0]);
+    await screen.findByText("qi_61");
+    fireEvent.click(screen.getAllByRole("button", { name: /Пропустить/ })[0]);
+    expect(await screen.findByText("Пропустить тест")).toBeInTheDocument();
+    expect(skipQueueItemMock).not.toHaveBeenCalled();
+    await clickInConfirm(/Пропустить/);
+    await waitFor(() => expect(skipQueueItemMock).toHaveBeenCalledWith("qi_61"));
   });
 
   it("если сервер недоступен — стенд показывается offline", async () => {

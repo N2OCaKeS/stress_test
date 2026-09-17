@@ -77,6 +77,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Modal } from "@/components/ui/Modal";
+import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
@@ -89,6 +90,7 @@ import {
   retryQueueItem,
   skipQueueItem,
   type PublicQueueItem,
+  type QueueInterruptAction,
 } from "@/api/testing/queueItems";
 import { listTestDefinitions } from "@/api/testing/testDefinitions";
 import type { TestDefinition, TestRun, TestStand } from "@/api/testing/types";
@@ -344,6 +346,29 @@ interface QueueControls {
 }
 
 /**
+ * Текст подтверждения для «Пропустить»/«Остановить». Обе кнопки живут сразу в
+ * двух местах (полоска стенда и модалка очереди), но ходят через один и тот же
+ * `queueControls`, поэтому формулировка описана здесь один раз — иначе она
+ * неизбежно разъедется между вызовами.
+ */
+function interruptConfirmOptions(action: QueueInterruptAction, standName: string) {
+  const common = `Исполняющийся тест на стенде «${standName}» будет принудительно убит на железе. Уже проделанная им работа пропадёт, вернуть её нельзя.`;
+  return action === "skip"
+    ? {
+        title: "Пропустить тест",
+        message: `${common}\n\nСтенд сразу перейдёт к следующему элементу очереди.`,
+        confirmLabel: "Пропустить",
+        danger: true,
+      }
+    : {
+        title: "Остановить тест",
+        message: `${common}\n\nСтенд встанет и не возьмёт следующий элемент, пока не нажать «Продолжить».`,
+        confirmLabel: "Остановить",
+        danger: true,
+      };
+}
+
+/**
  * Кнопки управления очередью стенда. Показываются только на живых данных:
  * demo-стенды не несут реальных id, управлять там нечем.
  */
@@ -424,6 +449,7 @@ function StandQueueActions({
 export function TestingOverview({ runsState }: { runsState: RunsState }) {
   const mockMode = useMockMode();
   const toast = useToast();
+  const { confirm } = useConfirm();
   const [concept, setConcept] = useState<ConceptId>("strips");
   const [filter, setFilter] = useState<StandFilter>("all");
   const [queueStandId, setQueueStandId] = useState<number | null>(null);
@@ -522,26 +548,42 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
     }
   }
 
+  // Оба прерывания необратимо убивают процесс на железе, поэтому спрашиваем
+  // до похода в API; «Продолжить» ничего не ломает и подтверждения не требует.
+  async function runInterrupt(
+    stand: Stand,
+    action: QueueInterruptAction,
+    okMessage: string,
+    failMessage: string,
+  ) {
+    const live = stand.live;
+    if (!live?.activeItemId) return;
+    const itemId = live.activeItemId;
+    if (pendingStandId) return;
+    const ok = await confirm(interruptConfirmOptions(action, stand.name));
+    if (!ok) return;
+    await runQueueAction(
+      live.standId,
+      () => (action === "skip" ? skipQueueItem(itemId) : pauseQueueItem(itemId)),
+      okMessage,
+      failMessage,
+    );
+  }
+
   const queueControls: QueueControls = {
     pendingStandId,
     skip: (stand) => {
-      const live = stand.live;
-      if (!live?.activeItemId) return;
-      const itemId = live.activeItemId;
-      void runQueueAction(
-        live.standId,
-        () => skipQueueItem(itemId),
+      void runInterrupt(
+        stand,
+        "skip",
         "Тест пропускается — стенд перейдёт к следующему элементу очереди",
         "Не удалось пропустить тест",
       );
     },
     pause: (stand) => {
-      const live = stand.live;
-      if (!live?.activeItemId) return;
-      const itemId = live.activeItemId;
-      void runQueueAction(
-        live.standId,
-        () => pauseQueueItem(itemId),
+      void runInterrupt(
+        stand,
+        "pause",
         "Тест останавливается — стенд встанет до «Продолжить»",
         "Не удалось остановить тест",
       );

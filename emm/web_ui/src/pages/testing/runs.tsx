@@ -81,6 +81,10 @@ const QUEUE_ITEM_STATE_META: Record<string, { label: string; badge: BadgeKind }>
   running: { label: "Выполняется", badge: "accent" },
   succeeded: { label: "Выполнено", badge: "ok" },
   failed: { label: "Провалено", badge: "danger" },
+  // Пропуск — решение оператора, а не провал: бейдж намеренно нейтральный,
+  // и на агрегатный статус кампании пропуск тоже не влияет.
+  skipped: { label: "Пропущено", badge: "info" },
+  paused: { label: "На паузе", badge: "warn" },
 };
 
 function queueItemStateMeta(state: string): { label: string; badge: BadgeKind } {
@@ -450,7 +454,7 @@ function RunDetailPanel({ run, onOpenLog, onChanged }: { run: TestRun; onOpenLog
         </label>
         <a className="text-accent" href={`/testing/logs?kind=campaign&test_run_id=${encodeURIComponent(run.id)}`}>Логи прогона</a>
         {detailQ.data?.progress && <span>
-          Успешно: {detailQ.data.progress.succeeded ?? 0} · С ошибкой: {detailQ.data.progress.failed ?? 0} · Выполняются: {detailQ.data.progress.running ?? 0}
+          Успешно: {detailQ.data.progress.succeeded ?? 0} · С ошибкой: {detailQ.data.progress.failed ?? 0} · Пропущено: {detailQ.data.progress.skipped ?? 0} · Выполняются: {detailQ.data.progress.running ?? 0}
         </span>}
       </div>
       {entries.filter((entry) => entry.enqueue_error_code).map((entry) => (

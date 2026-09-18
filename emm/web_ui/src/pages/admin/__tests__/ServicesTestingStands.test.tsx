@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
+import { PersonaProvider } from "@/contexts/PersonaContext";
 
 const listTestStandsMock = vi.fn();
 const getTestStandMock = vi.fn();
@@ -47,7 +48,9 @@ function renderAdminStands() {
       <ThemeProvider>
         <ToastProvider>
           <ConfirmProvider>
-            <ServicesTestingStands />
+            <PersonaProvider>
+              <ServicesTestingStands />
+            </PersonaProvider>
           </ConfirmProvider>
         </ToastProvider>
       </ThemeProvider>

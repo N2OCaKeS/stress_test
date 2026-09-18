@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { ToastProvider } from "@/contexts/ToastContext";
+import { PersonaProvider } from "@/contexts/PersonaContext";
 import type { TestLogSegment } from "@/api/testing/types";
 
 const listQueueItemsMock = vi.fn();
@@ -92,7 +93,9 @@ function Harness() {
 function renderHarness() {
   return render(
     <ToastProvider>
-      <Harness />
+      <PersonaProvider>
+        <Harness />
+      </PersonaProvider>
     </ToastProvider>,
   );
 }

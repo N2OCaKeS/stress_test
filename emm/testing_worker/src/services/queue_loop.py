@@ -11,17 +11,24 @@
 
 1. `testing_client.claim()` — если очередь пуста (или testing_service
    недоступен), `item is None` → короткий сон и следующая попытка.
-2. `ssh_executor.write_remote_file(...)` кладёт на стенд сам `starter.sh`
+2. `preflight.wait_for_external_services()` — пока Jira/Confluence/git/
+   releases/DNS недоступны, item не стартует: ждём (до
+   `preflight_timeout_seconds`, по умолчанию 2 часа, опрос раз в 180 с),
+   как это делало легаси перед самым запуском. Вышло время — обычный провал
+   item'а с внятной причиной (сжигается retry, но очередь не встаёт);
+   оператор может снять item прямо во время ожидания, `interrupt-check`
+   опрашивается и здесь.
+3. `ssh_executor.write_remote_file(...)` кладёт на стенд сам `starter.sh`
    (`/home/u/starter.sh`, содержимое — `src/assets/starter.sh`). Стенд перед
    прогоном откатывается на образ, поэтому рассчитывать на оставшуюся с
    прошлого раза копию скрипта нельзя: команда `sudo bash /home/u/starter.sh`
    запускает ровно тот файл, который положили здесь.
-3. Если `item` несёт `dates_content` — тем же способом на стенд уходит
+4. Если `item` несёт `dates_content` — тем же способом на стенд уходит
    `/home/u/<dates_filename>`: `starter.sh` читает этот файл с диска, значит
    он обязан там оказаться раньше. Провал любой из двух записей — фатален для
    item'а целиком, `execute()` не вызывается вообще, сразу
    `report_completed(succeeded=False)`.
-4. `ssh_executor.execute(...)` под кредами и хостом из `item` — единственный
+5. `ssh_executor.execute(...)` под кредами и хостом из `item` — единственный
    SSH-вызов `sudo bash /home/u/starter.sh ...` (что именно исполняется,
    собрал `testing_service`, здесь просто argv). Пока команда выполняется,
    каждый накопленный кусок вывода уходит наружу через
@@ -32,14 +39,14 @@
    уходит kill (`sudo pkill -f starter.sh`), исполнение отменяется, и вместо
    обычного исхода уходит `completed(interrupted=...)`. Обрыв SSH-канала сам
    по себе процесс под `sudo` не гасит, поэтому kill именно явный.
-5. Если до исполнения дело дошло (`result.connected`) — один
+6. Если до исполнения дело дошло (`result.connected`) — один
    `testing_client.log_segment(...)` на весь тест, с полным выводом и
    замаскированной командой (`command_masked`, посчитан `testing_service`'ом
    при `claim`, см. §8.1). Провал на уровне SSH-коннекта сегмента не
    заводит — `completed(succeeded=False)` сам по себе достаточно
    информативен для этого случая.
-6. `testing_client.report_completed(...)` с исходом.
-7. Сразу следующая итерация, без сна — под нагрузкой воркер вычерпывает
+7. `testing_client.report_completed(...)` с исходом.
+8. Сразу следующая итерация, без сна — под нагрузкой воркер вычерпывает
    очередь максимально быстро; пауза нужна только когда реально нечего делать.
 
 Тело цикла обёрнуто в `try/except Exception`: неожиданная ошибка (баг в
@@ -60,7 +67,7 @@ from pathlib import Path
 import asyncssh
 
 from src.core.config import get_settings
-from src.services import ssh_executor, testing_client
+from src.services import preflight, ssh_executor, testing_client
 
 logger = logging.getLogger("testing_worker.queue_loop")
 
@@ -247,10 +254,54 @@ async def _quiet_cancel(task) -> None:
         pass
 
 
+async def _await_external_services(queue_item_id: str) -> preflight.PreflightResult:
+    """Дождаться внешних сервисов, не переставая слушать заявку на прерывание.
+
+    Ожидание может тянуться до двух часов, поэтому оператор обязан иметь
+    возможность снять item и в это время — `should_abort` спрашивает тот же
+    `interrupt-check`, что и наблюдатель во время самого теста. Опрос идёт
+    раз в цикл проверки (а не раз в `interrupt_poll_interval_seconds`) —
+    задержка реакции в минуты на фазе ожидания приемлема и не плодит лишних
+    запросов к `testing_service`.
+    """
+    async def _note_wait(unavailable: list[str], elapsed: float) -> None:
+        await testing_client.log_chunk(
+            queue_item_id,
+            "Ожидание доступности внешних сервисов "
+            f"({', '.join(unavailable)}); прошло {int(elapsed)} с\n",
+        )
+
+    async def _interrupt_requested() -> str | None:
+        return await testing_client.check_interrupt(queue_item_id)
+
+    return await preflight.wait_for_external_services(
+        on_wait=_note_wait, should_abort=_interrupt_requested,
+    )
+
+
 async def _run_one_item(item: dict) -> None:
     """Исполнить одно задание из `claim()`, зафиксировать лог и отчитаться `completed`."""
     settings = get_settings()
     queue_item_id = item["queue_item_id"]
+
+    # Пре-флайт внешних сервисов — до любых действий на стенде. Легаси делало
+    # ровно то же и в том же месте (`backup_image.py:1045-1050`): `starter.sh`
+    # первым делом клонирует ветку с git.astralinux.ru, а сам тест ходит в
+    # Jira/Confluence, поэтому кратковременную недоступность надо пережидать,
+    # а не сжигать на ней единственную попытку retry.
+    gate = await _await_external_services(queue_item_id)
+    if gate.aborted is not None:
+        logger.info("queue item %s interrupted while waiting for external services", queue_item_id)
+        await testing_client.report_completed(
+            queue_item_id, succeeded=False, exit_code=None, error=None,
+            interrupted=gate.aborted,
+        )
+        return
+    if not gate.ok:
+        await testing_client.report_completed(
+            queue_item_id, succeeded=False, exit_code=None, error=gate.error,
+        )
+        return
 
     # Сначала сам скрипт, потом его аргумент-файл — обе записи обязательны,
     # первая же осечка заканчивает item, не доводя до `execute()`.

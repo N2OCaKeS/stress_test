@@ -38,6 +38,15 @@ class DepartmentIntegrationSettingsUpdate(BaseModel):
         default=None, max_length=64,
         description="Id credential в secret_service для Bitbucket basic auth (может отличаться от Jira/Confluence).",
     )
+    git_credential_id: str | None = Field(
+        default=None, max_length=64,
+        description=(
+            "Id credential в secret_service для клонирования репозитория на стенде. "
+            "Секрет подставляется в заголовок `Authorization` целиком, поэтому "
+            "хранить нужно значение со схемой (`Bearer <токен>`). Пусто — "
+            "используется bitbucket_credential_id."
+        ),
+    )
     jira_board_id: str | None = Field(
         default=None, max_length=32, description="Id доски Jira (Scrum board) для подсчёта спринтов отдела.",
     )
@@ -77,6 +86,7 @@ class DepartmentIntegrationSettingsResponse(BaseModel):
     bitbucket_project_key: str | None = Field(default=None)
     bitbucket_repo_slug: str | None = Field(default=None)
     bitbucket_credential_id: str | None = Field(default=None)
+    git_credential_id: str | None = Field(default=None)
     jira_board_id: str | None = Field(default=None)
     tempo_team_id: str | None = Field(default=None)
     confluence_report_page_space: str | None = Field(default=None)

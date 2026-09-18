@@ -1,16 +1,16 @@
 /**
- * Guided onboarding для трёх реальных интеграционных токенов отдела
- * (Jira/Zephyr/Tempo, Git/Bitbucket, Confluence/life) — G3 плана
+ * Guided onboarding для реальных интеграционных токенов отдела
+ * (Jira/Zephyr/Tempo, Bitbucket, Confluence/life, клонирование git) — G3 плана
  * `obsidian/plans/2026-09-11-testing-development.md`.
  *
  * Каждый `make seed` пересоздаёт отдел с нуля (`scripts/seed_dev.py`):
  * несекретные адреса/space'ы/ключи проектов `department_integration_settings`
  * заполняются dev-дефолтами автоматически, но `credential_id` /
- * `confluence_credential_id` / `bitbucket_credential_id` не могут быть
- * угаданы — это ссылки на настоящие секреты внешних систем, которые вводит
- * только владелец. Эта страница — узкий, шаговый вход именно для трёх этих
- * значений: создать/обновить `scope=service`-запись в secret_service и
- * привязать её сюда. Полная форма со всеми полями настроек интеграции
+ * `confluence_credential_id` / `bitbucket_credential_id` /
+ * `git_credential_id` не могут быть угаданы — это ссылки на настоящие
+ * секреты внешних систем, которые вводит только владелец. Эта страница —
+ * узкий, шаговый вход именно для этих значений: создать/обновить
+ * `scope=service`-запись в secret_service и привязать её сюда. Полная форма со всеми полями настроек интеграции
  * остаётся в `HomeDepAdmin` (`DepartmentIntegrationSettingsCard`) — эта
  * страница её не заменяет и не дублирует.
  *
@@ -37,7 +37,11 @@ import { createCredential, getCredential, updateCredential } from "@/api/secret/
 import type { Credential } from "@/api/secret/types";
 import type { DepartmentIntegrationSettingsUpdateRequest } from "@/api/testing/types";
 
-type SlotKey = "credential_id" | "confluence_credential_id" | "bitbucket_credential_id";
+type SlotKey =
+  | "credential_id"
+  | "confluence_credential_id"
+  | "bitbucket_credential_id"
+  | "git_credential_id";
 
 interface SlotSpec {
   key: SlotKey;
@@ -57,9 +61,16 @@ const SLOTS: SlotSpec[] = [
   },
   {
     key: "bitbucket_credential_id",
-    title: "Git / Bitbucket",
-    hint: "Токен или пароль сервисной учётки Bitbucket — получение исходников тестов и коммитов для HR-отчёта.",
+    title: "Bitbucket (REST API)",
+    hint: "Пароль сервисной учётки Bitbucket — подсчёт коммитов для HR-отчёта по активности (basic auth, без схемы).",
     credentialName: "bitbucket-integration-token",
+    credentialService: "bitbucket",
+  },
+  {
+    key: "git_credential_id",
+    title: "Клонирование git на стенде",
+    hint: "Значение заголовка Authorization целиком, со схемой: «Bearer <токен>». Стенд клонирует им ветку с исходниками теста.",
+    credentialName: "git-clone-header",
     credentialService: "bitbucket",
   },
   {
@@ -112,7 +123,7 @@ export function IntegrationOnboarding() {
             </h1>
             <p className="text-sm text-dim mt-1">
               После наполнения dev-стенда отдел заново создаётся без ссылок на настоящие Jira/Git/Confluence — их нельзя
-              подставить автоматически. Здесь нужно ввести только три значения ниже; остальные несекретные параметры
+              подставить автоматически. Здесь нужно ввести только перечисленные ниже значения; остальные несекретные параметры
               (адреса, ключи проектов, Confluence space) уже заполнены dev-дефолтами и правятся при необходимости в{" "}
               <Link to="/home" className="text-accent">Интеграциях отдела</Link>.
             </p>

@@ -23,9 +23,11 @@ vi.mock("@/api/server/osVersions", () => ({ listOsVersions: async () => ({ items
 
 const triggerStatisticsRecalcMock = vi.fn();
 const getStatisticsStatusMock = vi.fn();
+const getStatisticsCategoriesMock = vi.fn();
 vi.mock("@/api/testing/statistics", () => ({
   triggerStatisticsRecalc: (...args: unknown[]) => triggerStatisticsRecalcMock(...args),
   getStatisticsStatus: (...args: unknown[]) => getStatisticsStatusMock(...args),
+  getStatisticsCategories: (...args: unknown[]) => getStatisticsCategoriesMock(...args),
 }));
 const ITEMS = [
   { id: "adhoc-2026090701", test_id: "t1", stand_id: "s1", test_run_id: null, retry_of_id: null, debug_mode: true, state: "running", rc: "1.8.5", kernel: "6.1", mode: "orel", created_at: "2026-09-07T06:40:00Z", started_at: "2026-09-07T06:40:00Z", finished_at: null, error: null },
@@ -119,13 +121,17 @@ beforeEach(() => {
   listQueueItemsMock.mockResolvedValue({ items: ITEMS, total: 2 });
   launchQueueItemMock.mockResolvedValue({ ...ITEMS[0], id: "qi_new", state: "queued" });
   triggerStatisticsRecalcMock.mockResolvedValue({
-    status: "running", triggered_by: "manual", test_run_id: null,
+    status: "running", triggered_by: "manual", category: null, test_run_id: null,
     started_at: "2026-09-15T10:00:00Z", finished_at: null, error: null, updated_at: null,
   });
   getStatisticsStatusMock.mockResolvedValue({
-    status: "idle", triggered_by: null, test_run_id: null,
+    status: "idle", triggered_by: null, category: null, test_run_id: null,
     started_at: null, finished_at: null, error: null, updated_at: null,
   });
+  getStatisticsCategoriesMock.mockResolvedValue([
+    { key: "apache", label: "Apache" },
+    { key: "parsec", label: "Parsec" },
+  ]);
   sockets = [];
   vi.stubGlobal("WebSocket", FakeWebSocket as unknown as typeof WebSocket);
 });
@@ -196,12 +202,39 @@ describe("AdhocMiddlePanel — реальные одиночные запуск�
     await screen.findAllByText("adhoc-2026090701");
     fireEvent.click(screen.getByRole("button", { name: /Пересчитать статистику/ }));
     await waitFor(() => expect(triggerStatisticsRecalcMock).toHaveBeenCalledTimes(1));
+    // Полный пересчёт — без category, как и раньше.
+    expect(triggerStatisticsRecalcMock).toHaveBeenCalledWith({});
     expect(await screen.findByText(/запущен в фоне/)).toBeInTheDocument();
+  });
+
+  it("на каждое семейство тестов с бекенда есть своя кнопка пересчёта", async () => {
+    renderHarness();
+    await screen.findAllByText("adhoc-2026090701");
+    expect(await screen.findByRole("button", { name: "Apache" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Parsec" })).toBeInTheDocument();
+  });
+
+  it("пер-категорийная кнопка передаёт свой ключ в category", async () => {
+    renderHarness();
+    await screen.findAllByText("adhoc-2026090701");
+    fireEvent.click(await screen.findByRole("button", { name: "Parsec" }));
+    await waitFor(() => expect(triggerStatisticsRecalcMock).toHaveBeenCalledWith({ category: "parsec" }));
+    expect(await screen.findByText(/«Parsec» запущен в фоне/)).toBeInTheDocument();
+  });
+
+  it("индикатор расчёта называет семейство, если считается не всё сразу", async () => {
+    getStatisticsStatusMock.mockResolvedValue({
+      status: "running", triggered_by: "manual", category: "parsec", test_run_id: null,
+      started_at: "2026-09-18T10:00:00Z", finished_at: null, error: null, updated_at: null,
+    });
+    renderHarness();
+    await screen.findAllByText("adhoc-2026090701");
+    expect(await screen.findByText("Идёт расчёт статистики: Parsec…")).toBeInTheDocument();
   });
 
   it("индикатор «Идёт расчёт статистики» виден только пока фактически идёт пересчёт", async () => {
     getStatisticsStatusMock.mockResolvedValueOnce({
-      status: "running", triggered_by: "manual", test_run_id: null,
+      status: "running", triggered_by: "manual", category: null, test_run_id: null,
       started_at: "2026-09-15T10:00:00Z", finished_at: null, error: null, updated_at: null,
     });
     renderHarness();

@@ -27,6 +27,10 @@ class StatisticsRecalcState(Base):
     # "test_run" (автоматически на терминальном статусе кампании) или "manual"
     # (кнопка/переключатель в UI для одиночных тестов).
     triggered_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Какое семейство тестов пересчитывалось (`services/statistics_client.
+    # CATEGORIES`). NULL — полный пересчёт `/all-statistics`; автотриггер по
+    # кампании всегда такой, категорию задаёт только ручная кнопка.
+    category: Mapped[str | None] = mapped_column(String(32), nullable=True)
     # Заполнено только для triggered_by="test_run" — какая кампания вызвала
     # этот конкретный пересчёт. Без FK — чисто информационная ссылка.
     test_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

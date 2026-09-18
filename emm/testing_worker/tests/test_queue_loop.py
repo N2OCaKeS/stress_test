@@ -59,6 +59,22 @@ def stub_remote_writes(monkeypatch):
     monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", _noop)
 
 
+@pytest.fixture(autouse=True)
+def stub_preflight(monkeypatch):
+    """`_run_one_item` начинается с проверки внешних сервисов — в тестах она
+    всегда «всё доступно».
+
+    Без заглушки каждый тест этого модуля полез бы в реальную сеть (и, не
+    дозвонившись, честно ждал бы два часа). Тесты самой проверки — в
+    `test_preflight.py`; тесты, которым интересен её провал, ставят свой
+    `monkeypatch.setattr` поверх.
+    """
+    async def _ok(**kwargs):
+        return queue_loop.preflight.PreflightResult(ok=True, attempts=1)
+
+    monkeypatch.setattr(queue_loop.preflight, "wait_for_external_services", _ok)
+
+
 class TestRunOneItem:
     async def test_executes_and_reports_completed(self, monkeypatch):
         recorded = {"calls": []}
@@ -254,6 +270,126 @@ class TestRunOneItem:
         assert recorded["calls"] == [
             ("report_completed", "qi_3", False, None, "SSH authentication failed"),
         ]
+
+
+class TestRunOneItemPreflight:
+    """Проверка внешних сервисов стоит перед любым обращением к стенду.
+
+    Легаси гейтило ровно так же (`backup_image.py:1045-1050`): пока
+    Jira/Confluence/git/DNS недоступны, запускать тест нет смысла — `starter.sh`
+    первым делом клонирует ветку с git.astralinux.ru.
+    """
+
+    def _item(self, **overrides) -> dict:
+        item = {
+            "queue_item_id": "qi_pf",
+            "host": "10.0.0.9",
+            "test_username": "u",
+            "test_ssh_private_key": "keydata",
+            "command": ["x"],
+            "command_masked": ["x"],
+            "debug_mode": False,
+            "is_retry": False,
+        }
+        item.update(overrides)
+        return item
+
+    async def test_timeout_fails_item_without_touching_the_stand(self, monkeypatch):
+        recorded = {"calls": []}
+
+        async def fake_wait(**kwargs):
+            return queue_loop.preflight.PreflightResult(
+                ok=False, error="external services unavailable after 40 attempts: https://git.test",
+                attempts=40, unavailable=["https://git.test"],
+            )
+
+        async def fake_write_remote_file(*a, **k):
+            recorded["calls"].append(("write", a[3]))
+
+        async def fake_execute(*a, **k):
+            raise AssertionError("execute must not run when preflight failed")
+
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, **extra):
+            recorded["calls"].append(("report", queue_item_id, succeeded, error, extra))
+
+        monkeypatch.setattr(queue_loop.preflight, "wait_for_external_services", fake_wait)
+        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
+
+        await queue_loop._run_one_item(self._item())
+
+        # Ни SFTP, ни execute — только честный провал item'а (retry тратится,
+        # но очередь стенда не встаёт навсегда).
+        assert [call[0] for call in recorded["calls"]] == ["report"]
+        _, queue_item_id, succeeded, error, extra = recorded["calls"][0]
+        assert (queue_item_id, succeeded) == ("qi_pf", False)
+        assert "https://git.test" in error
+        assert extra == {}
+
+    async def test_interrupt_during_wait_reports_interrupted(self, monkeypatch):
+        recorded = {}
+
+        async def fake_wait(**kwargs):
+            return queue_loop.preflight.PreflightResult(ok=False, aborted="skip", attempts=2)
+
+        async def fake_execute(*a, **k):
+            raise AssertionError("execute must not run when the operator skipped the item")
+
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, **extra):
+            recorded["report"] = (queue_item_id, succeeded, error, extra)
+
+        monkeypatch.setattr(queue_loop.preflight, "wait_for_external_services", fake_wait)
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
+
+        await queue_loop._run_one_item(self._item())
+
+        assert recorded["report"] == ("qi_pf", False, None, {"interrupted": "skip"})
+
+    async def test_wait_reports_progress_into_the_test_log(self, monkeypatch):
+        """Оператор должен видеть в живом логе, чего именно ждём."""
+        recorded = {"chunks": [], "interrupt_checks": 0}
+        captured = {}
+
+        async def fake_wait(*, on_wait=None, should_abort=None):
+            captured["on_wait"] = on_wait
+            captured["should_abort"] = should_abort
+            return queue_loop.preflight.PreflightResult(ok=True, attempts=1)
+
+        async def fake_log_chunk(queue_item_id, text):
+            recorded["chunks"].append((queue_item_id, text))
+
+        async def fake_check_interrupt(queue_item_id):
+            recorded["interrupt_checks"] += 1
+            return None
+
+        async def fake_execute(*a, **k):
+            return ExecutionResult(
+                connected=True, succeeded=True, exit_code=0, error=None,
+                output="", started_at=_STARTED, finished_at=_FINISHED,
+            )
+
+        async def noop(*a, **k):
+            return None
+
+        monkeypatch.setattr(queue_loop.preflight, "wait_for_external_services", fake_wait)
+        monkeypatch.setattr(queue_loop.testing_client, "log_chunk", fake_log_chunk)
+        monkeypatch.setattr(queue_loop.testing_client, "check_interrupt", fake_check_interrupt)
+        monkeypatch.setattr(queue_loop.testing_client, "log_segment", noop)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", noop)
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+
+        await queue_loop._run_one_item(self._item())
+
+        await captured["on_wait"](["https://git.test"], 360.0)
+        assert recorded["chunks"][0][0] == "qi_pf"
+        assert "https://git.test" in recorded["chunks"][0][1]
+        assert "360" in recorded["chunks"][0][1]
+
+        # Тот же `interrupt-check`, что и во время исполнения теста.
+        assert await captured["should_abort"]() is None
+        assert recorded["interrupt_checks"] == 1
 
 
 class TestRunOneItemDeliversStarterScript:

@@ -29,6 +29,7 @@ function emptySettings() {
     bitbucket_project_key: "NTDEV",
     bitbucket_repo_slug: "allta-app",
     bitbucket_credential_id: null,
+    git_credential_id: null,
     jira_board_id: "340",
     tempo_team_id: "7",
     confluence_report_page_space: "NTDEV",
@@ -79,10 +80,14 @@ describe("IntegrationOnboarding — ввод реальных Jira/Git/Confluenc
     getCredentialMock.mockReset();
   });
 
-  it("показывает все три слота как не настроенные на свежем dev-отделе", async () => {
+  it("показывает все слоты как не настроенные на свежем dev-отделе", async () => {
     renderPage();
     expect(await screen.findByText("Jira / Zephyr / Tempo")).toBeInTheDocument();
-    expect(screen.getAllByText("не настроено")).toHaveLength(3);
+    // Bitbucket REST и заголовок для клонирования git — разные слоты: форматы
+    // секретов несовместимы, одной записью обе роли не закрыть.
+    expect(screen.getByText("Bitbucket (REST API)")).toBeInTheDocument();
+    expect(screen.getByText("Клонирование git на стенде")).toBeInTheDocument();
+    expect(screen.getAllByText("не настроено")).toHaveLength(4);
   });
 
   it("первый ввод создаёт scope=service credential и привязывает его ссылкой", async () => {

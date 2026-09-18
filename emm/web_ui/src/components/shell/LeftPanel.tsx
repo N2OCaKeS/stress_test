@@ -558,6 +558,7 @@ function StatisticsRecalcPanel({ collapsed }: { collapsed: boolean }) {
   const lastAt = status.finished_at ?? status.started_at;
   const tooltip = [
     `Пересчёт статистики: ${meta.label}`,
+    `объём: ${status.category ?? "всё сразу"}`,
     lastAt ? `последний раз: ${new Date(lastAt).toLocaleString("ru-RU")}` : null,
     status.error ? `ошибка: ${status.error}` : null,
   ]

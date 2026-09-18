@@ -19,7 +19,9 @@
   тестов, `POST /statistics/recalculate`. Легаси не пересчитывало статистику
   на каждый одиночный тест — здесь тоже нет автотриггера на одиночный тест,
   только явный запрос оператора; индикатор состояния (`get_status`) виден
-  независимо от того, что именно запустило пересчёт.
+  независимо от того, что именно запустило пересчёт. Ручной триггер умеет и
+  одно семейство тестов (`category`) — восемь пер-категорийных кнопок легаси
+  (`allta_app/allta_front.py:729-880`) плюс «всё сразу» = те же девять.
 
 Статус текущего/последнего пересчёта — одна платформенная строка
 `statistics_recalc_status` (индикатор, не журнал попыток): сам внешний
@@ -59,6 +61,7 @@ async def schedule_recalc(
     *,
     test_run_id: str | None = None,
     department_id: str | None = None,
+    category: str | None = None,
 ) -> "asyncio.Task | None":
     """Best-effort шедулинг фонового пересчёта. Никогда не поднимает исключение.
 
@@ -68,6 +71,10 @@ async def schedule_recalc(
     интеграция этого отдела не настроена, либо `credential_id` не задан.
     reveal-сбой credential логируется WARNING — тот же приём, что
     `run_summary.py::_resolve_confluence_bearer`.
+
+    `category` — ключ семейства тестов (`services/statistics_client.CATEGORIES`)
+    либо `None` для полного пересчёта. Автотриггер по кампании всегда полный,
+    категорию передаёт только ручная кнопка.
 
     `test_run_id`/`department_id` — ровно один из них задаётся вызывающим
     (для `triggered_by="test_run"` department резолвится из самой кампании;
@@ -115,7 +122,7 @@ async def schedule_recalc(
     task = loop.create_task(
         _run_recalc(
             base_url=base_url, username=username, token=token, timeout=timeout,
-            triggered_by=triggered_by, test_run_id=test_run_id,
+            triggered_by=triggered_by, test_run_id=test_run_id, category=category,
         )
     )
     _pending_recalc_tasks.add(task)
@@ -125,7 +132,7 @@ async def schedule_recalc(
 
 async def _run_recalc(
     *, base_url: str, username: str, token: str, timeout: float,
-    triggered_by: str, test_run_id: str | None,
+    triggered_by: str, test_run_id: str | None, category: str | None = None,
 ) -> None:
     """Тело фоновой задачи — своя сессия БД, независимая от caller'а.
 
@@ -137,20 +144,28 @@ async def _run_recalc(
     from src.db.session import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
-        await recalc_repo.mark_running(db, triggered_by=triggered_by, test_run_id=test_run_id)
+        await recalc_repo.mark_running(
+            db, triggered_by=triggered_by, test_run_id=test_run_id, category=category,
+        )
         await db.commit()
 
     error: str | None = None
     try:
-        await statistics_client.trigger_all_statistics(
-            base_url=base_url, username=username, token=token, timeout=timeout,
-        )
+        if category is None:
+            await statistics_client.trigger_all_statistics(
+                base_url=base_url, username=username, token=token, timeout=timeout,
+            )
+        else:
+            await statistics_client.trigger_category_statistics(
+                base_url=base_url, username=username, token=token, timeout=timeout,
+                category=category,
+            )
     except AppException as exc:
         error = exc.message
-        logger.warning("statistics_recalc: all-statistics call failed: %s", exc.message)
+        logger.warning("statistics_recalc: recalc call failed (category=%s): %s", category, exc.message)
     except Exception as exc:  # noqa: BLE001 — фоновая задача не должна ронять event loop
         error = str(exc) or type(exc).__name__
-        logger.warning("statistics_recalc: all-statistics call failed: %s", exc)
+        logger.warning("statistics_recalc: recalc call failed (category=%s): %s", category, exc)
 
     async with AsyncSessionLocal() as db:
         await recalc_repo.mark_finished(db, succeeded=error is None, error=error)
@@ -161,7 +176,10 @@ async def _run_recalc(
         target_type="statistics_recalc_status",
         status="success" if error is None else "failure",
         allowed=True,
-        details={"triggered_by": triggered_by, "test_run_id": test_run_id, "error": error},
+        details={
+            "triggered_by": triggered_by, "test_run_id": test_run_id,
+            "category": category, "error": error,
+        },
     )
 
 
@@ -172,6 +190,7 @@ async def get_status(db: AsyncSession) -> dict:
         return {
             "status": "idle",
             "triggered_by": None,
+            "category": None,
             "test_run_id": None,
             "started_at": None,
             "finished_at": None,
@@ -181,6 +200,7 @@ async def get_status(db: AsyncSession) -> dict:
     return {
         "status": row.status,
         "triggered_by": row.triggered_by,
+        "category": row.category,
         "test_run_id": row.test_run_id,
         "started_at": row.started_at,
         "finished_at": row.finished_at,
@@ -191,6 +211,7 @@ async def get_status(db: AsyncSession) -> dict:
 
 async def trigger_manual(
     db: AsyncSession, identity: Identity, department_id: str | None,
+    category: str | None = None,
 ) -> "asyncio.Task | None":
     """`POST /statistics/recalculate` — ручной триггер для одиночных тестов.
 
@@ -198,6 +219,9 @@ async def trigger_manual(
     платформенных настроек; операция дорогая/редкая, отдельного действия под
     неё не заводили. `department_id` не передан → берётся отдел вызывающего;
     если и у вызывающего его нет (platform-bound identity) — 422.
+
+    `category` не передана — полный пересчёт (`/all-statistics`), как и было.
+    Передана — одно семейство тестов, как в легаси-меню из девяти кнопок.
     """
     try:
         await permissions.require_action(db, identity, EntityType.STATISTICS_SETTINGS, Action.UPDATE)
@@ -210,6 +234,13 @@ async def trigger_manual(
         )
         raise
 
+    if category is not None and category not in statistics_client.CATEGORIES:
+        raise DomainValidationError(
+            error_code="STATISTICS_CATEGORY_UNKNOWN",
+            message=f"unknown statistics category: {category}",
+            details={"known": sorted(statistics_client.CATEGORIES)},
+        )
+
     resolved = department_id or identity.department_id
     if resolved is None:
         raise DomainValidationError(
@@ -221,6 +252,6 @@ async def trigger_manual(
         "statistics_recalc.triggered",
         target_type="statistics_recalc_status",
         status="success", allowed=True,
-        details={"department_id": resolved, "triggered_by": "manual"},
+        details={"department_id": resolved, "triggered_by": "manual", "category": category},
     )
-    return await schedule_recalc(db, "manual", department_id=resolved)
+    return await schedule_recalc(db, "manual", department_id=resolved, category=category)

@@ -15,6 +15,7 @@ async def get_singleton(db: AsyncSession) -> StatisticsRecalcState | None:
 
 async def mark_running(
     db: AsyncSession, *, triggered_by: str, test_run_id: str | None,
+    category: str | None = None,
 ) -> StatisticsRecalcState:
     """Строка переходит/заводится в `running`. commit — на caller'е."""
     row = await get_singleton(db)
@@ -23,6 +24,7 @@ async def mark_running(
         db.add(row)
     row.status = StatisticsRecalcStatus.RUNNING
     row.triggered_by = triggered_by
+    row.category = category
     row.test_run_id = test_run_id
     row.started_at = datetime.now(timezone.utc)
     row.finished_at = None

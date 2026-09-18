@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/Button";
 const FIELDS = [
   { key: "credential_id", label: "Учётные данные Jira / Zephyr / Tempo" },
   { key: "confluence_credential_id", label: "Учётные данные Confluence / life" },
-  { key: "bitbucket_credential_id", label: "Учётные данные Git / Bitbucket" },
+  { key: "bitbucket_credential_id", label: "Учётные данные Bitbucket (REST API)" },
+  { key: "git_credential_id", label: "Учётные данные для клонирования git на стенде" },
 ];
 
 function unavailableReason(cred: Credential) {
@@ -63,6 +64,7 @@ export function ServiceCredentialFields({ departmentId, values, onChange, disabl
         {reason && <span className="text-xs text-danger">Учётные данные {reason}. Обновите их в сервисе секретов.</span>}
         {missing && !credentialsQ.isFetching && <span className="text-xs text-dim">Проверьте доступ, владельца и область хранения записи. Сохранённая привязка остаётся до вашего изменения.</span>}
         {key === "confluence_credential_id" && !selected && <span className="text-xs text-dim">Не выбрано — публикация в Confluence использует запись Jira / Zephyr / Tempo.</span>}
+        {key === "git_credential_id" && <span className="text-xs text-dim">Секрет подставляется в заголовок Authorization целиком, поэтому хранить его нужно со схемой: «Bearer &lt;токен&gt;». Не выбрано — берётся запись Bitbucket, но её формат для клонирования обычно не подходит.</span>}
       </div>;
     })}
     <div className="sm:col-span-2 flex flex-wrap items-center gap-3 text-xs">

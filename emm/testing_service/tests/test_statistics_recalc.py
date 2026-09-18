@@ -42,6 +42,7 @@ from tests.test_run_summary import _seed_test_run
 from tests.test_test_runs import _drive_to_success, _get_item, _payload
 
 SETTINGS_BASE = "/api/testing/v1/statistics/settings"
+CATEGORIES_BASE = "/api/testing/v1/statistics/categories"
 STATUS_BASE = "/api/testing/v1/statistics/status"
 RECALC_BASE = "/api/testing/v1/statistics/recalculate"
 RUNS_BASE = "/api/testing/v1/test-runs"
@@ -127,6 +128,18 @@ def mock_statistics_client(monkeypatch):
 
     monkeypatch.setattr(statistics_client, "trigger_all_statistics", fake_trigger)
     return calls, state
+
+
+@pytest.fixture
+def mock_statistics_category_client(monkeypatch):
+    """Как `mock_statistics_client`, но для пер-категорийного вызова."""
+    calls: list[dict] = []
+
+    async def fake_trigger(*, base_url, username, token, timeout, category):
+        calls.append({"base_url": base_url, "username": username, "token": token, "category": category})
+
+    monkeypatch.setattr(statistics_client, "trigger_category_statistics", fake_trigger)
+    return calls
 
 
 async def _drain_pending_tasks() -> None:
@@ -368,6 +381,174 @@ class TestRecalculateEndpoint:
         await _drain_pending_tasks()
 
         assert calls == [{"base_url": "http://stats.example:7777", "username": "other-bot", "token": "other-tok"}]
+
+
+# ── Пер-категорийный пересчёт: девять триггеров легаси ─────────────────────
+
+
+class TestStatisticsCategoryCatalog:
+    """Ровно восемь семейств + «всё сразу» = девять кнопок легаси.
+
+    Источник — девять Flask-роутов `allta_app/allta_front.py:713-880`;
+    `Docker`/`Network` есть у внешнего сервиса, но кнопки в легаси не имели.
+    """
+
+    def test_exactly_eight_categories(self):
+        assert len(statistics_client.CATEGORIES) == 8
+
+    def test_legacy_labels_and_order(self):
+        assert [item["label"] for item in statistics_client.category_choices()] == [
+            "Apache", "FreeIPA", "Parsec", "PostgreSQL",
+            "Qemu/KVM/Libvirt", "UnixBench", "Системные службы", "Файловые системы",
+        ]
+
+    def test_three_families_share_base_statistics(self):
+        """Легаси отправляло Apache/UnixBench/Системные службы на `/base-statistics`."""
+        shared = {k for k, spec in statistics_client.CATEGORIES.items() if spec.path == "/base-statistics"}
+        assert shared == {"apache", "unixbench", "system_services"}
+
+    def test_postgresql_carries_kernel_comparison(self):
+        """Единственное семейство с `comparison_kernel_list` в легаси-конфиге."""
+        with_kernel = {
+            k for k, spec in statistics_client.CATEGORIES.items()
+            if spec.comparison_kernel_list is not None
+        }
+        assert with_kernel == {"postgresql"}
+        assert statistics_client.CATEGORIES["postgresql"].comparison_kernel_list == ("postgresql",)
+
+    async def test_categories_endpoint_lists_them(self, client, guest_token):
+        resp = await client.get(CATEGORIES_BASE, headers=_hdr(guest_token))
+        assert resp.status_code == 200, resp.text
+        items = resp.json()["items"]
+        assert len(items) == 8
+        assert items[0] == {"key": "apache", "label": "Apache"}
+
+    async def test_categories_endpoint_rejects_anonymous(self, client):
+        resp = await client.get(CATEGORIES_BASE)
+        assert resp.status_code == 401, resp.text
+
+
+class TestStatisticsCategoryPayload:
+    """Тело запроса к внешнему сервису — буквальный перенос легаси."""
+
+    async def test_apache_payload(self, monkeypatch):
+        captured = {}
+
+        async def fake_post(*, base_url, path, payload, timeout):
+            captured["path"] = path
+            captured["payload"] = payload
+
+        monkeypatch.setattr(statistics_client, "_post", fake_post)
+        await statistics_client.trigger_category_statistics(
+            base_url="http://stats:7777", username="bot", token="tok", timeout=5.0, category="apache",
+        )
+        assert captured["path"] == "/base-statistics"
+        assert captured["payload"] == {
+            "title_statistics": "Apache",
+            "username": "bot",
+            "token": "tok",
+            "set_of_test_types": ["apache-rp"],
+            "latest_stable_versions_bool": True,
+        }
+
+    async def test_optional_lists_omitted_when_absent(self, monkeypatch):
+        """У Apache/FreeIPA в легаси-конфиге нет `comparison_list` — ключа нет вовсе."""
+        captured = {}
+
+        async def fake_post(*, base_url, path, payload, timeout):
+            captured["payload"] = payload
+
+        monkeypatch.setattr(statistics_client, "_post", fake_post)
+        await statistics_client.trigger_category_statistics(
+            base_url="http://stats:7777", username="bot", token="tok", timeout=5.0, category="freeipa",
+        )
+        assert "comparison_list" not in captured["payload"]
+        assert "comparison_kernel_list" not in captured["payload"]
+
+    async def test_postgresql_payload_carries_both_lists(self, monkeypatch):
+        captured = {}
+
+        async def fake_post(*, base_url, path, payload, timeout):
+            captured["path"] = path
+            captured["payload"] = payload
+
+        monkeypatch.setattr(statistics_client, "_post", fake_post)
+        await statistics_client.trigger_category_statistics(
+            base_url="http://stats:7777", username="bot", token="tok", timeout=5.0, category="postgresql",
+        )
+        assert captured["path"] == "/postgresql-statistics"
+        assert captured["payload"]["comparison_kernel_list"] == ["postgresql"]
+        assert ["postgresql", "postgresql-sm"] in captured["payload"]["comparison_list"]
+
+    async def test_unknown_category_raises(self):
+        from src.core.exceptions import ServiceUnavailableError
+
+        with pytest.raises(ServiceUnavailableError):
+            await statistics_client.trigger_category_statistics(
+                base_url="http://stats:7777", username="b", token="t", timeout=1.0, category="nope",
+            )
+
+
+class TestRecalculateEndpointCategories:
+    async def test_category_routes_to_per_category_call(
+        self, client, admin_token, mock_secret_client,
+        mock_statistics_client, mock_statistics_category_client,
+    ):
+        all_calls, _state = mock_statistics_client
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+        await _configure_statistics()
+        await _seed_integration_settings("dep_a")
+
+        resp = await client.post(RECALC_BASE, headers=_hdr(admin_token), json={"category": "parsec"})
+        assert resp.status_code == 202, resp.text
+        await _drain_pending_tasks()
+
+        # Полный пересчёт не дёргается вовсе — только одно семейство.
+        assert all_calls == []
+        assert mock_statistics_category_client == [{
+            "base_url": "http://stats.example:7777",
+            "username": "bot", "token": "tok123", "category": "parsec",
+        }]
+
+        status = (await client.get(STATUS_BASE, headers=_hdr(admin_token))).json()
+        assert status["status"] == "succeeded"
+        assert status["category"] == "parsec"
+
+    async def test_no_category_still_recalculates_everything(
+        self, client, admin_token, mock_secret_client,
+        mock_statistics_client, mock_statistics_category_client,
+    ):
+        all_calls, _state = mock_statistics_client
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+        await _configure_statistics()
+        await _seed_integration_settings("dep_a")
+
+        resp = await client.post(RECALC_BASE, headers=_hdr(admin_token), json={})
+        assert resp.status_code == 202, resp.text
+        await _drain_pending_tasks()
+
+        assert len(all_calls) == 1
+        assert mock_statistics_category_client == []
+        status = (await client.get(STATUS_BASE, headers=_hdr(admin_token))).json()
+        assert status["category"] is None
+
+    async def test_unknown_category_is_422(self, client, admin_token):
+        resp = await client.post(RECALC_BASE, headers=_hdr(admin_token), json={"category": "nope"})
+        assert resp.status_code == 422, resp.text
+        assert resp.json()["error_code"] == "STATISTICS_CATEGORY_UNKNOWN"
+
+    async def test_unknown_category_checked_before_scheduling(
+        self, client, admin_token, mock_secret_client, mock_statistics_category_client,
+    ):
+        """Кривой ключ не должен оставлять после себя `running`-индикатор."""
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+        await _configure_statistics()
+        await _seed_integration_settings("dep_a")
+
+        await client.post(RECALC_BASE, headers=_hdr(admin_token), json={"category": "nope"})
+        assert mock_statistics_category_client == []
+        status = (await client.get(STATUS_BASE, headers=_hdr(admin_token))).json()
+        assert status["status"] == "idle"
 
 
 # ── Хук из services/queue.py на терминальном переходе кампании (§9.3) ──────

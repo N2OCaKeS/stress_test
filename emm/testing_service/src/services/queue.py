@@ -512,6 +512,15 @@ _STARTER_SCRIPT_PATH = "/home/u/starter.sh"
 async def _resolve_git_token(db: AsyncSession, department_id: str) -> str:
     """git-токен для `starter.sh` (клонирует ветку монорепо на стенде под `$2`).
 
+    `starter.sh` подставляет `$2` целиком:
+    `git -c http.extraHeader="Authorization: $2" clone ...` — значит секрет
+    обязан быть готовым значением заголовка, СО СХЕМОЙ (`Bearer <PAT>`).
+    Bitbucket REST в HR-отчёте (`services/bitbucket_client.py`) использует тот
+    же секрет иначе — как пароль basic-auth, где схема в значении недопустима.
+    Форматы несовместимы, поэтому у git-заголовка своя ссылка на credential
+    (`git_credential_id`); `bitbucket_credential_id` остаётся фолбэком ради
+    совместимости с отделами, настроенными до разделения.
+
     В отличие от `stp.py::_resolve_jira_bearer`/`run_summary.py::_resolve_confluence_bearer`
     (где отсутствие credential — частичный провал одного отчёта, `None`),
     здесь недоступность токена фатальна для самого прогона — без него
@@ -520,18 +529,24 @@ async def _resolve_git_token(db: AsyncSession, department_id: str) -> str:
     что резолв dates-контента и адреса стенда.
     """
     settings = await dis_repo.get_by_department(db, department_id)
-    if settings is None or not settings.bitbucket_credential_id:
+    credential_id = None
+    if settings is not None:
+        credential_id = settings.git_credential_id or settings.bitbucket_credential_id
+    if not credential_id:
         raise DomainValidationError(
-            error_code="BITBUCKET_CREDENTIAL_NOT_CONFIGURED",
-            message="department_integration_settings.bitbucket_credential_id is not configured",
+            error_code="GIT_CREDENTIAL_NOT_CONFIGURED",
+            message=(
+                "department_integration_settings.git_credential_id "
+                "(fallback bitbucket_credential_id) is not configured"
+            ),
             details={"department_id": department_id},
         )
-    _login, token = await secret_client.reveal_credential(settings.bitbucket_credential_id)
+    _login, token = await secret_client.reveal_credential(credential_id)
     if not token:
         raise ServiceUnavailableError(
-            error_code="BITBUCKET_CREDENTIAL_EMPTY",
-            message="reveal_credential returned an empty secret for bitbucket_credential_id",
-            details={"department_id": department_id},
+            error_code="GIT_CREDENTIAL_EMPTY",
+            message="reveal_credential returned an empty secret for the git credential",
+            details={"department_id": department_id, "credential_id": credential_id},
         )
     return token
 

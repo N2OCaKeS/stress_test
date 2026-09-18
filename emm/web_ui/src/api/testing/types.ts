@@ -294,6 +294,7 @@ export interface DepartmentIntegrationSettings {
   bitbucket_project_key: string | null;
   bitbucket_repo_slug: string | null;
   bitbucket_credential_id: string | null;
+  git_credential_id: string | null;
   jira_board_id: string | null;
   tempo_team_id: string | null;
   confluence_report_page_space: string | null;
@@ -314,6 +315,7 @@ export interface DepartmentIntegrationSettingsUpdateRequest {
   bitbucket_project_key?: string | null;
   bitbucket_repo_slug?: string | null;
   bitbucket_credential_id?: string | null;
+  git_credential_id?: string | null;
   jira_board_id?: string | null;
   tempo_team_id?: string | null;
   confluence_report_page_space?: string | null;
@@ -953,6 +955,8 @@ export type StatisticsRecalcState = "idle" | "running" | "succeeded" | "failed";
 export interface StatisticsRecalcStatus {
   status: StatisticsRecalcState;
   triggered_by: "test_run" | "manual" | (string & {}) | null;
+  /** Ключ семейства тестов; `null` — пересчитывалось всё сразу. */
+  category: string | null;
   test_run_id: string | null;
   started_at: Iso8601 | null;
   finished_at: Iso8601 | null;
@@ -963,6 +967,19 @@ export interface StatisticsRecalcStatus {
 /** Тело `POST /statistics/recalculate` — не передан `department_id` → берётся отдел вызывающего. */
 export interface StatisticsRecalcTriggerRequest {
   department_id?: string | null;
+  /** Ключ семейства тестов из `GET /statistics/categories`; не передан — пересчёт всего. */
+  category?: string | null;
+}
+
+/** Одно семейство тестов из `GET /statistics/categories`. */
+export interface StatisticsCategory {
+  key: string;
+  label: string;
+}
+
+/** `GET /statistics/categories` — восемь семейств в порядке легаси-меню. */
+export interface StatisticsCategoriesResponse {
+  items: StatisticsCategory[];
 }
 
 // ── pool overview (§F плана 2026-09-11) ─────────────────────────────────────

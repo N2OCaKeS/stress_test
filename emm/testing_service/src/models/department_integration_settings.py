@@ -19,6 +19,17 @@ scope=service — так бот `testing_service` (платформенный с
   Jira/Confluence этого же инстанса могут быть разные сервисные учётки; тот
   же credential_id, что уже есть выше, сюда не годится по умолчанию.
 
+* `git_credential_id` — третья, ещё раз отдельная запись: её секрет уходит на
+  стенд как ГОТОВОЕ значение заголовка `Authorization` в
+  `git -c http.extraHeader=...` (аргумент `$2` у `starter.sh`). Легаси держало
+  эти два значения врозь и не могло их перепутать: заголовок брался из
+  `tokens['git_token']` (`backup_image.py:270`), а HR-отчёт ходил в Bitbucket
+  REST'ом под `auth=(tokens['username'], '')` — вообще другой парой
+  (`reports/departament_reports/monthly_report.py:23`). Одна запись на обе
+  роли физически не работает: basic-auth паролем «Bearer xxx» Bitbucket не
+  пускает, а заголовком «xxx» без схемы не пускает git. Пусто —
+  `bitbucket_credential_id` (совместимость с тем, как было до разделения).
+
 Поле C4 (`SERVICE_CREDENTIALS.md`, `services/run_summary.py`,
 `services/stp_matrix.py`, `services/activity_report.py`):
 
@@ -79,7 +90,15 @@ class DepartmentIntegrationSettings(Base):
     bitbucket_repo_slug: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Отдельный credential от `credential_id` выше — у Bitbucket этого же
     # инстанса может быть своя сервисная учётка, отличная от Jira/Confluence.
+    # ВАЖНО: это basic-auth пара login/password для REST API Bitbucket. Для
+    # клонирования на стенде нужен `git_credential_id` ниже — другой формат.
     bitbucket_credential_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Значение секрета этой записи целиком подставляется в HTTP-заголовок
+    # `Authorization` при клонировании репозитория на стенде, т.е. хранить
+    # нужно строку СО СХЕМОЙ ("Bearer <PAT>" / "Basic <base64>"), а не голый
+    # токен. Пусто — падаем обратно на `bitbucket_credential_id`
+    # (совместимость с тем, как было до разделения).
+    git_credential_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     jira_board_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     tempo_team_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     confluence_report_page_space: Mapped[str | None] = mapped_column(String(64), nullable=True)

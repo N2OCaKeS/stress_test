@@ -3,8 +3,8 @@
  * миграции — фоновый пересчёт статистики через внешний сервис, ветка
  * `statistics` того же монорепо).
  *
- * `getStatisticsSettings`/`getStatisticsStatus` открыты любому
- * аутентифицированному актору. `updateStatisticsSettings`/
+ * `getStatisticsSettings`/`getStatisticsStatus`/`getStatisticsCategories`
+ * открыты любому аутентифицированному актору. `updateStatisticsSettings`/
  * `triggerStatisticsRecalc` — под матрицей `(statistics_settings, *, update)`.
  *
  * Source of truth: `testing_service/src/api/v1/endpoints/statistics.py`.
@@ -12,6 +12,8 @@
 
 import { apiGet, apiPost, apiPut } from "@/api/client";
 import type {
+  StatisticsCategoriesResponse,
+  StatisticsCategory,
   StatisticsRecalcStatus,
   StatisticsRecalcTriggerRequest,
   StatisticsSettings,
@@ -38,9 +40,20 @@ export function getStatisticsStatus(): Promise<StatisticsRecalcStatus> {
 }
 
 /**
+ * `GET /statistics/categories` — семейства тестов, которые можно пересчитать
+ * по отдельности. Ключи и подписи приходят с бекенда, чтобы список кнопок не
+ * разъезжался с тем, что реально умеет внешний сервис статистики.
+ */
+export async function getStatisticsCategories(): Promise<StatisticsCategory[]> {
+  const body = await apiGet<StatisticsCategoriesResponse>(`${BASE}/categories`);
+  return body.items ?? [];
+}
+
+/**
  * `POST /statistics/recalculate` — ручной триггер для одиночных тестов.
  * Не блокирует до завершения пересчёта — отвечает сразу после постановки в
- * фон, актуальный статус смотреть через `getStatisticsStatus`.
+ * фон, актуальный статус смотреть через `getStatisticsStatus`. Без `category`
+ * пересчитывается всё, с `category` — одно семейство тестов.
  */
 export function triggerStatisticsRecalc(
   body: StatisticsRecalcTriggerRequest = {},

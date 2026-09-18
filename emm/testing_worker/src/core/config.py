@@ -84,6 +84,72 @@ class Settings(BaseSettings):
         ),
     )
 
+    preflight_enabled: bool = Field(
+        default=True,
+        alias="PREFLIGHT_ENABLED",
+        description=(
+            "Проверять доступность внешних сервисов (Jira/Confluence/git/"
+            "releases/DNS) перед запуском теста на стенде. Выключение имеет "
+            "смысл в изолированных окружениях, где этих адресов нет вообще."
+        ),
+    )
+    preflight_http_urls: str = Field(
+        default=(
+            "https://jira.astralinux.ru,"
+            "https://life.astralinux.ru,"
+            "https://git.astralinux.ru,"
+            "https://releases.devos.astralinux.ru"
+        ),
+        alias="PREFLIGHT_HTTP_URLS",
+        description=(
+            "Список URL через запятую, каждый из которых должен ответить перед "
+            "запуском теста. Дефолт — те же четыре адреса, что проверяло легаси "
+            "(allta_image_conf.py: JIRA_URL/CONFLUENCE_URL/GIT_URL/RELEASES_URL). "
+            "Пустая строка отключает HTTP-часть проверки."
+        ),
+    )
+    preflight_dns_hosts: str = Field(
+        default="10.177.128.198,10.177.180.246,10.177.181.142",
+        alias="PREFLIGHT_DNS_HOSTS",
+        description=(
+            "Корпоративные DNS-серверы через запятую. Достаточно, чтобы "
+            "отозвался ЛЮБОЙ из них (легаси-семантика: `0 in available_dns."
+            "values()`). Пустая строка отключает DNS-часть проверки."
+        ),
+    )
+    preflight_dns_port: int = Field(
+        default=53,
+        alias="PREFLIGHT_DNS_PORT",
+        description=(
+            "Порт для TCP-проверки DNS-серверов. Легаси слало ICMP-ping, но "
+            "контейнеру raw-сокеты недоступны — проверяем тот порт, ради "
+            "которого сервер и нужен."
+        ),
+    )
+    preflight_probe_timeout_seconds: float = Field(
+        default=15.0,
+        alias="PREFLIGHT_PROBE_TIMEOUT_SECONDS",
+        description="Таймаут одной пробы (один HTTP-запрос либо один TCP-коннект к DNS).",
+    )
+    preflight_poll_interval_seconds: float = Field(
+        default=180.0,
+        alias="PREFLIGHT_POLL_INTERVAL_SECONDS",
+        description=(
+            "Пауза между повторами проверки, пока хоть один сервис недоступен. "
+            "Дефолт — легаси `requests_frequency = 180`."
+        ),
+    )
+    preflight_timeout_seconds: float = Field(
+        default=7200.0,
+        alias="PREFLIGHT_TIMEOUT_SECONDS",
+        description=(
+            "Сколько всего ждать восстановления внешних сервисов, прежде чем "
+            "признать item провалившимся. Дефолт — легаси `wait_time = 120` "
+            "минут. Ожидание ограничено специально: зависшая проверка не "
+            "должна держать очередь стенда бесконечно."
+        ),
+    )
+
     ssh_connect_timeout_seconds: float = Field(
         default=30.0,
         alias="SSH_CONNECT_TIMEOUT_SECONDS",

@@ -46,6 +46,7 @@ function emptySettings() {
     bitbucket_project_key: null,
     bitbucket_repo_slug: null,
     bitbucket_credential_id: null,
+    git_credential_id: null,
     jira_board_id: null,
     tempo_team_id: null,
     confluence_report_page_space: null,
@@ -153,7 +154,7 @@ describe("ServicesTestingIntegrationSettings — интеграции отдел
     expect(screen.queryByRole("option", { name: /Другой отдел/ })).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: /Истёкший/ })).toBeDisabled();
     fireEvent.click(screen.getByRole("option", { name: "Jira испытаний · jira" }));
-    fireEvent.click(screen.getByRole("button", { name: "Учётные данные Git / Bitbucket: Не выбраны" }));
+    fireEvent.click(screen.getByRole("button", { name: "Учётные данные Bitbucket (REST API): Не выбраны" }));
     fireEvent.click(screen.getByRole("option", { name: "Git испытаний · jira" }));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
     await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith("dep_1", expect.objectContaining({ credential_id: "cred_jira", bitbucket_credential_id: "cred_git" })));
@@ -171,6 +172,19 @@ describe("ServicesTestingIntegrationSettings — интеграции отдел
     fireEvent.click(await screen.findByRole("option", { name: "Confluence испытаний · confluence" }));
     fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
     await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith("dep_1", expect.objectContaining({ confluence_credential_id: "cred_confluence" })));
+  });
+
+  it("выбирает отдельную сервисную запись для клонирования git на стенде", async () => {
+    const cred = { id: "cred_jira", name: "Jira испытаний", service: "jira", scope: "service", owner_dept_id: "dep_1", status: "active", valid_from: null, valid_to: null };
+    const gitCred = { ...cred, id: "cred_git_header", name: "Git header", service: "bitbucket" };
+    listCredentialsMock.mockResolvedValue({ items: [cred, gitCred], next_cursor: null });
+    upsertDepartmentIntegrationSettingsMock.mockResolvedValue(emptySettings());
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Учётные данные для клонирования git на стенде: Не выбраны" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Учётные данные для клонирования git на стенде: Не выбраны" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Git header · bitbucket" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith("dep_1", expect.objectContaining({ git_credential_id: "cred_git_header" })));
   });
 
   it("ошибка списка секретов не стирает сохранённую привязку", async () => {

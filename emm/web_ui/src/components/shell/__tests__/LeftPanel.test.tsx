@@ -219,7 +219,7 @@ describe("LeftPanel — аудит-чип", () => {
 describe("LeftPanel — индикатор пересчёта статистики", () => {
   it("не рендерится, когда пересчёт ни разу не запускался (idle) — это индикатор, не постоянная плашка", async () => {
     currentStatisticsStatus = {
-      status: "idle", triggered_by: null, test_run_id: null,
+      status: "idle", triggered_by: null, category: null, test_run_id: null,
       started_at: null, finished_at: null, error: null, updated_at: null,
     };
     renderPanel(
@@ -235,7 +235,7 @@ describe("LeftPanel — индикатор пересчёта статистик
 
   it("не рендерится после завершения пересчёта (succeeded/failed) — только пока фактически идёт", async () => {
     currentStatisticsStatus = {
-      status: "succeeded", triggered_by: "manual", test_run_id: null,
+      status: "succeeded", triggered_by: "manual", category: null, test_run_id: null,
       started_at: "2026-09-15T10:00:00Z", finished_at: "2026-09-15T10:05:00Z",
       error: null, updated_at: null,
     };
@@ -252,7 +252,7 @@ describe("LeftPanel — индикатор пересчёта статистик
 
   it("показывает статус running с анимацией", async () => {
     currentStatisticsStatus = {
-      status: "running", triggered_by: "test_run", test_run_id: "run_1",
+      status: "running", triggered_by: "test_run", category: null, test_run_id: "run_1",
       started_at: "2026-09-15T10:00:00Z", finished_at: null, error: null, updated_at: null,
     };
     renderPanel(
@@ -267,7 +267,7 @@ describe("LeftPanel — индикатор пересчёта статистик
 
   it("не рендерится для персоны без доступа к server-зоне", async () => {
     currentStatisticsStatus = {
-      status: "succeeded", triggered_by: "manual", test_run_id: null,
+      status: "succeeded", triggered_by: "manual", category: null, test_run_id: null,
       started_at: "2026-09-15T10:00:00Z", finished_at: "2026-09-15T10:05:00Z",
       error: null, updated_at: null,
     };

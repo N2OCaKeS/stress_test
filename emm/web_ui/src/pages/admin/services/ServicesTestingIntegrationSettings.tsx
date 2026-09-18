@@ -52,9 +52,15 @@ const INTEGRATION_FIELDS: Array<{ key: string; label: string; placeholder?: stri
   { key: "credential_id", label: "Credential id (Jira/Zephyr)", placeholder: "cred_...", mono: true },
   { key: "confluence_credential_id", label: "Credential id (Confluence)", placeholder: "cred_...", mono: true },
   { key: "bitbucket_credential_id", label: "Credential id (Bitbucket)", placeholder: "cred_...", mono: true },
+  { key: "git_credential_id", label: "Credential id (клонирование git)", placeholder: "cred_...", mono: true },
 ];
 
-const _CREDENTIAL_SELECT_KEYS = ["credential_id", "confluence_credential_id", "bitbucket_credential_id"];
+const _CREDENTIAL_SELECT_KEYS = [
+  "credential_id",
+  "confluence_credential_id",
+  "bitbucket_credential_id",
+  "git_credential_id",
+];
 
 export function ServicesTestingIntegrationSettings() {
   const { persona } = usePersona();
@@ -132,7 +138,7 @@ function IntegrationSettingsForm({ departmentId }: { departmentId: string }) {
         Выберите нужные записи вашего отдела ниже.
       </div>
 
-      {loaded && !loaded.credential_id && !loaded.confluence_credential_id && !loaded.bitbucket_credential_id && (
+      {loaded && !loaded.credential_id && !loaded.confluence_credential_id && !loaded.bitbucket_credential_id && !loaded.git_credential_id && (
         <div className="alert-warn text-sm flex items-start gap-2">
           <Link2 className="w-4 h-4 mt-0.5 shrink-0" />
           <div className="flex-1">

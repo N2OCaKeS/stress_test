@@ -6,7 +6,11 @@ import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
 import { useQuery } from "@/api/auth/useQuery";
 import { listQueueItems, retryQueueItem } from "@/api/testing/queueItems";
-import { getStatisticsStatus, triggerStatisticsRecalc } from "@/api/testing/statistics";
+import {
+  getStatisticsCategories,
+  getStatisticsStatus,
+  triggerStatisticsRecalc,
+} from "@/api/testing/statistics";
 import { listOsVersions } from "@/api/server/osVersions";
 import { listTestDefinitions } from "@/api/testing/testDefinitions";
 import { listTestStands, getTestStand } from "@/api/testing/testStands";
@@ -146,18 +150,30 @@ export function useAdhocState(enabled = true): AdhocState {
 export function AdhocMiddlePanel({ state }: { state: AdhocState }) {
   const [launchOpen, setLaunchOpen] = useState(false);
   const toast = useToast();
-  const [recalcPending, setRecalcPending] = useState(false);
+  // Какой именно пересчёт сейчас запускаем: "" — полный, иначе ключ семейства.
+  // null — ни один, кнопки активны.
+  const [recalcPending, setRecalcPending] = useState<string | null>(null);
+  // Восемь пер-категорийных кнопок легаси (девятая — «всё сразу» ниже). Список
+  // приходит с бекенда, чтобы не разъезжаться с тем, что умеет внешний сервис.
+  const categoriesQ = useQuery(() => getStatisticsCategories(), []);
+  const categories = categoriesQ.data ?? [];
   // Живой индикатор фонового пересчёта (не только локальное "кнопка нажата,
   // ждём ответа сервера" — пересчёт может идти и по другой причине, тот же
   // индикатор, что и на левой панели, показывается только пока реально
   // выполняется, не последний известный итог.
   const [recalcRunning, setRecalcRunning] = useState(false);
+  const [recalcCategory, setRecalcCategory] = useState<string | null>(null);
+  const recalcCategoryLabel = recalcCategory
+    ? categories.find((item) => item.key === recalcCategory)?.label ?? recalcCategory
+    : null;
   useEffect(() => {
     let cancelled = false;
     async function poll() {
       try {
         const status = await getStatisticsStatus();
-        if (!cancelled) setRecalcRunning(status.status === "running");
+        if (cancelled) return;
+        setRecalcRunning(status.status === "running");
+        setRecalcCategory(status.category);
       } catch {
         // best-effort индикатор — тихо оставляем предыдущее значение при сбое опроса
       }
@@ -169,16 +185,18 @@ export function AdhocMiddlePanel({ state }: { state: AdhocState }) {
       clearInterval(timer);
     };
   }, []);
-  async function handleRecalc() {
-    if (recalcPending) return;
-    setRecalcPending(true);
+  async function handleRecalc(category?: string, label?: string) {
+    if (recalcPending !== null) return;
+    setRecalcPending(category ?? "");
     try {
-      await triggerStatisticsRecalc();
-      toast.success("Пересчёт статистики запущен в фоне — статус смотрите слева на панели");
+      await triggerStatisticsRecalc(category ? { category } : {});
+      toast.success(
+        `Пересчёт статистики${label ? ` «${label}»` : ""} запущен в фоне — статус смотрите слева на панели`,
+      );
     } catch (error) {
       toast.error(apiErrMsg(error, "Не удалось запустить пересчёт статистики"));
     } finally {
-      setRecalcPending(false);
+      setRecalcPending(null);
     }
   }
   return (
@@ -247,17 +265,37 @@ export function AdhocMiddlePanel({ state }: { state: AdhocState }) {
           size="sm"
           type="button"
           className="w-full mt-2 flex items-center justify-center gap-2"
-          disabled={recalcPending}
-          onClick={handleRecalc}
-          title="Пересчитать статистику по одиночным тестам в фоне, не блокируя очередь"
+          disabled={recalcPending !== null}
+          onClick={() => handleRecalc()}
+          title="Пересчитать всю статистику в фоне, не блокируя очередь"
         >
           <BarChart3 className="w-3.5 h-3.5" />
-          {recalcPending ? "Запускаем…" : "Пересчитать статистику"}
+          {recalcPending === "" ? "Запускаем…" : "Пересчитать статистику"}
         </Button>
+        {categories.length > 0 && (
+          <div className="mt-2">
+            <div className="text-xs text-dim mb-1">Пересчитать отдельно</div>
+            <div className="grid grid-cols-2 gap-1">
+              {categories.map((category) => (
+                <Button
+                  key={category.key}
+                  size="sm"
+                  type="button"
+                  className="w-full justify-center truncate"
+                  disabled={recalcPending !== null}
+                  onClick={() => handleRecalc(category.key, category.label)}
+                  title={`Пересчитать статистику: ${category.label}`}
+                >
+                  {recalcPending === category.key ? "Запускаем…" : category.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
         {recalcRunning && (
           <div className="text-xs text-dim mt-1 flex items-center gap-1.5">
             <BarChart3 className="w-3.5 h-3.5 animate-pulse" />
-            Идёт расчёт статистики…
+            Идёт расчёт статистики{recalcCategoryLabel ? `: ${recalcCategoryLabel}` : ""}…
           </div>
         )}
       </div>

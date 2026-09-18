@@ -28,6 +28,7 @@ _NULLABLE_FIELDS = (
     "bitbucket_project_key",
     "bitbucket_repo_slug",
     "bitbucket_credential_id",
+    "git_credential_id",
     "jira_board_id",
     "tempo_team_id",
     "confluence_report_page_space",
@@ -38,8 +39,13 @@ _NULLABLE_FIELDS = (
 
 # Поля-ссылки на secret_service, которые нужно провалидировать на PUT (C4):
 # credential_id (Jira/Zephyr/Tempo и Confluence-fallback), confluence_credential_id,
-# bitbucket_credential_id.
-_CREDENTIAL_LINK_FIELDS = ("credential_id", "confluence_credential_id", "bitbucket_credential_id")
+# bitbucket_credential_id, git_credential_id.
+_CREDENTIAL_LINK_FIELDS = (
+    "credential_id",
+    "confluence_credential_id",
+    "bitbucket_credential_id",
+    "git_credential_id",
+)
 
 
 async def _validate_credential_links(token: str, changes: dict) -> None:

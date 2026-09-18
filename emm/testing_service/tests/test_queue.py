@@ -198,28 +198,31 @@ async def _get_item(item_id: str):
 
 @pytest.fixture
 def mock_git_token(monkeypatch):
-    """Настраивает `bitbucket_credential_id` отдела + мокает `secret_client.reveal_credential`.
+    """Настраивает git-credential отдела + мокает `secret_client.reveal_credential`.
 
-    `claim_next` собирает git-токен для `starter.sh` из
-    `department_integration_settings.bitbucket_credential_id` — без него item
-    проваливается ещё до того, как воркер увидит команду (см.
-    `services/queue.py::_resolve_git_token`).
+    `claim_next` собирает значение заголовка `Authorization` для `starter.sh` из
+    `department_integration_settings.git_credential_id` (фолбэк —
+    `bitbucket_credential_id`); без него item проваливается ещё до того, как
+    воркер увидит команду (см. `services/queue.py::_resolve_git_token`).
     """
     async def fake_reveal(cred_id: str):
         return ("git-bot", "git-token-value")
 
     monkeypatch.setattr(secret_client, "reveal_credential", fake_reveal)
 
-    async def _install(department_id: str = "dep_a") -> None:
+    async def _install(department_id: str = "dep_a", **fields) -> None:
+        changes = fields or {"git_credential_id": "cred_git_header"}
         async with AsyncSessionLocal() as db:
             existing = await dis_repo.get_by_department(db, department_id)
             if existing is None:
                 await dis_repo.create(db, {
                     "id": department_integration_settings_id(),
                     "department_id": department_id,
-                    "bitbucket_credential_id": "cred_bitbucket",
+                    **changes,
                 })
-                await db.commit()
+            else:
+                await dis_repo.update(db, existing, changes)
+            await db.commit()
 
     return _install
 
@@ -601,6 +604,103 @@ class TestClaim:
         assert resp.status_code == 200, resp.text
         payload = resp.json()["item"]
         assert payload["dates_content"] == f"--run Тест очереди_1.8.5_orel_6.1.0_{stand_id}"
+
+
+class TestGitCredentialResolution:
+    """Один секрет не может служить и заголовком `Authorization`, и паролем basic-auth.
+
+    Легаси держало их врозь: заголовок — `tokens['git_token']`
+    (`backup_image.py:270` → `starter.sh:56`), а Bitbucket REST в HR-отчёте —
+    `auth=(tokens['username'], passwd)` (`monthly_report.py:23`, вообще другая
+    пара). Поэтому у заголовка своя ссылка `git_credential_id`, а
+    `bitbucket_credential_id` остался фолбэком для уже настроенных отделов.
+    """
+
+    async def _claim_with(self, client, admin_token, mock_server_service, mock_git_token, **fields):
+        mock_server_service(host="10.9.9.9")
+        await mock_git_token("dep_a", **fields)
+        stand_id, _server_id = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+        await client.post(
+            f"{CALLBACK_BASE}/{item.prepare_request_id}/completed",
+            headers=_server_hdr("server_service", SERVER_SECRET),
+            json={
+                "correlation_id": item.id, "succeeded": True,
+                "test_username": "u", "test_password": "s3cr3t",
+                "test_ssh_private_key": "-----KEY-----",
+            },
+        )
+        resp = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+        assert resp.status_code == 200, resp.text
+        return item, resp.json()["item"]
+
+    async def test_uses_dedicated_git_credential(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token, monkeypatch,
+    ):
+        seen: list[str] = []
+
+        async def fake_reveal(cred_id: str):
+            seen.append(cred_id)
+            return ("git-bot", "Bearer PAT123")
+
+        monkeypatch.setattr(secret_client, "reveal_credential", fake_reveal)
+
+        _item, payload = await self._claim_with(
+            client, admin_token, mock_server_service, mock_git_token,
+            git_credential_id="cred_git_header", bitbucket_credential_id="cred_bitbucket_basic",
+        )
+        # Заголовок берётся из своей записи, а не из bitbucket-пары.
+        assert seen == ["cred_git_header"]
+        assert payload["command"][4] == "Bearer PAT123"
+        assert payload["command_masked"][4] == "***"
+
+    async def test_falls_back_to_bitbucket_credential(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token, monkeypatch,
+    ):
+        """Отдел, настроенный до разделения, продолжает работать как раньше."""
+        seen: list[str] = []
+
+        async def fake_reveal(cred_id: str):
+            seen.append(cred_id)
+            return ("git-bot", "legacy-token")
+
+        monkeypatch.setattr(secret_client, "reveal_credential", fake_reveal)
+
+        _item, payload = await self._claim_with(
+            client, admin_token, mock_server_service, mock_git_token,
+            git_credential_id=None, bitbucket_credential_id="cred_bitbucket_basic",
+        )
+        assert seen == ["cred_bitbucket_basic"]
+        assert payload["command"][4] == "legacy-token"
+
+    async def test_neither_configured_fails_item(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+    ):
+        mock_server_service(host="10.9.9.9")
+        await mock_git_token("dep_a", git_credential_id=None, bitbucket_credential_id=None)
+        stand_id, _server_id = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+        await client.post(
+            f"{CALLBACK_BASE}/{item.prepare_request_id}/completed",
+            headers=_server_hdr("server_service", SERVER_SECRET),
+            json={
+                "correlation_id": item.id, "succeeded": True,
+                "test_username": "u", "test_password": "s3cr3t",
+                "test_ssh_private_key": "-----KEY-----",
+            },
+        )
+        resp = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["item"] is None
+
+        row = await _get_item(item.id)
+        assert "git token resolution failed" in (row.error or "")
+        assert "GIT_CREDENTIAL_NOT_CONFIGURED" not in (row.error or "")
+        assert "git_credential_id" in (row.error or "")
 
 
 class TestImportedCatalogNormalLaunch:

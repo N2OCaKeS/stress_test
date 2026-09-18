@@ -604,7 +604,8 @@ class UsageOSResources:
             )
             labels[f"{column}_load"] = f"{label} (load)"
 
-        rating, criteria = model.total_rating(scale=100.0)
+        rating, criteria = model.total_rating(scale=10000.0)
+        rating = round(rating)
 
         result = {
             "rating": rating,

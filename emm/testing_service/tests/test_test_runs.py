@@ -250,6 +250,46 @@ class TestCreateTestRun:
         assert err["test_id"] == bad_test
         assert err["error_code"] == "TEST_STAND_QUEUE_DISABLED"
 
+    async def test_busy_stand_does_not_block_the_rest_of_the_campaign(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        """Один занятый стенд кампании — частичный провал (§5.5), а не отказ всей кампании."""
+        mock_server_service()
+        good_stand, _ = await _create_stand(client, admin_token)
+        busy_stand, busy_server_id = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, good_stand)
+        busy_test = await _create_test_def(client, admin_token, busy_stand)
+        mock_server_service(overrides={
+            "batch_status": {busy_server_id: {"busy_state": "busy", "busy_service_name": "acs"}},
+        })
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([good_stand, busy_stand], debug=True))
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert len(body["enqueue_errors"]) == 1
+        err = body["enqueue_errors"][0]
+        assert err["stand_id"] == busy_stand
+        assert err["test_id"] == busy_test
+        assert err["error_code"] == "STAND_BUSY"
+        # Занятый стенд не получил ни item'а, ни попытки взять бронь.
+        acquired_for = {p for _, p in recorded_calls if p.endswith("/acquire-for-service")}
+        assert len(acquired_for) == 1
+
+    async def test_busy_stand_force_allows_department_admin(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True, force=True),
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["enqueue_errors"] == []
+        assert any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
+
     async def test_final_flag_persisted(self, client, admin_token, mock_server_service):
         mock_server_service()
         stand_id, _ = await _create_stand(client, admin_token)

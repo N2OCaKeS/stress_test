@@ -271,6 +271,17 @@ export function isSecretAdmin(persona: Persona): boolean {
   return persona.service_roles?.secret === "admin";
 }
 
+/**
+ * True если персона может запустить тест/кампанию на занятом стенде через
+ * `force` (§1 плана 2026-09-18 — предзапросная проверка занятости). Backend
+ * проверяет то же самое по department_id стенда, а не персоны, — здесь только
+ * гейт видимости кнопки «Запустить принудительно», реальное решение остаётся
+ * за testing_service.
+ */
+export function canForceStandLaunch(persona: Persona): boolean {
+  return persona.platform_role === "dep_admin" || persona.service_roles?.testing === "admin";
+}
+
 export interface UserMutationCaps {
   /** Edit profile (email, status), reset password, force-MFA-reset. */
   edit: boolean;

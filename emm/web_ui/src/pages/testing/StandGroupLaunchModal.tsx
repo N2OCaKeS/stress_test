@@ -9,6 +9,8 @@ import { listOsVersions, resolveOsKernels } from "@/api/server/osVersions";
 import { createTestRun, previewTestRun } from "@/api/testing/testRuns";
 import { addTestToStp } from "@/api/testing/stp";
 import type { TestRunCreateResponse, TestRunPreviewEntry } from "@/api/testing/types";
+import { usePersona } from "@/contexts/PersonaContext";
+import { canForceStandLaunch } from "@/lib/rbac";
 
 const SKIP_LABELS: Record<string, string> = {
   skip_debug_required: "Требуется debug",
@@ -58,6 +60,8 @@ export function StandGroupLaunchModal({
   onClose: () => void;
   onLaunched: (id: string) => void;
 }) {
+  const { persona } = usePersona();
+  const canForce = canForceStandLaunch(persona);
   const versionsQ = useQuery(() => listOsVersions({ limit: 500 }), []);
   const [rc, setRc] = useState("");
   const [detected, setDetected] = useState<Record<string, string[]>>({});
@@ -92,10 +96,8 @@ export function StandGroupLaunchModal({
   const launchable = entries.filter((entry) => entry.action === "launch");
   const emptyStand = previewQ.data?.stands_without_tests.includes(standId) ?? false;
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    if (busy || !ready || launchable.length === 0) return;
-    const body = { os_version_id: rc.trim(), kernel: kernel.trim(), test_run_stands: [standId], final, debug };
+  async function launch(force: boolean) {
+    const body = { os_version_id: rc.trim(), kernel: kernel.trim(), test_run_stands: [standId], final, debug, force };
     const fingerprint = JSON.stringify(body);
     if (request.current.fingerprint !== fingerprint) request.current = { fingerprint, id: crypto.randomUUID() };
     setBusy(true); setError("");
@@ -104,16 +106,33 @@ export function StandGroupLaunchModal({
     finally { setBusy(false); }
   }
 
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy || !ready || launchable.length === 0) return;
+    await launch(false);
+  }
+
   if (result) {
+    const busyErrors = result.enqueue_errors.filter((err) => err.error_code === "STAND_BUSY");
     const hasWarnings = result.stands_without_tests.length > 0 || result.enqueue_errors.length > 0;
     return (
       <Modal open onOpenChange={(open) => { if (!open) onLaunched(result.id); }} title="Группа запущена" width="md">
         <div className="grid gap-3">
           <div className="text-sm">Кампания <span className="mono">{result.id}</span> создана.</div>
+          {busyErrors.length > 0 && (
+            <div className="text-xs text-warn grid gap-2">
+              <div>Стенд занят — часть тестов не запущена: {busyErrors[0].message}</div>
+              {canForce && (
+                <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => launch(true)}>
+                  {busy ? "Запускаем…" : "Запустить принудительно"}
+                </Button>
+              )}
+            </div>
+          )}
           {hasWarnings && (
             <div className="text-xs text-warn grid gap-1">
               {result.stands_without_tests.length > 0 && <div>Стенд остался без единого закреплённого теста.</div>}
-              {result.enqueue_errors.map((err) => <div key={`${err.stand_id}-${err.test_id}`}>{err.message}</div>)}
+              {result.enqueue_errors.filter((err) => err.error_code !== "STAND_BUSY").map((err) => <div key={`${err.stand_id}-${err.test_id}`}>{err.message}</div>)}
             </div>
           )}
           <Button type="button" variant="primary" onClick={() => onLaunched(result.id)}>Готово</Button>

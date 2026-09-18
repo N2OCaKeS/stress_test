@@ -457,6 +457,13 @@ export interface TestRunCreateRequest {
    * РЦ до полного набора (`scope=full`), затем запускает уже расширенный состав.
    */
   full?: boolean;
+  /**
+   * Запустить даже на занятых стендах кампании. Занятый стенд без `force`
+   * попадает в `enqueue_errors` с `error_code: "STAND_BUSY"` вместо запуска;
+   * без роли department_admin/`admin` testing_service своего отдела сервер
+   * отвечает `FORCE_LAUNCH_DENIED`, а не запускает как обычно.
+   */
+  force?: boolean;
   /** Ключ идемпотентности: повтор с тем же значением и тем же телом вернёт ту же кампанию, с другим телом — 409 REQUEST_ID_CONFLICT. */
   request_id?: string;
 }

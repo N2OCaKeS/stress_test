@@ -116,6 +116,7 @@ async def launch(db: AsyncSession, identity: Identity, body: QueueLaunchRequest)
         client_request_id=body.request_id,
         request_fingerprint=fingerprint,
         stp_test_run_id=stp.id if stp else None,
+        force=body.force,
     )
 
 

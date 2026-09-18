@@ -28,6 +28,12 @@ export interface PublicQueueItem {
 export interface QueueLaunchRequest {
   request_id: string; test_id: string; stand_id: string; os_version_id: string;
   kernel: string; debug_mode: boolean;
+  /**
+   * Запустить даже на занятом стенде. Без роли department_admin/`admin`
+   * testing_service своего отдела сервер отклоняет запрос отдельным
+   * `FORCE_LAUNCH_DENIED`, а не тихо запускает как обычно.
+   */
+  force?: boolean;
 }
 export interface QueueItemsQuery {
   kind?: "standalone" | "campaign" | "all";

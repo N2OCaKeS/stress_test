@@ -38,14 +38,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.constants import (
     ACTIVE_QUEUE_STATES,
     IN_FLIGHT_QUEUE_STATES,
+    SERVICE_NAME,
+    PlatformRole,
     QueueInterruptAction,
     QueueItemState,
     QueueOrchestrationEventKind,
+    ServiceRole,
     TERMINAL_TEST_RUN_STATUSES,
     TestReadiness,
 )
 from src.core.exceptions import (
     AppException,
+    AuthorizationError,
     ConflictError,
     DomainValidationError,
     NotFoundError,
@@ -95,6 +99,7 @@ async def enqueue(
     client_request_id: str | None = None,
     request_fingerprint: str | None = None,
     stp_test_run_id: str | None = None,
+    force: bool = False,
 ) -> QueueItem:
     """Поставить тест в очередь стенда.
 
@@ -116,6 +121,11 @@ async def enqueue(
     тест (`services/queue.py::claim_next` считает её через `starter_suffix`).
     Итоговый статус такого item'а — `QueueItemState.PREPARED`, не
     `succeeded`/`failed` (см. `complete_item`).
+
+    `force` имеет смысл только когда стенд ещё свободен от очереди
+    testing_service (см. `_ensure_stand_free_for_launch`) — обходит отказ
+    STAND_BUSY, но только для department_admin отдела стенда либо носителя
+    роли admin в этом отделе, остальным вызывающим `force=True` не помогает.
     """
     test = await test_definition_repo.get_by_id(db, test_id, for_update=True)
     if test is None:
@@ -183,6 +193,11 @@ async def enqueue(
         )
 
     was_empty = await repo.count_active_for_stand(db, stand.id) == 0
+    if was_empty:
+        # Только здесь очередь стенда реально пуста и мы вот-вот заново
+        # возьмём его в цикл — если она уже активна, бронь наша с прошлого
+        # item'а, ничего нового не захватывается, проверять нечего.
+        await _ensure_stand_free_for_launch(db, identity, stand, force=force)
     position = await repo.next_position_for_stand(db, stand.id)
 
     data = {
@@ -220,6 +235,55 @@ async def enqueue(
         await _start_or_continue_cycle(db, stand, item, is_first_ever=True)
         await db.refresh(item)
     return item
+
+
+_FREE_BUSY_STATE = "free"
+
+
+async def _ensure_stand_free_for_launch(
+    db: AsyncSession, identity: Identity, stand, *, force: bool,
+) -> None:
+    """Отказать в постановке, если стенд занят кем-то посторонним.
+
+    Дешёвая проверка через тот же internal-канал, что и обзор пула
+    (`server_client.get_servers_status_batch`) — до всякого commit'а. Не
+    подменяет настоящий CAS-захват `_start_or_continue_cycle` (гонка между
+    этой проверкой и им самим возможна и остаётся его заботой, включая уже
+    существующую retry-логику на STAND_BUSY_BLOCKED) — она лишь отсекает
+    заведомо занятый стенд раньше, чем в БД попадёт хоть что-то.
+
+    `force=True` обходит отказ, только если caller — department_admin отдела
+    стенда либо носитель роли `admin` testing_service в этом же отделе.
+    Любой другой caller с `force=True` получает отдельный код ошибки, а не
+    тихий откат к обычному STAND_BUSY — иначе выглядело бы так, будто force
+    сам по себе не сработал по неизвестной причине.
+    """
+    statuses = await server_client.get_servers_status_batch([stand.server_id])
+    status = statuses.get(stand.server_id)
+    busy_state = status.get("busy_state") if status else None
+    if busy_state == _FREE_BUSY_STATE:
+        return
+
+    if force:
+        is_stand_admin = identity.department_id == stand.department_id and (
+            identity.platform_role == PlatformRole.DEPARTMENT_ADMIN
+            or ServiceRole.ADMIN in identity.roles_for(SERVICE_NAME)
+        )
+        if is_stand_admin:
+            return
+        raise AuthorizationError(
+            error_code="FORCE_LAUNCH_DENIED",
+            message="Принудительный запуск на занятом стенде доступен только администратору отдела стенда",
+        )
+
+    raise ConflictError(
+        error_code="STAND_BUSY",
+        message="Стенд сейчас занят — запуск недоступен",
+        details={
+            "busy_state": busy_state,
+            "busy_service_name": status.get("busy_service_name") if status else None,
+        },
+    )
 
 
 async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, is_first_ever: bool) -> None:

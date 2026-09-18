@@ -88,6 +88,55 @@ async def test_concurrent_launch_is_idempotent(
     assert response.json()["error_code"] == "REQUEST_ID_CONFLICT"
 
 
+async def test_launch_rejects_busy_stand_without_force(
+    client, admin_token, mock_server_service, recorded_calls,
+):
+    mock_server_service(overrides={
+        "batch_status": {"busy_state": "busy", "busy_service_name": "acs"},
+    })
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    response = await client.post(
+        BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id),
+    )
+    assert response.status_code == 409, response.text
+    payload = response.json()
+    assert payload["error_code"] == "STAND_BUSY"
+    assert payload["details"]["busy_service_name"] == "acs"
+    assert not any(path.endswith("/acquire-for-service") for _, path in recorded_calls)
+
+
+async def test_launch_force_allows_department_admin(
+    client, admin_token, mock_server_service, recorded_calls,
+):
+    mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    response = await client.post(
+        BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id, force=True),
+    )
+    assert response.status_code == 201, response.text
+    assert any(path.endswith("/acquire-for-service") for _, path in recorded_calls)
+
+
+async def test_launch_force_denied_across_departments(
+    client, admin_token, make_token, mock_server_service, recorded_calls,
+):
+    """`admin` другого отдела не может обойти занятость чужого стенда через `force`."""
+    mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    other = make_token(department_id="dep_other", service_roles={"testing_service": ["admin"]})
+    response = await client.post(
+        BASE, headers=auth_hdr(other), json=body(test_id, stand_id, force=True),
+    )
+    # Матрица прав уже режет чужой отдел на входе (require_department_action) —
+    # запрос до busy-preflight не доходит, но итоговый эффект тот же: force
+    # чужого отдела ничего не форсирует.
+    assert response.status_code == 403, response.text
+    assert not any(path.endswith("/acquire-for-service") for _, path in recorded_calls)
+
+
 async def test_launch_rejects_other_department_and_missing_role(
     client, admin_token, no_role_token, make_token, mock_server_service
 ):

@@ -11,12 +11,14 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import httpx
 import pytest
 
 from src.core.constants import QueueItemState
+from src.core.exceptions import AuthorizationError, ConflictError
 from src.dependencies.auth import Identity
 from src.db.session import AsyncSessionLocal
 from src.repositories import department_integration_settings as dis_repo
@@ -54,8 +56,16 @@ def mock_server_service(monkeypatch, recorded_calls):
     """Подменяет транспорт исходящих вызовов в server_service.
 
     `overrides` — dict `{"acquire": 200|409, "service_status": 200|409,
-    "prepare": 202, "release": 200, "connection": 200}`, по умолчанию всё
-    успешно. `department_id`/`host` настраиваются отдельно.
+    "prepare": 202, "release": 200, "connection": 200, "batch_status": {...}}`,
+    по умолчанию всё успешно. `department_id`/`host` настраиваются отдельно.
+
+    `batch_status` — состояние, которое видит `_ensure_stand_free_for_launch`
+    (preflight-проверка занятости перед постановкой в очередь) через
+    `POST /internal/servers/batch-status`. По умолчанию каждый запрошенный
+    сервер отвечает `free`, чтобы существующие тесты, которые про эту
+    проверку не знают, продолжали заводить первый item как раньше. Значение
+    либо общее для всех id в запросе (`{"busy_state": "busy", ...}`), либо
+    per-id (`{"srv_x": {"busy_state": "busy", ...}}`).
     """
     monkeypatch.setattr(server_client, "get_settings", lambda: _StubSettings())
 
@@ -107,6 +117,23 @@ def mock_server_service(monkeypatch, recorded_calls):
             if request.method == "GET" and path.endswith("/connection-info"):
                 status = overrides.get("connection", 200)
                 return httpx.Response(status, json={"server_id": "srv_x", "host": host})
+            if request.method == "POST" and path.endswith("/batch-status"):
+                requested = json.loads(request.content or b"{}").get("server_ids", [])
+                batch_override = overrides.get("batch_status") or {}
+                servers = []
+                for server_id in requested:
+                    entry = batch_override.get(server_id, batch_override) if isinstance(batch_override, dict) else {}
+                    if not isinstance(entry, dict):
+                        entry = {}
+                    servers.append({
+                        "server_id": server_id,
+                        "found": True,
+                        "busy_state": entry.get("busy_state", "free"),
+                        "busy_service_name": entry.get("busy_service_name"),
+                        "ping_reachable": None,
+                        "ping_checked_at": None,
+                    })
+                return httpx.Response(200, json={"servers": servers})
             return httpx.Response(404, json={})
 
         def _build(timeout: float) -> httpx.AsyncClient:
@@ -426,6 +453,120 @@ class TestEnqueue:
         # Бронь никогда не бралась (acquire упал первым же вызовом) — release
         # не должен был вызываться.
         assert not any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
+
+
+class TestBusyPreflight:
+    """`_ensure_stand_free_for_launch` — отказ на входе, до commit'а item'а (§1 плана 2026-09-18)."""
+
+    async def test_busy_stand_rejected_without_force(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        mock_server_service(overrides={
+            "batch_status": {"busy_state": "busy", "busy_service_name": "acs"},
+        })
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        with pytest.raises(ConflictError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert excinfo.value.error_code == "STAND_BUSY"
+        assert excinfo.value.details["busy_service_name"] == "acs"
+        # Ничего не завелось — ни item'а в очереди, ни попытки взять бронь.
+        assert not any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
+        async with AsyncSessionLocal() as db:
+            assert await queue_repo.count_active_for_stand(db, stand_id) == 0
+
+    async def test_free_stand_is_not_blocked(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        mock_server_service()  # default batch-status: free
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert item.state == QueueItemState.PREPARING
+        assert any(p.endswith("/batch-status") for _, p in recorded_calls)
+
+    async def test_second_item_on_active_queue_skips_the_check(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        """Очередь стенда уже активна — бронь наша, новый захват не идёт, проверять нечего."""
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+        recorded_calls.clear()
+        # Стенд стал бы "занят" по мнению server_service (наша же бронь), но
+        # раз очередь уже не пуста — batch-status вообще не запрашивается.
+        mock_server_service(overrides={"batch_status": {"busy_state": "acs"}})
+        async with AsyncSessionLocal() as db:
+            second = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert second.state == QueueItemState.QUEUED
+        assert recorded_calls == []
+
+    async def test_force_allows_department_admin(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, force=True,
+            )
+
+        assert item.state == QueueItemState.PREPARING
+        assert any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
+
+    async def test_force_denied_for_non_admin_same_department(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        """Матрица прав уже не пускает не-admin'а до `POST /queue-items` (нужен `admin`
+        на `test_run.create`), но `_ensure_stand_free_for_launch` не должна полагаться
+        только на это — прямой вызов `enqueue()` с `force=True` от guest'а того же
+        отдела тоже обязан получить отказ, а не тихо проскочить."""
+        mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        guest = Identity(
+            user_id="usr_guest", username="guest", actor_type="user",
+            department_id="dep_a", allowed_services=["testing_service"],
+            service_roles={"testing_service": ["guest"]}, is_banned=False, platform_role=None,
+        )
+
+        with pytest.raises(AuthorizationError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(db, guest, test_id, launch_context=LAUNCH_CTX, force=True)
+
+        assert excinfo.value.error_code == "FORCE_LAUNCH_DENIED"
+        assert not any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
+
+    async def test_force_denied_across_departments(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        """admin другого отдела не может форсировать запуск на чужом стенде —
+        та же изоляция, что и у обычной постановки в очередь."""
+        mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        other_dept_admin = _identity(department_id="dep_b", user_id="usr_dep_b_admin")
+
+        with pytest.raises(AuthorizationError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(
+                    db, other_dept_admin, test_id, launch_context=LAUNCH_CTX, force=True,
+                )
+
+        assert excinfo.value.error_code == "FORCE_LAUNCH_DENIED"
+        assert not any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
 
 
 class TestPrepareCallback:

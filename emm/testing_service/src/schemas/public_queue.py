@@ -23,6 +23,15 @@ class QueueLaunchRequest(BaseModel):
             "command.txt с командой, которая была бы запущена."
         ),
     )
+    force: bool = Field(
+        default=False,
+        description=(
+            "Запустить даже на занятом стенде. Сервер сам перепроверяет право "
+            "(department_admin отдела стенда либо роль admin testing_service "
+            "в этом отделе) — у остальных вызывающих запрос отклоняется, а не "
+            "тихо выполняется без force."
+        ),
+    )
 
 
 class QueueRetryRequest(BaseModel):

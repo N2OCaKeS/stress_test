@@ -243,6 +243,7 @@ async def create_test_run(
     final: bool = False,
     debug: bool = False,
     full: bool = False,
+    force: bool = False,
     request_id: str | None = None,
 ) -> tuple[TestRun, list[str], list[TestRunPartialError], list[dict]]:
     """Завести кампанию + поставить в очередь её состав.
@@ -262,6 +263,12 @@ async def create_test_run(
     `request_id` — повтор с тем же значением и тем же телом возвращает уже
     созданную кампанию без повторной постановки в очередь; с другим телом —
     `ConflictError`, как у `public_queue.py::request()`.
+
+    `force` пробрасывается в каждый `queue_svc.enqueue()` — занятый стенд не
+    рушит кампанию целиком, его записи просто уходят в `enqueue_errors` с
+    `error_code=STAND_BUSY` (или `FORCE_LAUNCH_DENIED`, если `force=True`
+    запросил не department_admin/`admin`-роль отдела стенда), остальные
+    стенды кампании стартуют как обычно.
     """
     try:
         await permissions.require_action(db, identity, EntityType.TEST_RUN, Action.CREATE)
@@ -299,7 +306,7 @@ async def create_test_run(
         payload = {
             "os_version_id": os_version_id, "kernel": kernel,
             "test_run_stands": sorted(requested_stands), "final": final,
-            "debug": debug, "full": full,
+            "debug": debug, "full": full, "force": force,
         }
         fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         await repo.lock_request(db, identity.user_id, request_id)
@@ -388,6 +395,7 @@ async def create_test_run(
                 debug_mode=debug, stand_id=entry.stand_id if debug else None,
                 test_run_id=run.id, test_run_entry_id=entry.id,
                 stp_test_run_id=stp.id if stp else None,
+                force=force,
             )
         except AppException as exc:
             logger.warning("test_run %s: enqueue failed for stand=%s test=%s: %s", run.id, entry.stand_id, entry.test_id, exc.message)
@@ -419,6 +427,7 @@ async def create_test_run(
             "final": final,
             "debug": debug,
             "full": full,
+            "force": force,
             "composition_source": composition_source,
             "stp_composition_id": stp_composition_id,
             "stp_sync_error_count": len(stp_sync_errors),

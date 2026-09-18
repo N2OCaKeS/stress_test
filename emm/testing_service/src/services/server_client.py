@@ -218,6 +218,20 @@ async def get_os_version(os_version_id: str) -> dict:
     return await _get(f"{_OS_VERSIONS_PATH}/{os_version_id}")
 
 
+async def find_os_version_by_name(name: str) -> dict | None:
+    """Карточка OS-версии по человекочитаемому имени (`"1.8.5.46"`), не по id.
+
+    Легаси-потребители (телеграм-бот, `available-kernels-from-<rc>`) всегда
+    оперировали именно версией, а не внутренним `osv_<uuid>` каталога —
+    каталог версий небольшой, полное сканирование дешевле отдельной ручки
+    поиска по имени на стороне server_service.
+    """
+    for version in await list_os_versions():
+        if str(version.get("name")) == name:
+            return version
+    return None
+
+
 @dataclass(frozen=True)
 class OsVersionInfo:
     """Человеческие атрибуты OS-версии, нужные testing_service за пределами

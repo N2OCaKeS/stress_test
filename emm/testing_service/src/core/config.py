@@ -232,6 +232,44 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Astra QA stand config (легаси `get-astra-config`, §12 плана миграции) ─
+
+    astra_qa_stand_config_url: str = Field(
+        default=(
+            "https://git.astralinux.ru/projects/QA/repos/astra-qa-stand/raw/"
+            "astra-config.json?at=refs%2Fheads%2Fmaster"
+        ),
+        alias="ASTRA_QA_STAND_CONFIG_URL",
+        description=(
+            "Тот же git-репозиторий, что легаси `get_aqs_json()` качал на каждый "
+            "деплой (`restart_services.py`). Живой источник, не статический "
+            "файл — testing_service тянет его по запросу с TTL-кэшем вместо "
+            "коммита снепшота в репозиторий."
+        ),
+    )
+    astra_qa_stand_auth_token: str = Field(
+        default="",
+        alias="ASTRA_QA_STAND_AUTH_TOKEN",
+        description=(
+            "Значение заголовка Authorization целиком (легаси хранил его так же "
+            "не-Bearer'ным, `tokens['git_token']`). Пусто — запрос идёт без "
+            "заголовка; приватный репозиторий тогда ответит 401/403 и маршрут "
+            "отдаст 503."
+        ),
+    )
+    astra_qa_stand_request_timeout_seconds: float = Field(
+        default=10.0,
+        gt=0,
+        alias="ASTRA_QA_STAND_REQUEST_TIMEOUT_SECONDS",
+        description="Таймаут запроса к git.astralinux.ru за astra-config.json.",
+    )
+    astra_qa_stand_cache_ttl_seconds: float = Field(
+        default=300.0,
+        ge=0,
+        alias="ASTRA_QA_STAND_CACHE_TTL_SECONDS",
+        description="TTL in-process кэша ответа. 0 отключает кэш (запрос на каждый вызов).",
+    )
+
     # ── Zephyr Scale / Jira ATM (§6.1-6.2 плана миграции) ────────────────────
 
     zephyr_request_timeout_seconds: float = Field(

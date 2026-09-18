@@ -511,20 +511,30 @@ class XFSMemoryLeak(CreateVM):
             return True
 
 class UsageOSResources:
-    # Baseline (idle, эталонный прогон без нагрузки) — геометрическое среднее по каждой
-    # метрике из USAGE_OS_MATH_MODEL_METRICS. Зафиксирован здесь константой, а не читается
-    # из idle_os.csv, так как results/ не попадает в репозиторий.
-    BASELINE = {
-        "cpu_used_pct": 1.9579586429316966,
+    # Baseline idle и baseline load — геометрические средние по каждой метрике из
+    # USAGE_OS_MATH_MODEL_METRICS, зафиксированные по эталонному прогону. Idle и load
+    # сравниваются каждый со своим эталоном (а не load с idle), так как это регрессия
+    # по каждому состоянию отдельно. Константы, а не чтение из CSV — results/ не попадает
+    # в репозиторий.
+    BASELINE_IDLE = {
+        "cpu_used_pct": 1.9579586429316962,
         "mem_used_pct": 1.15,
-        "load_1m": 0.0006157791947664172,
+        "load_1m": 0.0006157791947664161,
         "context_switches_per_sec": 675.3770252778268,
-        "interrupts_per_sec": 996.3088825826435,
+        "interrupts_per_sec": 996.3088825826409,
+    }
+    BASELINE_LOAD = {
+        "cpu_used_pct": 2.946391281002217,
+        "mem_used_pct": 1.6247812379209887,
+        "load_1m": 33.701349293413294,
+        "context_switches_per_sec": 187888.10117832164,
+        "interrupts_per_sec": 25104.085049488553,
     }
 
-    # zero_floor для критериев с околонулевым baseline (см. add_criterion в allta.MathModel) —
-    # без него ratio почти всегда упирается в cap и критерий теряет чувствительность.
-    ZERO_FLOOR = {
+    # zero_floor для baseline_idle.load_1m (почти ноль) — без него ratio на idle-стороне
+    # упирается в cap и критерий теряет чувствительность (см. add_criterion в allta.MathModel).
+    # На load-стороне baseline_load.load_1m не околонулевой, там floor не нужен.
+    IDLE_ZERO_FLOOR = {
         "load_1m": 1.0,
     }
 
@@ -561,39 +571,52 @@ class UsageOSResources:
     def results_processing(self):
         print("\n\n\nОбработка результатов\n\n\n")
 
+        with open(USAGE_OS_IDLE_CSV, newline='') as idle_file:
+            idle_rows = list(csv.DictReader(idle_file))
         with open(USAGE_OS_LOAD_CSV, newline='') as load_file:
             load_rows = list(csv.DictReader(load_file))
 
-        sample_count = len(load_rows)
-        iterations = list(range(1, sample_count + 1))
-
-        weight = 1.0 / len(USAGE_OS_MATH_MODEL_METRICS)
+        # 5 метрик x (idle, load) = 10 равнозначных критериев: idle сравнивается со своим
+        # baseline, load — со своим, а не load с idle (см. обсуждение с владельцем).
+        weight = 1.0 / (len(USAGE_OS_MATH_MODEL_METRICS) * 2)
+        labels = {}
 
         model = MathModel(type="ratio")
-        for column in USAGE_OS_MATH_MODEL_METRICS:
+        for column, label in USAGE_OS_MATH_MODEL_METRICS.items():
             model.add_criterion(
-                name=column,
-                iterations=iterations,
+                name=f"{column}_idle",
+                iterations=list(range(1, len(idle_rows) + 1)),
+                values=[float(row[column]) for row in idle_rows],
+                weight=weight,
+                negative=True,
+                reference=self.BASELINE_IDLE[column],
+                zero_floor=self.IDLE_ZERO_FLOOR.get(column, 0.0),
+            )
+            labels[f"{column}_idle"] = f"{label} (idle)"
+
+            model.add_criterion(
+                name=f"{column}_load",
+                iterations=list(range(1, len(load_rows) + 1)),
                 values=[float(row[column]) for row in load_rows],
                 weight=weight,
                 negative=True,
-                reference=self.BASELINE[column],
-                zero_floor=self.ZERO_FLOOR.get(column, 0.0),
+                reference=self.BASELINE_LOAD[column],
             )
+            labels[f"{column}_load"] = f"{label} (load)"
 
         rating, criteria = model.total_rating(scale=100.0)
 
         result = {
             "rating": rating,
             "criteria": {
-                column: {
-                    "label": USAGE_OS_MATH_MODEL_METRICS[column],
+                name: {
+                    "label": labels[name],
                     "baseline": crit["baseline"],
                     "result": crit["result"],
                     "ratio": crit["ratio"],
                     "weight": crit["weight"],
                 }
-                for column, crit in criteria.items()
+                for name, crit in criteria.items()
             },
         }
 

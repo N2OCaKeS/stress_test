@@ -132,6 +132,42 @@ async def test_normal_requires_stp_and_does_not_allow_context_injection(
     assert "creds_stash_key" not in response.json()
 
 
+async def test_launch_persists_prepare_only_flag(
+    client, admin_token, mock_server_service,
+):
+    mock_server_service()
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    response = await client.post(
+        BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id, prepare_only=True),
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["prepare_only"] is True
+    item = await _get_item(response.json()["id"])
+    assert item.prepare_only is True
+
+
+async def test_retry_preserves_prepare_only_flag(
+    client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+):
+    mock_server_service()
+    await mock_git_token()
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    response = await client.post(
+        BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id, prepare_only=True),
+    )
+    item = await _get_item(response.json()["id"])
+    await _drive_to_success(client, item)
+
+    retry_response = await client.post(
+        f"{BASE}/{item.id}/retry", headers=auth_hdr(admin_token), json={"request_id": uuid.uuid4().hex},
+    )
+    assert retry_response.status_code == 201, retry_response.text
+    retry = await _get_item(retry_response.json()["id"])
+    assert retry.prepare_only is True
+
+
 async def test_retry_preserves_context_and_rejects_fork(
     client, admin_token, mock_server_service, configure_internal_keys, mock_git_token
 ):

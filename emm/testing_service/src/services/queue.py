@@ -84,6 +84,7 @@ async def enqueue(
     *,
     launch_context: dict[str, str] | None = None,
     debug_mode: bool = False,
+    prepare_only: bool = False,
     stand_id: str | None = None,
     test_run_id: str | None = None,
     test_run_entry_id: str | None = None,
@@ -105,6 +106,13 @@ async def enqueue(
     `test_run_id` — заполняется только вызовом со стороны `services/test_run.py`
     (кампания породила этот item); одиночные вызовы (UI/CLI постановка одного
     теста в очередь) оставляют его `None`, как и раньше.
+
+    `prepare_only` — легаси testenv-режим: стенд откатывается и готовится
+    (`prepare-for-test`, `prepare.sh`) как обычно, но вместо запуска теста
+    `testing_worker` кладёт на стенд файл с командой, которой был бы запущен
+    тест (`services/queue.py::claim_next` считает её через `starter_suffix`).
+    Итоговый статус такого item'а — `QueueItemState.PREPARED`, не
+    `succeeded`/`failed` (см. `complete_item`).
     """
     test = await test_definition_repo.get_by_id(db, test_id, for_update=True)
     if test is None:
@@ -187,6 +195,7 @@ async def enqueue(
         "request_fingerprint": request_fingerprint,
         "stp_test_run_id": stp_test_run_id,
         "debug_mode": debug_mode,
+        "prepare_only": prepare_only,
         "test_run_id": test_run_id,
         "test_run_entry_id": test_run_entry_id,
         "created_by": identity.user_id,
@@ -198,7 +207,7 @@ async def enqueue(
         "queue_item.enqueued",
         target_id=item.id, target_type="queue_item",
         status="success", allowed=True,
-        details={"test_id": test.id, "stand_id": stand.id, "debug_mode": debug_mode},
+        details={"test_id": test.id, "stand_id": stand.id, "debug_mode": debug_mode, "prepare_only": prepare_only},
     )
 
     if test_run_id:
@@ -667,6 +676,8 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         command_timeout_seconds=test.timeout_seconds,
         debug_mode=item.debug_mode,
         is_retry=item.is_retry,
+        prepare_only=item.prepare_only,
+        starter_suffix=test.starter_suffix or "",
     )
 
 
@@ -698,7 +709,10 @@ async def complete_item(db: AsyncSession, queue_item_id: str, body: QueueComplet
         return item
 
     if body.succeeded:
-        item.state = QueueItemState.SUCCEEDED
+        # `prepare_only` — testenv-режим: SSH-сессия успешна (starter.sh
+        # честно выполнил prepare.sh и вышел раньше run.py), но это не
+        # результат теста, поэтому терминал отдельный от `succeeded`.
+        item.state = QueueItemState.PREPARED if item.prepare_only else QueueItemState.SUCCEEDED
         item.finished_at = datetime.now(timezone.utc)
         item.error = None
         await db.commit()
@@ -711,7 +725,7 @@ async def complete_item(db: AsyncSession, queue_item_id: str, body: QueueComplet
             "queue_item.completed",
             target_id=item.id, target_type="queue_item",
             status="success", allowed=True,
-            details={"exit_code": body.exit_code, "stand_id": stand.id},
+            details={"exit_code": body.exit_code, "stand_id": stand.id, "prepare_only": item.prepare_only},
         )
         await _advance_stand_queue(db, stand)
         return item

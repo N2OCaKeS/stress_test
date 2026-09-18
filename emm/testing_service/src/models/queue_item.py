@@ -64,6 +64,11 @@ class QueueItem(Base):
         String(64), ForeignKey("queue_items.id", ondelete="SET NULL"), nullable=True,
     )
     debug_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Флаг режима «только подготовить стенд» (легаси testenv_*.conf). Вместо
+    # запуска run.py воркер кладёт на стенд testenv-маркер и command.txt с
+    # тем, что было бы запущено, и item уходит в свой терминальный статус
+    # (`prepared`), не в обычный succeeded/failed — см. services/queue.py.
+    prepare_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     test_run_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("test_runs.id", ondelete="SET NULL"), nullable=True, index=True,
     )

@@ -147,7 +147,8 @@ async def _create_stand(
 
 
 async def _create_test_def(
-    client, admin_token, pinned_stand_id: str | None, *, with_sensitive_arg: bool = False, mode: str = "orel",
+    client, admin_token, pinned_stand_id: str | None, *,
+    with_sensitive_arg: bool = False, mode: str = "orel", starter_suffix: str | None = None,
 ) -> str:
     payload = {
         "code": f"queue.test.{uuid.uuid4().hex[:8]}",
@@ -157,6 +158,8 @@ async def _create_test_def(
     }
     if pinned_stand_id is not None:
         payload["pinned_stand_id"] = pinned_stand_id
+    if starter_suffix is not None:
+        payload["starter_suffix"] = starter_suffix
     resp = await client.post(TESTS_BASE, headers=_hdr(admin_token), json=payload)
     assert resp.status_code == 201, resp.text
     test_id = resp.json()["id"]
@@ -262,6 +265,30 @@ class TestEnqueue:
         assert second.position == 1
         assert recorded_calls == []
         assert first.id != second.id
+
+    async def test_prepare_only_flag_is_persisted(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, prepare_only=True,
+            )
+
+        assert item.prepare_only is True
+        stored = await _get_item(item.id)
+        assert stored.prepare_only is True
+
+    async def test_prepare_only_defaults_to_false(self, client, admin_token, mock_server_service):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert item.prepare_only is False
 
     async def test_missing_launch_context_key_rejected(self, client, admin_token, mock_server_service):
         mock_server_service()
@@ -605,6 +632,60 @@ class TestClaim:
         payload = resp.json()["item"]
         assert payload["dates_content"] == f"--run Тест очереди_1.8.5_orel_6.1.0_{stand_id}"
 
+    async def test_claim_passes_through_prepare_only_and_starter_suffix(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+    ):
+        mock_server_service(host="10.9.9.9")
+        await mock_git_token()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id, starter_suffix="kernel")
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, prepare_only=True,
+            )
+        await client.post(
+            f"{CALLBACK_BASE}/{item.prepare_request_id}/completed",
+            headers=_server_hdr("server_service", SERVER_SECRET),
+            json={
+                "correlation_id": item.id, "succeeded": True,
+                "test_username": "u", "test_password": "s3cr3t",
+                "test_ssh_private_key": "-----KEY-----",
+            },
+        )
+
+        resp = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+        assert resp.status_code == 200, resp.text
+        payload = resp.json()["item"]
+        assert payload["prepare_only"] is True
+        assert payload["starter_suffix"] == "kernel"
+
+    async def test_claim_defaults_starter_suffix_to_empty_string(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+    ):
+        mock_server_service(host="10.9.9.9")
+        await mock_git_token()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+        await client.post(
+            f"{CALLBACK_BASE}/{item.prepare_request_id}/completed",
+            headers=_server_hdr("server_service", SERVER_SECRET),
+            json={
+                "correlation_id": item.id, "succeeded": True,
+                "test_username": "u", "test_password": "s3cr3t",
+                "test_ssh_private_key": "-----KEY-----",
+            },
+        )
+
+        resp = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+        assert resp.status_code == 200, resp.text
+        payload = resp.json()["item"]
+        assert payload["prepare_only"] is False
+        assert payload["starter_suffix"] == ""
+
 
 class TestGitCredentialResolution:
     """Один секрет не может служить и заголовком `Authorization`, и паролем basic-auth.
@@ -799,6 +880,40 @@ class TestCompleted:
         assert resp.status_code == 200, resp.text
         updated = await _get_item(item.id)
         assert updated.state == QueueItemState.SUCCEEDED
+        assert any(p.endswith("/release-for-service") for _, p in recorded_calls)
+
+    async def test_prepare_only_success_becomes_prepared_not_succeeded(
+        self, client, admin_token, mock_server_service, configure_internal_keys, recorded_calls, mock_git_token,
+    ):
+        mock_server_service()
+        await mock_git_token()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, prepare_only=True,
+            )
+        await client.post(
+            f"{CALLBACK_BASE}/{item.prepare_request_id}/completed",
+            headers=_server_hdr("server_service", SERVER_SECRET),
+            json={
+                "correlation_id": item.id, "succeeded": True,
+                "test_username": "u", "test_password": "s3cr3t",
+                "test_ssh_private_key": "-----KEY-----",
+            },
+        )
+        await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+        recorded_calls.clear()
+
+        resp = await client.post(
+            f"{QUEUE_BASE}/{item.id}/completed",
+            headers=_server_hdr("testing_worker", WORKER_SECRET),
+            json={"succeeded": True, "exit_code": 0},
+        )
+        assert resp.status_code == 200, resp.text
+        updated = await _get_item(item.id)
+        assert updated.state == QueueItemState.PREPARED
+        # Стенд всё равно освобождается — исход теста не блокирует очередь.
         assert any(p.endswith("/release-for-service") for _, p in recorded_calls)
 
     async def test_completion_does_not_republish_stp_matrix(

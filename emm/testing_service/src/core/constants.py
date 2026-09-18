@@ -198,6 +198,12 @@ class QueueItemState(StrEnum):
     зафиксирован, элемент ждёт явного `resume-queue`. Стенд при этом стоит —
     `claim_next`/`get_next_queued_for_stand` такой элемент не видят, а бронь
     за стендом сохраняется.
+
+    `prepared` — терминальное, наравне с `succeeded`/`failed`/`skipped`, но
+    только для item'ов с `prepare_only=True`: стенд откачен и подготовлен
+    (`prepare.sh` отработал), а вместо запуска теста воркер положил на стенд
+    файл с командой, которой был бы запущен тест. Отдельный статус, чтобы не
+    путать это с реальным прогоном в статистике/СТП.
     """
 
     QUEUED = "queued"
@@ -208,6 +214,7 @@ class QueueItemState(StrEnum):
     FAILED = "failed"
     SKIPPED = "skipped"
     PAUSED = "paused"
+    PREPARED = "prepared"
 
 
 # Состояния, которые занимают место в очереди стенда — пока у стенда есть

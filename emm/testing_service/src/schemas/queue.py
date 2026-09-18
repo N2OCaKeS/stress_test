@@ -81,6 +81,23 @@ class QueueClaimItem(BaseModel):
     )
     debug_mode: bool
     is_retry: bool
+    prepare_only: bool = Field(
+        default=False,
+        description=(
+            "Легаси testenv-режим: воркер кладёт на стенд testenv-маркер "
+            "вместо запуска теста, а также `command.txt` с командой, которой "
+            "тест был бы запущен (см. `starter_suffix`)."
+        ),
+    )
+    starter_suffix: str = Field(
+        default="",
+        description=(
+            "`test_definitions.starter_suffix` этого теста — позиционный $5 "
+            "`starter.sh` (\"kernel\"/\"balance\"/\"oom\" или пусто). Нужен "
+            "воркеру только в `prepare_only`-режиме, чтобы посчитать команду "
+            "`run.py`, которую сам `starter.sh` не успевает собрать."
+        ),
+    )
 
 
 class QueueClaimResponse(BaseModel):

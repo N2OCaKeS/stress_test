@@ -15,6 +15,14 @@ class QueueLaunchRequest(BaseModel):
     os_version_id: str = Field(min_length=1, max_length=64)
     kernel: str = Field(min_length=1, max_length=64)
     debug_mode: bool = False
+    prepare_only: bool = Field(
+        default=False,
+        description=(
+            "Только откатить/подготовить стенд (легаси testenv), не запускать "
+            "тест. Вместо результата теста воркер оставляет на стенде "
+            "command.txt с командой, которая была бы запущена."
+        ),
+    )
 
 
 class QueueRetryRequest(BaseModel):
@@ -33,6 +41,7 @@ class PublicQueueItem(BaseModel):
     test_run_id: str | None
     retry_of_id: str | None
     debug_mode: bool
+    prepare_only: bool
     state: str
     rc: str | None
     kernel: str | None

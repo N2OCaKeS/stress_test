@@ -28,6 +28,12 @@
    он обязан там оказаться раньше. Провал любой из двух записей — фатален для
    item'а целиком, `execute()` не вызывается вообще, сразу
    `report_completed(succeeded=False)`.
+   Если `item["prepare_only"]` — следом уходят ещё два файла: легаси
+   testenv-маркер (`_write_testenv_marker`, заставляет `starter.sh`
+   остановиться после `prepare.sh` и не запускать тест) и `command.txt`
+   (`_write_prepare_only_command_file`, текст команды, которой тест был бы
+   запущен). testing_service сам решает при `complete_item`, что успешный
+   исход такого item'а — не `succeeded`, а `prepared`.
 5. `ssh_executor.execute(...)` под кредами и хостом из `item` — единственный
    SSH-вызов `sudo bash /home/u/starter.sh ...` (что именно исполняется,
    собрал `testing_service`, здесь просто argv). Пока команда выполняется,
@@ -84,11 +90,23 @@ from src.services import preflight, ssh_executor, testing_client
 logger = logging.getLogger("testing_worker.queue_loop")
 
 _COMMAND_SEGMENT_LABEL = "Выполнение теста"
+_PREPARE_ONLY_SEGMENT_LABEL = "Подготовка стенда (testenv)"
 
 # Куда кладём скрипт на стенде. Тот же путь зашит в команду запуска на стороне
 # testing_service (`services/queue.py`, `_STARTER_SCRIPT_PATH`) — два конца
 # одного контракта, менять их можно только вместе.
 _STARTER_REMOTE_PATH = "/home/u/starter.sh"
+
+# Легаси-маркер testenv-режима: `starter.sh` матчит имя глобом
+# `testenv_*.conf` и сверяет содержимое с `on` (см. `assets/starter.sh`).
+# Само имя файла не принципиально, лишь бы попадало под маску.
+_TESTENV_MARKER_REMOTE_PATH = "/home/u/testenv_on.conf"
+_TESTENV_MARKER_CONTENT = "on"
+
+# Куда кладём текст команды теста в prepare_only-режиме — стенд подготовлен,
+# но сам тест не запускался, и это единственный след того, что было бы
+# исполнено.
+_PREPARE_ONLY_COMMAND_REMOTE_PATH = "/home/u/command.txt"
 
 # Эталонный текст скрипта лежит рядом с кодом воркера и едет в образ вместе с
 # `src/` (см. docker/Dockerfile) — никаких загрузок по сети в момент запуска
@@ -173,6 +191,93 @@ async def _write_dates_file(item: dict, settings) -> str | None:
             item.get("queue_item_id"), remote_path, len(dates_content), type(exc).__name__,
         )
         return f"SFTP write of {dates_filename} failed: {type(exc).__name__}"
+    return None
+
+
+async def _write_testenv_marker(item: dict, settings) -> str | None:
+    """SFTP-запись testenv-маркера — легаси-сигнал `starter.sh` не запускать тест.
+
+    `prepare_only=True` на item'е воспроизводит старый ручной режим стенда:
+    файл `/home/u/testenv_*.conf` со значением `on` заставлял `starter.sh`
+    выполнить `prepare.sh` и выйти, не доходя до `run.py` (см. хвост
+    `assets/starter.sh`). Раньше этот файл никто не писал программно — он
+    появлялся только руками оператора на стенде, поэтому ветка была
+    фактически недостижима. Здесь она наконец имеет источник.
+
+    Контракт возврата — как у `_write_dates_file`: текст ошибки либо `None`.
+    """
+    try:
+        await ssh_executor.write_remote_file(
+            item["host"],
+            item["test_username"],
+            item["test_ssh_private_key"],
+            _TESTENV_MARKER_REMOTE_PATH,
+            _TESTENV_MARKER_CONTENT,
+            connect_timeout=settings.ssh_connect_timeout_seconds,
+        )
+    except _WRITE_ERRORS as exc:
+        logger.warning(
+            "queue item %s: failed to write %s over SFTP: %s",
+            item.get("queue_item_id"), _TESTENV_MARKER_REMOTE_PATH, type(exc).__name__,
+        )
+        return f"SFTP write of testenv marker failed: {type(exc).__name__}"
+    return None
+
+
+def _build_prepare_only_command(item: dict) -> str:
+    """Собрать текст команды `run.py`, которую запустил бы `starter.sh`.
+
+    В `prepare_only`-режиме сам `starter.sh` выходит раньше, чем дошёл бы до
+    этой строчки (testenv-ветка делает `exit 0`), поэтому команду считаем
+    здесь, теми же правилами, что и хвост `assets/starter.sh`:
+
+        if [ "$5" == "kernel" ]; then python3 run.py -n "$3" -kn "$5"
+        elif [ "$5" == "balance" ]; then python3 run.py -n "$3" -bl "$5"
+        elif [ "$5" == "oom" ]; then python3 run.py -n "$3" -oom "$5"
+        else python3 run.py -n "$3"
+
+    `$3` — это `dates_filename` (позиционный аргумент `starter.sh`, не имя
+    теста, так исторически заведено в легаси), `$5` — `starter_suffix` теста.
+    Оба присланы testing_service в `item`.
+    """
+    dates_filename = item.get("dates_filename") or ""
+    suffix = item.get("starter_suffix") or ""
+    if suffix == "kernel":
+        return f'python3 run.py -n "{dates_filename}" -kn "{suffix}"'
+    if suffix == "balance":
+        return f'python3 run.py -n "{dates_filename}" -bl "{suffix}"'
+    if suffix == "oom":
+        return f'python3 run.py -n "{dates_filename}" -oom "{suffix}"'
+    return f'python3 run.py -n "{dates_filename}"'
+
+
+async def _write_prepare_only_command_file(item: dict, settings) -> str | None:
+    """SFTP-запись `command.txt` — след того, что было бы запущено на стенде.
+
+    Единственное содержимое, ради которого вообще существует `prepare_only`:
+    оператор откатывает и готовит стенд, но вместо результата теста получает
+    команду, которую можно скопировать и запустить руками. Содержимое не
+    секретно (никаких токенов — только имя dates-файла и суффикс теста),
+    маскировать нечего.
+
+    Контракт возврата — как у `_write_dates_file`.
+    """
+    content = _build_prepare_only_command(item)
+    try:
+        await ssh_executor.write_remote_file(
+            item["host"],
+            item["test_username"],
+            item["test_ssh_private_key"],
+            _PREPARE_ONLY_COMMAND_REMOTE_PATH,
+            content,
+            connect_timeout=settings.ssh_connect_timeout_seconds,
+        )
+    except _WRITE_ERRORS as exc:
+        logger.warning(
+            "queue item %s: failed to write %s over SFTP: %s",
+            item.get("queue_item_id"), _PREPARE_ONLY_COMMAND_REMOTE_PATH, type(exc).__name__,
+        )
+        return f"SFTP write of command.txt failed: {type(exc).__name__}"
     return None
 
 
@@ -316,10 +421,17 @@ async def _run_one_item(item: dict) -> None:
         return
 
     # Сначала сам скрипт, потом его аргумент-файл — обе записи обязательны,
-    # первая же осечка заканчивает item, не доводя до `execute()`.
+    # первая же осечка заканчивает item, не доводя до `execute()`. В
+    # prepare_only-режиме следом уходят ещё два файла: testenv-маркер (без
+    # него ветка в starter.sh недостижима) и command.txt (иначе после
+    # прогона на стенде не остаётся вообще никакого следа от него).
     write_error = await _write_starter_script(item, settings)
     if write_error is None:
         write_error = await _write_dates_file(item, settings)
+    if write_error is None and item.get("prepare_only"):
+        write_error = await _write_testenv_marker(item, settings)
+        if write_error is None:
+            write_error = await _write_prepare_only_command_file(item, settings)
     if write_error is not None:
         await testing_client.report_completed(
             queue_item_id, succeeded=False, exit_code=None, error=write_error,
@@ -355,7 +467,7 @@ async def _run_one_item(item: dict) -> None:
         await testing_client.log_segment(
             queue_item_id,
             kind="command",
-            label=_COMMAND_SEGMENT_LABEL,
+            label=_PREPARE_ONLY_SEGMENT_LABEL if item.get("prepare_only") else _COMMAND_SEGMENT_LABEL,
             status="OK" if result.succeeded else "FATAL",
             command_text_masked=shlex.join(item.get("command_masked") or []),
             output=result.output,

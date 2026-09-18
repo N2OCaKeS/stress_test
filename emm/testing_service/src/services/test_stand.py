@@ -13,8 +13,15 @@ live-вызов не удаётся, карточка всё равно возв
 не 503 на весь запрос.
 
 Чтение (list/get) не проверяет права — открыто любому аутентифицированному
-актору, как и `test_definition`. Запись (create/update/delete) — под
-матрицей прав `(test_stand, *, create|update|delete)`.
+актору, как и `test_definition`. Запись под матрицей прав
+`(test_stand, *, create|update|delete)`, но `update`/`delete` дополнительно
+гейтятся `require_department_action` по фактическому `department_id` строки
+(строка читается ДО авторизации) — матрица одна на весь сервис, без этого
+`admin` отдела A мог бы менять/удалять стенд отдела B, просто зная его id.
+`create` этого не требует: `department_id` там резолвится живым запросом к
+server_service, который сам гейтит видимость сервера по отделу вызывающего
+(см. docstring `server_client.get_server`) — подделать чужой отдел через
+create нечем.
 """
 
 import logging
@@ -239,17 +246,11 @@ async def update_test_stand(
     stand_id: str,
     payload: TestStandUpdate,
 ) -> TestStand:
-    """PATCH-обновление. Изменяемы только `queue_enabled`/`is_active`."""
-    try:
-        await permissions.require_action(db, identity, EntityType.TEST_STAND, Action.UPDATE)
-    except AuthorizationError:
-        audit_service.emit(
-            "test_stand.update",
-            target_id=stand_id, target_type="test_stand",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
-        )
-        raise
+    """PATCH-обновление. Изменяемы только `queue_enabled`/`is_active`.
+
+    Строка читается ДО авторизации — отдел решает `require_department_action`
+    по факту (`obj.department_id`), а не роль сама по себе.
+    """
     obj = await repo.get_by_id(db, stand_id)
     if obj is None:
         audit_service.emit(
@@ -262,6 +263,18 @@ async def update_test_stand(
             error_code="TEST_STAND_NOT_FOUND",
             message="Test stand not found",
         )
+    try:
+        await permissions.require_department_action(
+            db, identity, obj.department_id, EntityType.TEST_STAND, Action.UPDATE,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "test_stand.update",
+            target_id=stand_id, target_type="test_stand",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "department_id": obj.department_id},
+        )
+        raise
 
     changes = payload.model_dump(exclude_unset=True, mode="json")
     if "legacy_token" in changes:
@@ -299,17 +312,10 @@ async def delete_test_stand(
     identity: Identity,
     stand_id: str,
 ) -> None:
-    """Hard-delete стенда. Сервер в server_service не трогается."""
-    try:
-        await permissions.require_action(db, identity, EntityType.TEST_STAND, Action.DELETE)
-    except AuthorizationError:
-        audit_service.emit(
-            "test_stand.delete",
-            target_id=stand_id, target_type="test_stand",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
-        )
-        raise
+    """Hard-delete стенда. Сервер в server_service не трогается.
+
+    Строка читается ДО авторизации — тот же приём, что в `update_test_stand`.
+    """
     obj = await repo.get_by_id(db, stand_id)
     if obj is None:
         audit_service.emit(
@@ -322,6 +328,18 @@ async def delete_test_stand(
             error_code="TEST_STAND_NOT_FOUND",
             message="Test stand not found",
         )
+    try:
+        await permissions.require_department_action(
+            db, identity, obj.department_id, EntityType.TEST_STAND, Action.DELETE,
+        )
+    except AuthorizationError:
+        audit_service.emit(
+            "test_stand.delete",
+            target_id=stand_id, target_type="test_stand",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "department_id": obj.department_id},
+        )
+        raise
     server_id = obj.server_id
     await repo.delete(db, obj)
     await db.commit()

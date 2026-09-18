@@ -123,14 +123,19 @@ class TestCreate:
 # ── Список + фильтры (department scoping) ───────────────────────────────────
 
 class TestListFilters:
-    async def test_listing_is_scoped_to_own_department(self, client, admin_token, no_role_token):
+    async def test_listing_is_scoped_to_own_department(
+        self, client, admin_token, no_role_token, make_token,
+    ):
         """Свой отдел виден, чужой — нет; платформенный тест (без отдела) виден всем."""
         own = await client.post(
             BASE, headers=_hdr(admin_token), json=_payload(department_id="dep_a"),
         )
         assert own.status_code == 201
+        # Чужой отдел заводит запись сам — свой admin_token завести тест "от
+        # имени" dep_other больше не может (закрытая cross-department дыра).
+        other_admin = make_token(department_id="dep_other", service_roles={"testing_service": ["admin"]})
         other = await client.post(
-            BASE, headers=_hdr(admin_token), json=_payload(department_id="dep_other"),
+            BASE, headers=_hdr(other_admin), json=_payload(department_id="dep_other"),
         )
         assert other.status_code == 201
         unscoped = await client.post(BASE, headers=_hdr(admin_token), json=_payload())
@@ -213,15 +218,20 @@ class TestUpdate:
         assert resp.json()["full_name"] == "Переименован"
 
     async def test_update_readiness_and_department(self, client, admin_token):
+        """Одновременно readiness + department_id — но только в СВОЙ отдел.
+
+        Чужой `department_id` в теле — отдельный кейс, закрытый
+        `require_department_action` (см. `test_department_isolation.py`).
+        """
         test_id = await self._create(client, admin_token)
         resp = await client.patch(
             f"{BASE}/{test_id}", headers=_hdr(admin_token),
-            json={"readiness": "broken", "department_id": "dep_b"},
+            json={"readiness": "broken", "department_id": "dep_a"},
         )
         assert resp.status_code == 200
         body = resp.json()
         assert body["readiness"] == "broken"
-        assert body["department_id"] == "dep_b"
+        assert body["department_id"] == "dep_a"
 
     async def test_update_mode(self, client, admin_token):
         test_id = await self._create(client, admin_token)

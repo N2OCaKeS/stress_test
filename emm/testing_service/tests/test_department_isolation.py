@@ -1,6 +1,6 @@
 """Департаментская изоляция read/write-плоскостей testing_service.
 
-Две связанные дыры, закрытые вместе:
+Связанные дыры, закрытые вместе:
 
 * **Запись.** `department_report_member`/`department_integration_settings`/
   `department_test_settings` гейтились `require_action` — он смотрит только на
@@ -11,11 +11,18 @@
   не проверяет `SERVICE_ACCESS_DENIED`; читать их мог любой аутентифицированный
   актор emm, включая пользователя отдела, которому testing_service вообще не
   выдан.
+* **Запись (найдено позже).** `test_definition`/`test_stand` PATCH/DELETE
+  гейтились той же матрицей-без-контекста — `admin` отдела A мог изменить или
+  удалить тест/стенд отдела B по id, а `test_definition` create/update ещё и
+  принимал `department_id` в теле как есть, позволяя завести или увести тест
+  «от имени» чужого отдела.
 
 Отдельный класс в конце фиксирует обратное: платформенные каталоги
 (`/global-variables`, `/statistics/settings`, `/statistics/status`) остаются
 открытыми любому аутентифицированному актору — у них нет `department_id`, их
-трогать было нельзя.
+трогать было нельзя. То же верно для платформенных (`department_id IS NULL`)
+`test_definition` — их по-прежнему правит любой носитель `admin`, независимо
+от отдела.
 """
 
 from __future__ import annotations
@@ -381,6 +388,127 @@ class TestCrossDepartmentReadStandsAndRuns:
         listed = await client.get(f"{API}/test-definitions", headers=_hdr(dept_b_admin))
         assert listed.status_code == 200, listed.text
         assert all(item["id"] != test_id for item in listed.json()["items"])
+
+
+# ── Bug 3: cross-department test_definition/test_stand write ─────────────────
+
+
+async def _dep_a_test_def(client, admin_token, **overrides) -> str:
+    payload = {
+        "code": f"iso.test.{uuid.uuid4().hex[:8]}",
+        "full_name": "Тест изоляции",
+        "readiness": "ready",
+        "department_id": "dep_a",
+    }
+    payload.update(overrides)
+    resp = await client.post(f"{API}/test-definitions", headers=_hdr(admin_token), json=payload)
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+class TestCrossDepartmentTestDefinitionWrite:
+    async def test_cannot_create_test_definition_with_foreign_department_id(
+        self, client, admin_token,
+    ):
+        resp = await client.post(
+            f"{API}/test-definitions", headers=_hdr(admin_token),
+            json={
+                "code": f"iso.forge.{uuid.uuid4().hex[:8]}", "full_name": "Подделка",
+                "readiness": "ready", "department_id": DEP_B,
+            },
+        )
+        assert resp.status_code == 403, resp.text
+
+    async def test_cannot_update_foreign_test_definition(self, client, admin_token, dept_b_admin):
+        test_id = await _dep_a_test_def(client, admin_token)
+        resp = await client.patch(
+            f"{API}/test-definitions/{test_id}", headers=_hdr(dept_b_admin),
+            json={"full_name": "Взломано"},
+        )
+        assert resp.status_code == 403, resp.text
+
+    async def test_cannot_delete_foreign_test_definition(self, client, admin_token, dept_b_admin):
+        test_id = await _dep_a_test_def(client, admin_token)
+        resp = await client.delete(
+            f"{API}/test-definitions/{test_id}", headers=_hdr(dept_b_admin),
+        )
+        assert resp.status_code == 403, resp.text
+        # Строка на месте — отказ не «тихий no-op».
+        check = await client.get(f"{API}/test-definitions/{test_id}", headers=_hdr(admin_token))
+        assert check.status_code == 200, check.text
+
+    async def test_cannot_reassign_test_definition_to_foreign_department(
+        self, client, admin_token,
+    ):
+        test_id = await _dep_a_test_def(client, admin_token)
+        resp = await client.patch(
+            f"{API}/test-definitions/{test_id}", headers=_hdr(admin_token),
+            json={"department_id": DEP_B},
+        )
+        assert resp.status_code == 403, resp.text
+        # Отдел строки не поменялся.
+        check = await client.get(f"{API}/test-definitions/{test_id}", headers=_hdr(admin_token))
+        assert check.status_code == 200, check.text
+        assert check.json()["department_id"] == "dep_a"
+
+    async def test_platform_test_definition_still_editable_by_any_admin(
+        self, client, admin_token, dept_b_admin,
+    ):
+        """Платформенный тест (`department_id IS NULL`) — общий каталог, изоляцию не накручивали."""
+        test_id = await _dep_a_test_def(client, admin_token, department_id=None)
+        resp = await client.patch(
+            f"{API}/test-definitions/{test_id}", headers=_hdr(dept_b_admin),
+            json={"full_name": "Правка платформенного теста"},
+        )
+        assert resp.status_code == 200, resp.text
+
+    async def test_own_department_test_definition_write_still_works(self, client, admin_token):
+        test_id = await _dep_a_test_def(client, admin_token)
+        patched = await client.patch(
+            f"{API}/test-definitions/{test_id}", headers=_hdr(admin_token),
+            json={"full_name": "Переименован"},
+        )
+        assert patched.status_code == 200, patched.text
+        deleted = await client.delete(f"{API}/test-definitions/{test_id}", headers=_hdr(admin_token))
+        assert deleted.status_code == 200, deleted.text
+
+
+class TestCrossDepartmentTestStandWrite:
+    async def test_cannot_update_foreign_test_stand(
+        self, client, admin_token, dept_b_admin, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        resp = await client.patch(
+            f"{API}/test-stands/{stand_id}", headers=_hdr(dept_b_admin),
+            json={"queue_enabled": False},
+        )
+        assert resp.status_code == 403, resp.text
+
+    async def test_cannot_delete_foreign_test_stand(
+        self, client, admin_token, dept_b_admin, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        resp = await client.delete(f"{API}/test-stands/{stand_id}", headers=_hdr(dept_b_admin))
+        assert resp.status_code == 403, resp.text
+        # Строка на месте — отказ не «тихий no-op».
+        check = await client.get(f"{API}/test-stands/{stand_id}", headers=_hdr(admin_token))
+        assert check.status_code == 200, check.text
+
+    async def test_own_department_test_stand_write_still_works(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        patched = await client.patch(
+            f"{API}/test-stands/{stand_id}", headers=_hdr(admin_token),
+            json={"queue_enabled": False},
+        )
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["queue_enabled"] is False
+        deleted = await client.delete(f"{API}/test-stands/{stand_id}", headers=_hdr(admin_token))
+        assert deleted.status_code == 200, deleted.text
 
 
 # ── Платформенные каталоги: изоляцию НЕ накручивали ──────────────────────────

@@ -6,6 +6,15 @@
 переменных тест несёт `department_id`, но сам грант на запись — по-прежнему
 system-wide роль `admin` (§16 волна 3 плана миграции); per-department гранты
 кастомным ролям появятся вместе с администрированием отдела.
+
+`department_id` — nullable: `NULL` значит платформенный тест каталога (так
+заводит импорт легаси), непустой — тест конкретного отдела. Для платформенных
+строк матрицы достаточно (любой `admin` правит общий каталог, как и раньше);
+для department-строк write дополнительно гейтится `require_department_action`
+по фактическому `department_id` — своей строки (create/update reassignment)
+или чужой (update/delete существующей). Без этого `admin` отдела A мог бы
+менять/удалять тест отдела B по id, либо завести/увести тест «от имени»
+чужого отдела через поле в теле запроса.
 """
 
 import logging
@@ -30,15 +39,27 @@ async def create_test_definition(
     identity: Identity,
     payload: TestDefinitionCreate,
 ) -> TestDefinition:
-    """INSERT нового теста. UNIQUE(code) → 409 TEST_DEFINITION_DUPLICATE."""
+    """INSERT нового теста. UNIQUE(code) → 409 TEST_DEFINITION_DUPLICATE.
+
+    `department_id` в теле — либо пусто (платформенный тест, обычная матрица),
+    либо СВОЙ отдел caller'а: чужой id в этом поле отклоняет
+    `require_department_action`, иначе можно было бы завести тест «от имени»
+    другого отдела, просто подставив его id в JSON.
+    """
+    target_department_id = payload.department_id
     try:
-        await permissions.require_action(db, identity, EntityType.TEST_DEFINITION, Action.CREATE)
+        if target_department_id is not None:
+            await permissions.require_department_action(
+                db, identity, target_department_id, EntityType.TEST_DEFINITION, Action.CREATE,
+            )
+        else:
+            await permissions.require_action(db, identity, EntityType.TEST_DEFINITION, Action.CREATE)
     except AuthorizationError:
         audit_service.emit(
             "test_definition.create",
             target_type="test_definition",
             status="denied", allowed=False,
-            details={"reason": "permission_denied"},
+            details={"reason": "permission_denied", "department_id": target_department_id},
         )
         raise
 
@@ -138,17 +159,15 @@ async def update_test_definition(
     test_id: str,
     payload: TestDefinitionUpdate,
 ) -> TestDefinition:
-    """PATCH-обновление. Пустой диф → возврат без UPDATE."""
-    try:
-        await permissions.require_action(db, identity, EntityType.TEST_DEFINITION, Action.UPDATE)
-    except AuthorizationError:
-        audit_service.emit(
-            "test_definition.update",
-            target_id=test_id, target_type="test_definition",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
-        )
-        raise
+    """PATCH-обновление. Пустой диф → возврат без UPDATE.
+
+    Строка читается ДО авторизации: платформенный тест (`department_id IS
+    NULL`) по-прежнему правит любой носитель `admin` (обычная матрица),
+    department-тест — только `require_department_action` по его фактическому
+    отделу, не по роли самой по себе. Смена `department_id` в теле проходит
+    тот же гейт над НОВЫМ значением — иначе admin своего отдела мог бы просто
+    переписать поле и увести тест в чужой.
+    """
     obj = await repo.get_by_id(db, test_id)
     if obj is None:
         audit_service.emit(
@@ -162,9 +181,42 @@ async def update_test_definition(
             message="Test definition not found",
         )
 
+    try:
+        if obj.department_id is not None:
+            await permissions.require_department_action(
+                db, identity, obj.department_id, EntityType.TEST_DEFINITION, Action.UPDATE,
+            )
+        else:
+            await permissions.require_action(db, identity, EntityType.TEST_DEFINITION, Action.UPDATE)
+    except AuthorizationError:
+        audit_service.emit(
+            "test_definition.update",
+            target_id=test_id, target_type="test_definition",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "department_id": obj.department_id},
+        )
+        raise
+
     changes = payload.model_dump(exclude_unset=True, mode="json")
     if not changes:
         return obj
+
+    if "department_id" in changes and changes["department_id"] != obj.department_id:
+        new_department_id = changes["department_id"]
+        try:
+            if new_department_id is not None:
+                await permissions.require_department_action(
+                    db, identity, new_department_id, EntityType.TEST_DEFINITION, Action.UPDATE,
+                )
+        except AuthorizationError:
+            audit_service.emit(
+                "test_definition.update",
+                target_id=test_id, target_type="test_definition",
+                status="denied", allowed=False,
+                details={"reason": "permission_denied", "department_id": new_department_id},
+            )
+            raise
+
     try:
         await repo.update(db, obj, changes)
         await db.commit()
@@ -199,17 +251,10 @@ async def delete_test_definition(
     identity: Identity,
     test_id: str,
 ) -> None:
-    """Hard-delete теста. Каскадом сносит его test_command_args."""
-    try:
-        await permissions.require_action(db, identity, EntityType.TEST_DEFINITION, Action.DELETE)
-    except AuthorizationError:
-        audit_service.emit(
-            "test_definition.delete",
-            target_id=test_id, target_type="test_definition",
-            status="denied", allowed=False,
-            details={"reason": "permission_denied"},
-        )
-        raise
+    """Hard-delete теста. Каскадом сносит его test_command_args.
+
+    Строка читается ДО авторизации — тот же приём, что в `update_test_definition`.
+    """
     obj = await repo.get_by_id(db, test_id)
     if obj is None:
         audit_service.emit(
@@ -222,6 +267,21 @@ async def delete_test_definition(
             error_code="TEST_DEFINITION_NOT_FOUND",
             message="Test definition not found",
         )
+    try:
+        if obj.department_id is not None:
+            await permissions.require_department_action(
+                db, identity, obj.department_id, EntityType.TEST_DEFINITION, Action.DELETE,
+            )
+        else:
+            await permissions.require_action(db, identity, EntityType.TEST_DEFINITION, Action.DELETE)
+    except AuthorizationError:
+        audit_service.emit(
+            "test_definition.delete",
+            target_id=test_id, target_type="test_definition",
+            status="denied", allowed=False,
+            details={"reason": "permission_denied", "department_id": obj.department_id},
+        )
+        raise
     code = obj.code
     await repo.delete(db, obj)
     await db.commit()

@@ -23,6 +23,13 @@ Tempo недоступен — отчёт всё равно публикуетс
 остальная работа) и отсутствие обязательной конфигурации
 (`confluence_report_page_space`/`confluence_base_url`/`credential_id`).
 
+**Bitbucket работает и без своего credential'а.** Легаси ходил в Bitbucket с
+пустым паролем (`monthly_report.py:23` `PASSWORD = ''`), поэтому отсутствие
+`bitbucket_credential_id` здесь не отключает источник, а переводит его в
+анонимный режим. Если анонимно не пускают — причина уходит в `warnings`
+заметкой "bitbucket (anonymous): ...", а не растворяется в нулях по всем
+сотрудникам и сплошной подсветке простоя.
+
 `credential_id` остаётся обязательным и используется как раньше — для
 Jira-комментариев и Tempo-worklog'ов (`_resolve_jira_secret`). Публикация в
 Confluence (`_resolve_confluence_secret`, C4) предпочитает отдельный
@@ -52,8 +59,12 @@ from src.utils.ids import department_activity_report_id as new_report_id
 
 logger = logging.getLogger(__name__)
 
-_WEEKDAY_RU = ("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
-_METRIC_LABELS = ("Коммиты в Bitbucket", "Комментарии в Jira", "Часы в Tempo", "Задачи в Tempo")
+# Подпись дня и порядок метрик — буквально легаси: `libreport.py:495`
+# (`strftime('%Y-%m-%d--%a')`, англ. сокращение из C-локали) и `libreport.py:522`
+# (`expected_metrics_order`). Отличаться здесь незачем: страницу читают те же
+# люди, что читали легаси-отчёт.
+_WEEKDAY_EN = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+_METRIC_LABELS = ("Комментарии в Jira", "Коммиты в Bitbucket", "Часы в Tempo", "Задачи в Tempo")
 
 _INTRO_HTML = (
     "<h1>Активность сотрудников отдела</h1>"
@@ -116,7 +127,7 @@ def _apply_bitbucket_commits(
 
 
 async def _fetch_all_commits(
-    settings: DepartmentIntegrationSettings, username: str, password: str,
+    settings: DepartmentIntegrationSettings, username: str | None, password: str | None,
 ) -> list[dict]:
     branches = await bitbucket_client.get_branches(
         base_url=settings.bitbucket_base_url, username=username, password=password,
@@ -258,16 +269,25 @@ async def collect_activity(
     metrics = _empty_metrics(members, days)
     day_set = {d.isoformat() for d in days}
 
-    if settings.bitbucket_base_url and settings.bitbucket_project_key and settings.bitbucket_repo_slug and settings.bitbucket_credential_id:
+    if settings.bitbucket_base_url and settings.bitbucket_project_key and settings.bitbucket_repo_slug:
+        # `bitbucket_credential_id` не обязателен: легаси считал коммиты с
+        # пустым паролем (`monthly_report.py:23`), то есть без секрета вообще.
+        # Отдел с репозиторием, открытым на чтение, получает те же цифры, а не
+        # молчаливые нули у всех и сплошную подсветку простоя.
+        anonymous = not settings.bitbucket_credential_id
+        prefix = "bitbucket (anonymous)" if anonymous else "bitbucket"
         try:
-            bb_login, bb_secret = await secret_client.reveal_credential(settings.bitbucket_credential_id)
+            bb_login: str | None = None
+            bb_secret: str | None = None
+            if not anonymous:
+                bb_login, bb_secret = await secret_client.reveal_credential(settings.bitbucket_credential_id)
             commits = await _fetch_all_commits(settings, bb_login, bb_secret)
             _apply_bitbucket_commits(metrics, members, commits, day_set)
         except AppException as exc:
-            warnings.append(f"bitbucket: {exc.message}")
+            warnings.append(f"{prefix}: {exc.message}")
         except Exception as exc:  # noqa: BLE001 — источник best-effort, не должен ронять весь отчёт
             logger.warning("activity_report: bitbucket collection failed: %s", exc)
-            warnings.append(f"bitbucket: {type(exc).__name__}")
+            warnings.append(f"{prefix}: {type(exc).__name__}")
     else:
         warnings.append("bitbucket: department_integration_settings incomplete")
 
@@ -308,9 +328,11 @@ def render_report_html(
 ) -> str:
     """HTML-таблица (двухуровневый заголовок сотрудник×метрика) + подсветка простоя.
 
-    Идентична легаси по содержанию: подсветка `#ffffe1`/`#fe5555` на Jira и
-    Bitbucket ячейках дня, если обе равны 0. Ссылка на задачу вместо
-    Jira-макроса легаси (см. module docstring `services/confluence_client.py`).
+    Идентична легаси по содержанию: тот же порядок метрик (`_METRIC_LABELS`),
+    та же подпись дня (`YYYY-MM-DD--Fri`) и та же подсветка
+    `#ffffe1`/`#fe5555` на Jira- и Bitbucket-ячейках дня, если обе равны 0.
+    Ссылка на задачу вместо Jira-макроса легаси (см. module docstring
+    `services/confluence_client.py`).
     """
     if not members:
         return _INTRO_HTML + "<p><em>В отделе нет активных сотрудников, включённых в отчёт.</em></p>"
@@ -325,7 +347,7 @@ def render_report_html(
     body_rows: list[str] = []
     for day in days:
         day_key = day.isoformat()
-        cells = [f"<td>{day_key} ({_WEEKDAY_RU[day.weekday()]})</td>"]
+        cells = [f"<td>{day_key}--{_WEEKDAY_EN[day.weekday()]}</td>"]
         for member in members:
             cell = metrics[member.id][day_key]
             idle = cell["bitbucket"] == 0 and cell["jira"] == 0
@@ -338,8 +360,8 @@ def render_report_html(
                 if jira_base_url else _escape(task)
                 for task in cell["tempo_tasks"]
             ) or "0"
-            cells.append(f'<td{idle_style}>{cell["bitbucket"]}</td>')
             cells.append(f'<td{idle_style}>{cell["jira"]}</td>')
+            cells.append(f'<td{idle_style}>{cell["bitbucket"]}</td>')
             cells.append(f'<td style="text-align:center;">{cell["tempo_hours"]:g}</td>')
             cells.append(f'<td style="text-align:center;">{tasks_html}</td>')
         body_rows.append("<tr>" + "".join(cells) + "</tr>")

@@ -701,6 +701,52 @@ class TestCompleted:
         assert updated.state == QueueItemState.SUCCEEDED
         assert any(p.endswith("/release-for-service") for _, p in recorded_calls)
 
+    async def test_completion_does_not_republish_stp_matrix(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+        monkeypatch,
+    ):
+        """СТП-матрица публикуется только по кнопке — как и у легаси.
+
+        У легаси единственный вызов `ZefirResultTable` из кода завершения теста
+        (`backup_image.py:496-507` `jira_send_status`) закомментирован в обоих
+        местах (`backup_image.py:1013,1022`), живыми оставались только ручные
+        точки. Тест держит это поведение: `POST /queue/{id}/completed` не должен
+        тянуть публикацию за собой.
+        """
+        from src.services import stp_matrix as stp_matrix_svc
+
+        published: list[str] = []
+
+        async def fake_publish(*args, **kwargs):
+            published.append("called")
+
+        monkeypatch.setattr(stp_matrix_svc, "publish_stp_matrix", fake_publish)
+
+        mock_server_service()
+        await mock_git_token()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+        await client.post(
+            f"{CALLBACK_BASE}/{item.prepare_request_id}/completed",
+            headers=_server_hdr("server_service", SERVER_SECRET),
+            json={
+                "correlation_id": item.id, "succeeded": True,
+                "test_username": "u", "test_password": "s3cr3t",
+                "test_ssh_private_key": "-----KEY-----",
+            },
+        )
+        await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+
+        resp = await client.post(
+            f"{QUEUE_BASE}/{item.id}/completed",
+            headers=_server_hdr("testing_worker", WORKER_SECRET),
+            json={"succeeded": True, "exit_code": 0},
+        )
+        assert resp.status_code == 200, resp.text
+        assert published == []
+
     async def test_failure_creates_retry(
         self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
     ):

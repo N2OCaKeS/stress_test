@@ -90,6 +90,20 @@ class TestMonthBusinessDays:
         assert date(2026, 9, 30) in days
 
 
+# ── bitbucket_client._auth ────────────────────────────────────────────────────
+
+
+class TestBitbucketAuth:
+    def test_no_credentials_means_no_auth_header(self):
+        assert bitbucket_client._auth(None, None) is None
+        assert bitbucket_client._auth("", "") is None
+
+    def test_login_only_keeps_legacy_empty_password(self):
+        # Легаси: `auth=(username, '')` — `monthly_report.py:23`.
+        assert bitbucket_client._auth("ivanov", None) == ("ivanov", "")
+        assert bitbucket_client._auth("ivanov", "secret") == ("ivanov", "secret")
+
+
 # ── render_report_html ───────────────────────────────────────────────────────
 
 
@@ -111,6 +125,38 @@ class TestRenderReportHtml:
     def test_no_members_yields_placeholder(self):
         html = svc.render_report_html(days=[], members=[], metrics={}, jira_base_url=None)
         assert "нет активных сотрудников" in html
+
+    def test_metric_order_matches_legacy(self):
+        """Порядок метрик — `libreport.py:522` `expected_metrics_order`."""
+        assert svc._METRIC_LABELS == (
+            "Комментарии в Jira", "Коммиты в Bitbucket", "Часы в Tempo", "Задачи в Tempo",
+        )
+
+        day = date(2026, 9, 2)
+        member = _Member(id="m1")
+        member.display_name = "Active Member"
+        metrics = {
+            "m1": {day.isoformat(): {"bitbucket": 7, "jira": 3, "tempo_hours": 2.0, "tempo_tasks": ["QA-1"]}},
+        }
+        html = svc.render_report_html(days=[day], members=[member], metrics=metrics, jira_base_url=None)
+
+        assert html.index("Комментарии в Jira") < html.index("Коммиты в Bitbucket")
+        assert html.index("Часы в Tempo") < html.index("Задачи в Tempo")
+        # Ячейки идут в том же порядке, что подписи: сперва Jira, потом Bitbucket.
+        assert html.index(">3</td>") < html.index(">7</td>")
+
+    def test_day_label_matches_legacy_format(self):
+        """Подпись дня — `libreport.py:495` `strftime('%Y-%m-%d--%a')`."""
+        day = date(2025, 9, 5)  # пятница
+        member = _Member(id="m1")
+        member.display_name = "Active Member"
+        metrics = {
+            "m1": {day.isoformat(): {"bitbucket": 1, "jira": 1, "tempo_hours": 0.0, "tempo_tasks": []}},
+        }
+        html = svc.render_report_html(days=[day], members=[member], metrics=metrics, jira_base_url=None)
+
+        assert "<td>2025-09-05--Fri</td>" in html
+        assert "(Пт)" not in html
 
 
 # ── collect_activity ──────────────────────────────────────────────────────────
@@ -182,6 +228,52 @@ class TestCollectActivity:
         assert metrics["m1"][day.isoformat()]["tempo_hours"] == 0.0
         assert any("bitbucket" in w for w in warnings)
         assert any("tempo" in w for w in warnings)
+
+    async def test_bitbucket_without_credential_goes_anonymous(self, monkeypatch):
+        """Нет `bitbucket_credential_id` — источник не пропускается, запрос уходит без auth."""
+        day = date(2026, 9, 2)
+        member = _Member(id="m1", bitbucket_username="ivanov")
+        seen: list[tuple] = []
+
+        async def fail_reveal(cred_id: str):
+            raise AssertionError("secret_client.reveal_credential must not be called anonymously")
+
+        async def fake_branches(**kwargs):
+            seen.append((kwargs["username"], kwargs["password"]))
+            return ["master"]
+
+        async def fake_commits(**kwargs):
+            seen.append((kwargs["username"], kwargs["password"]))
+            return [{"author": {"name": "ivanov"}, "authorTimestamp": _commit_ms(day)}]
+
+        monkeypatch.setattr(secret_client, "reveal_credential", fail_reveal)
+        monkeypatch.setattr(bitbucket_client, "get_branches", fake_branches)
+        monkeypatch.setattr(bitbucket_client, "get_commits", fake_commits)
+
+        settings = _Settings(bitbucket_credential_id=None, jira_board_id=None, tempo_team_id=None)
+        metrics, warnings = await svc.collect_activity(settings, "jira_tok", "2026-09", [day], [member])
+
+        assert metrics["m1"][day.isoformat()]["bitbucket"] == 1
+        assert seen == [(None, None), (None, None)]
+        assert not any("bitbucket" in w for w in warnings)
+
+    async def test_anonymous_bitbucket_failure_is_flagged(self, monkeypatch):
+        """Анонимно не пустили — явная заметка в warnings, а не нули у всех молча."""
+        day = date(2026, 9, 2)
+        member = _Member(id="m1", bitbucket_username="ivanov")
+
+        async def fake_branches(**kwargs):
+            raise ServiceUnavailableError(
+                error_code="BITBUCKET_ERROR", message="Bitbucket returned 401 listing branches",
+            )
+
+        monkeypatch.setattr(bitbucket_client, "get_branches", fake_branches)
+
+        settings = _Settings(bitbucket_credential_id=None, jira_board_id=None, tempo_team_id=None)
+        metrics, warnings = await svc.collect_activity(settings, "jira_tok", "2026-09", [day], [member])
+
+        assert metrics["m1"][day.isoformat()]["bitbucket"] == 0
+        assert any(w.startswith("bitbucket (anonymous): ") and "401" in w for w in warnings)
 
     async def test_incomplete_settings_yields_warnings_only(self):
         day = date(2026, 9, 2)

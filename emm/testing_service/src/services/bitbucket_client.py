@@ -6,6 +6,12 @@
 bitbucket_credential_id`, резолв — зона ответственности вызывающего
 `services/activity_report.py`, этот модуль ничего не знает про departments).
 
+Креды необязательны. Легаси ходил сюда с пустым паролем
+(`monthly_report.py:23` `PASSWORD = ''` → `libreport.py:427,449`
+`auth=(username, '')`), то есть фактически без секрета — для репозитория,
+открытого на чтение, этого хватало. Если вызывающий не передал ни логина, ни
+пароля, запрос уходит вообще без `Authorization`.
+
 Легаси считает коммиты по ВСЕМ веткам репозитория (сначала список веток,
 потом `commits?until=<branch>` на каждую) — тот же приём здесь, без
 дедупликации коммитов, видимых сразу в нескольких ветках (легаси тоже их не
@@ -41,8 +47,15 @@ def _base(base_url: str) -> str:
     return base_url.rstrip("/")
 
 
+def _auth(username: str | None, password: str | None) -> tuple[str, str] | None:
+    """Пара для basic auth, либо `None` — тогда запрос уходит анонимно."""
+    if not username and not password:
+        return None
+    return (username or "", password or "")
+
+
 async def get_branches(
-    *, base_url: str, username: str, password: str, project_key: str, repo_slug: str,
+    *, base_url: str, username: str | None, password: str | None, project_key: str, repo_slug: str,
     limit: int = _DEFAULT_BRANCHES_LIMIT,
 ) -> list[str]:
     """`GET .../branches` → список `displayId`. Легаси `ReportGit.get_branches`."""
@@ -51,7 +64,7 @@ async def get_branches(
     async with build_client(settings.bitbucket_request_timeout_seconds) as client:
         try:
             response = await client.get(
-                url, params={"limit": limit}, auth=(username, password),
+                url, params={"limit": limit}, auth=_auth(username, password),
             )
         except httpx.HTTPError as exc:
             raise ServiceUnavailableError(
@@ -78,7 +91,7 @@ async def get_branches(
 
 
 async def get_commits(
-    *, base_url: str, username: str, password: str, project_key: str, repo_slug: str,
+    *, base_url: str, username: str | None, password: str | None, project_key: str, repo_slug: str,
     branch: str, limit: int = _DEFAULT_COMMITS_LIMIT,
 ) -> list[dict]:
     """`GET .../commits?until=<branch>` → сырые записи `values` (легаси `fetch_commits`).
@@ -92,7 +105,7 @@ async def get_commits(
     async with build_client(settings.bitbucket_request_timeout_seconds) as client:
         try:
             response = await client.get(
-                url, params={"until": branch, "limit": limit}, auth=(username, password),
+                url, params={"until": branch, "limit": limit}, auth=_auth(username, password),
             )
         except httpx.HTTPError as exc:
             raise ServiceUnavailableError(

@@ -150,3 +150,11 @@ class QueueItemSummaryResponse(BaseModel):
     # Запрошенное, но ещё не отработанное воркером прерывание — карточке стенда
     # этого хватает, чтобы показать «Останавливается…» без второго запроса.
     interrupt_action: str | None = None
+    estimated_finish_at: datetime | None = Field(
+        default=None,
+        description=(
+            "Оценка освобождения стенда — `started_at` + таймаут теста, "
+            "worst-case, не средняя длительность. `null`, если item ещё не "
+            "стартовал или у теста не задан таймаут."
+        ),
+    )

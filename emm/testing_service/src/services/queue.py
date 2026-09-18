@@ -31,7 +31,7 @@ server_service отвечает `SERVER_NOT_BUSY` (бронь ещё не бра
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -515,6 +515,22 @@ async def handle_prepare_completed(
 async def get_active_queue_item(db: AsyncSession, stand_id: str) -> QueueItem | None:
     """Активный item очереди стенда, если есть (§8.6 — кнопка live-лога в консоли сервера)."""
     return await repo.get_active_for_stand(db, stand_id)
+
+
+async def resolve_estimated_finish_at(db: AsyncSession, item: QueueItem) -> datetime | None:
+    """Оценка, когда стенд освободится — `started_at + timeout_seconds` теста.
+
+    Это worst-case по таймауту, не средняя историческая длительность (её
+    сегодня никто не считает). `None`, если item ещё не стартовал или у его
+    теста таймаут не задан (тогда `testing_worker` берёт свой дефолт, но
+    testing_service о нём не знает — оценивать нечем).
+    """
+    if item.started_at is None:
+        return None
+    test = await test_definition_repo.get_by_id(db, item.test_id)
+    if test is None or test.timeout_seconds is None:
+        return None
+    return item.started_at + timedelta(seconds=test.timeout_seconds)
 
 
 _STARTER_SCRIPT_PATH = "/home/u/starter.sh"

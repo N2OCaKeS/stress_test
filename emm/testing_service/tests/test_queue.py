@@ -149,6 +149,7 @@ async def _create_stand(
 async def _create_test_def(
     client, admin_token, pinned_stand_id: str | None, *,
     with_sensitive_arg: bool = False, mode: str = "orel", starter_suffix: str | None = None,
+    timeout_seconds: int | None = None,
 ) -> str:
     payload = {
         "code": f"queue.test.{uuid.uuid4().hex[:8]}",
@@ -160,6 +161,8 @@ async def _create_test_def(
         payload["pinned_stand_id"] = pinned_stand_id
     if starter_suffix is not None:
         payload["starter_suffix"] = starter_suffix
+    if timeout_seconds is not None:
+        payload["timeout_seconds"] = timeout_seconds
     resp = await client.post(TESTS_BASE, headers=_hdr(admin_token), json=payload)
     assert resp.status_code == 201, resp.text
     test_id = resp.json()["id"]

@@ -7,6 +7,8 @@ Queue item заводится напрямую через репозиторий
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from src.core.constants import QueueItemState
 from src.db.session import AsyncSessionLocal
 from src.repositories import queue_item as queue_item_repo
@@ -23,26 +25,31 @@ from tests.test_queue import (  # noqa: F401 — фикстуры переисп
 STANDS_BASE = "/api/testing/v1/test-stands"
 
 
-async def _make_stand_and_test(client, admin_token, mock_server_service):
+async def _make_stand_and_test(client, admin_token, mock_server_service, *, timeout_seconds: int | None = None):
     mock_server_service()
     stand_id, server_id = await _create_stand(client, admin_token)
-    test_id = await _create_test_def(client, admin_token, stand_id)
+    test_id = await _create_test_def(client, admin_token, stand_id, timeout_seconds=timeout_seconds)
     return stand_id, server_id, test_id
 
 
-async def _create_queue_item(stand_id: str, test_id: str, *, state: str) -> str:
+async def _create_queue_item(
+    stand_id: str, test_id: str, *, state: str, started_at: datetime | None = None,
+) -> str:
+    data = {
+        "id": new_queue_item_id(),
+        "stand_id": stand_id,
+        "test_id": test_id,
+        "launch_context": dict(LAUNCH_CTX),
+        "state": state,
+        "position": 0,
+        "is_retry": False,
+        "debug_mode": False,
+        "created_by": "usr_test",
+    }
+    if started_at is not None:
+        data["started_at"] = started_at
     async with AsyncSessionLocal() as db:
-        item = await queue_item_repo.create(db, {
-            "id": new_queue_item_id(),
-            "stand_id": stand_id,
-            "test_id": test_id,
-            "launch_context": dict(LAUNCH_CTX),
-            "state": state,
-            "position": 0,
-            "is_retry": False,
-            "debug_mode": False,
-            "created_by": "usr_test",
-        })
+        item = await queue_item_repo.create(db, data)
         await db.commit()
         return item.id
 
@@ -64,6 +71,43 @@ class TestCurrentQueueItem:
         assert body["queue_item_id"] == item_id
         assert body["state"] == "running"
         assert body["test_id"] == test_id
+        assert body["estimated_finish_at"] is None
+
+    async def test_estimated_finish_at_is_started_at_plus_timeout(self, client, admin_token, mock_server_service):
+        stand_id, _server_id, test_id = await _make_stand_and_test(
+            client, admin_token, mock_server_service, timeout_seconds=1800,
+        )
+        started_at = datetime(2026, 9, 18, 10, 0, 0, tzinfo=timezone.utc)
+        item_id = await _create_queue_item(
+            stand_id, test_id, state=QueueItemState.RUNNING, started_at=started_at,
+        )
+
+        resp = await client.get(f"{STANDS_BASE}/{stand_id}/current-queue-item", headers=_hdr(admin_token))
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["queue_item_id"] == item_id
+        assert datetime.fromisoformat(body["estimated_finish_at"]) == started_at + timedelta(seconds=1800)
+
+    async def test_estimated_finish_at_null_without_started_at(self, client, admin_token, mock_server_service):
+        stand_id, _server_id, test_id = await _make_stand_and_test(
+            client, admin_token, mock_server_service, timeout_seconds=1800,
+        )
+        await _create_queue_item(stand_id, test_id, state=QueueItemState.PREPARING)
+
+        resp = await client.get(f"{STANDS_BASE}/{stand_id}/current-queue-item", headers=_hdr(admin_token))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["estimated_finish_at"] is None
+
+    async def test_estimated_finish_at_null_without_timeout(self, client, admin_token, mock_server_service):
+        stand_id, _server_id, test_id = await _make_stand_and_test(client, admin_token, mock_server_service)
+        started_at = datetime(2026, 9, 18, 10, 0, 0, tzinfo=timezone.utc)
+        await _create_queue_item(
+            stand_id, test_id, state=QueueItemState.RUNNING, started_at=started_at,
+        )
+
+        resp = await client.get(f"{STANDS_BASE}/{stand_id}/current-queue-item", headers=_hdr(admin_token))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["estimated_finish_at"] is None
 
     async def test_terminal_item_not_returned(self, client, admin_token, mock_server_service):
         stand_id, _server_id, test_id = await _make_stand_and_test(client, admin_token, mock_server_service)

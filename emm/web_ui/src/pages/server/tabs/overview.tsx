@@ -34,10 +34,12 @@ import { inventorySync, updateServer } from "@/api/server/servers";
 import { listOsVersions } from "@/api/server/osVersions";
 import { updateVm, updateVmIdentity } from "@/api/server/vms";
 import type { Vm, VmIdentityUpdateRequest, VmUpdateRequest } from "@/api/server/vms";
+import { findActiveQueueItemForServer } from "@/api/testing/testStands";
+import type { QueueItemSummary } from "@/api/testing/types";
 import { useQuery } from "@/api/auth/useQuery";
 import { apiErrMsg } from "@/api/client";
 import { useDeptLabel, useUserLabel } from "@/lib/labels";
-import { formatMsk } from "@/lib/datetime";
+import { formatMsk, formatMskTime } from "@/lib/datetime";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useToast } from "@/contexts/ToastContext";
 import { isDepAdmin } from "@/lib/rbac";
@@ -46,10 +48,30 @@ import { FormRow, StatRow } from "@/pages/admin/services/_inline";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { isTerminalTaskStatus, useTaskOutcome } from "@/api/server/useTaskOutcome";
 import { TaskOutcomeBanner } from "@/components/server/TaskOutcomeBanner";
+import { HelpTooltip } from "@/components/ui/HelpTooltip";
 import type { EntityRef } from "./_entity";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal as UIModal } from "@/components/ui/Modal";
+
+// Опрос testing_service за оценкой освобождения стенда — раз в 30с достаточно,
+// это не интерактивный терминал, потаймерная точность не нужна (§5.2/§14
+// плана миграции).
+const BUSY_ESTIMATE_POLL_INTERVAL_MS = 30_000;
+
+/**
+ * «≈N мин» до `estimated_finish_at`, либо пометка, что оценка уже истекла —
+ * таймаут теста не гарантирует момент фактического завершения, поэтому
+ * отрицательный остаток не ошибка, а нормальный исход долгого теста.
+ */
+function formatEtaRemaining(estimatedFinishAt: string, nowMs: number): string {
+  const target = new Date(estimatedFinishAt).getTime();
+  if (Number.isNaN(target)) return "";
+  const diffMs = target - nowMs;
+  if (diffMs <= 0) return "оценка уже истекла";
+  const minutes = Math.ceil(diffMs / 60_000);
+  return minutes < 1 ? "меньше минуты" : `≈${minutes} мин`;
+}
 
 interface Props {
   serverId?: string;
@@ -142,6 +164,16 @@ function ParamCard({
   );
 }
 
+/** Тикающий `Date.now()` — источник для перерисовки живого «≈N мин» без похода на бэкенд каждый тик. */
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
 // ── Серверная ветка ─────────────────────────────────────────────────────────
 
 function ServerOverview({
@@ -216,6 +248,35 @@ function ServerOverviewView({
   useEffect(() => {
     if (syncOutcome.tracked?.status === "succeeded") onChanged?.();
   }, [syncOutcome.tracked?.status, onChanged]);
+
+  // Реалтайм-оценка освобождения стенда (§5.2/§14 плана миграции): пока
+  // testing_service держит сервер под тестом, у него есть активный queue_item
+  // с оценкой `estimated_finish_at`. Опрашиваем только в busy_state=testing —
+  // в остальных состояниях активного item'а у testing_service нет и запрос
+  // будет пустым 404/null.
+  const [activeQueueItem, setActiveQueueItem] = useState<QueueItemSummary | null>(null);
+  useEffect(() => {
+    if (server.busy_state !== "testing") {
+      setActiveQueueItem(null);
+      return;
+    }
+    let cancelled = false;
+    async function poll() {
+      try {
+        const item = await findActiveQueueItemForServer(server.id);
+        if (!cancelled) setActiveQueueItem(item);
+      } catch {
+        if (!cancelled) setActiveQueueItem(null);
+      }
+    }
+    poll();
+    const timer = setInterval(poll, BUSY_ESTIMATE_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [server.id, server.busy_state]);
+  const now = useNow(BUSY_ESTIMATE_POLL_INTERVAL_MS);
 
   async function handleInventorySync(silent = false) {
     if (syncing) return;
@@ -308,6 +369,22 @@ function ServerOverviewView({
       label: "busy_since",
       value: server.busy_since ? (
         <span className="mono">{formatMsk(server.busy_since)}</span>
+      ) : (
+        dash
+      ),
+    },
+    {
+      label: "estimated_finish_at",
+      value: activeQueueItem?.estimated_finish_at ? (
+        <span className="flex items-center gap-1.5 flex-wrap">
+          <span className="mono">
+            {formatMskTime(activeQueueItem.estimated_finish_at).slice(0, 5)}
+          </span>
+          <span className="text-dim text-xs">
+            ({formatEtaRemaining(activeQueueItem.estimated_finish_at, now)})
+          </span>
+          <HelpTooltip text="Оценка, не гарантия: считается как время старта теста плюс его таймаут (худший случай), а не средняя длительность прогона." />
+        </span>
       ) : (
         dash
       ),

@@ -70,6 +70,8 @@ export interface QueueItemSummary {
   started_at: Iso8601 | null;
   /** Заказанное, но ещё не подтверждённое воркером прерывание. */
   interrupt_action?: "skip" | "pause" | null;
+  /** Оценка освобождения стенда (`started_at` + таймаут теста), не гарантия. */
+  estimated_finish_at?: Iso8601 | null;
 }
 
 // ── global-variables ──────────────────────────────────────────────────────

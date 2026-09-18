@@ -166,9 +166,11 @@ async def get_current_queue_item(
     item = await queue_svc.get_active_queue_item(db, stand_id)
     if item is None:
         return None
+    estimated_finish_at = await queue_svc.resolve_estimated_finish_at(db, item)
     return QueueItemSummaryResponse(
         queue_item_id=item.id, state=item.state, test_id=item.test_id,
         started_at=item.started_at, interrupt_action=item.interrupt_action,
+        estimated_finish_at=estimated_finish_at,
     )
 
 

@@ -403,6 +403,52 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Audit outbox (durable доставка audit-событий) ─────────────────────────
+
+    audit_outbox_poll_interval_seconds: float = Field(
+        default=2.0,
+        ge=0.1,
+        alias="AUDIT_OUTBOX_POLL_INTERVAL_SECONDS",
+        description=(
+            "Период фонового цикла доставки audit-событий из таблицы "
+            "`audit_outbox` в loging_service (см. "
+            "`services/audit_outbox_publisher.run_drain_loop`). Тот же приём, "
+            "что у ротации логов — свой `asyncio`-цикл в lifespan."
+        ),
+    )
+    audit_outbox_batch_size: int = Field(
+        default=20,
+        ge=1,
+        le=500,
+        alias="AUDIT_OUTBOX_BATCH_SIZE",
+        description=(
+            "Сколько строк outbox'а drain-цикл пытается доставить за один "
+            "проход. Строки обрабатываются по одной (SELECT ... LIMIT 1 FOR "
+            "UPDATE SKIP LOCKED + commit), это верхняя граница итераций."
+        ),
+    )
+    audit_outbox_max_publish_attempts: int = Field(
+        default=50,
+        ge=1,
+        alias="AUDIT_OUTBOX_MAX_PUBLISH_ATTEMPTS",
+        description=(
+            "Сколько неудачных попыток доставки терпит строка, прежде чем "
+            "уехать в DLQ (`published_at` проставлен, `last_error` начинается "
+            "с `[DLQ:attempts_cap]`). С backoff'ом 2^attempts (cap 300s) это "
+            "порядка нескольких часов недоступности loging_service."
+        ),
+    )
+    audit_outbox_retention_hours: int = Field(
+        default=24,
+        ge=1,
+        alias="AUDIT_OUTBOX_RETENTION_HOURS",
+        description=(
+            "Сколько часов доставленные (и DLQ-помеченные) строки лежат в "
+            "`audit_outbox`, прежде чем их снесёт cleanup drain-цикла. "
+            "Недоставленные не трогаются никогда."
+        ),
+    )
+
     # ── Validators ────────────────────────────────────────────────────────────
 
     @field_validator("service_api_keys", mode="before")

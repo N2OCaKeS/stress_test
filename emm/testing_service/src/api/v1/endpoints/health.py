@@ -12,7 +12,7 @@ from sqlalchemy import text
 
 from src.core.config import get_settings
 from src.db.session import engine
-from src.services import audit_service
+from src.services import audit_outbox_publisher, audit_service
 
 logger = logging.getLogger(__name__)
 
@@ -73,11 +73,26 @@ async def _ping_redis() -> bool:
 
 
 def _safe_audit_dropped_total() -> int:
-    """Per-process counter дропов аудита на 429. На ошибке — 0 + log."""
+    """Per-process counter потерянных audit-событий. На ошибке — 0 + log.
+
+    Ключ в payload'е остался историческим (`audit_dropped_429_total`), но
+    считает теперь события, не доехавшие до `audit_outbox`: 429 от
+    loging_service с появлением outbox'а потерей не является — строка
+    получает backoff и уезжает на следующий тик дренажа.
+    """
     try:
         return int(audit_service.get_dropped_429_total())
     except Exception as exc:  # noqa: BLE001
         logger.warning("ready: audit drop counter unreadable (%s)", exc)
+        return 0
+
+
+def _safe_audit_dlq_total() -> int:
+    """Сколько строк outbox'а выброшено в DLQ этим процессом. На ошибке — 0 + log."""
+    try:
+        return int(audit_outbox_publisher.get_dlq_total())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ready: audit DLQ counter unreadable (%s)", exc)
         return 0
 
 
@@ -96,6 +111,7 @@ async def ready() -> dict:
     db_ok = await _check_db()
     redis_connected = await _ping_redis()
     audit_dropped = _safe_audit_dropped_total()
+    audit_dlq = _safe_audit_dlq_total()
     overall = "ok" if db_ok else "degraded"
 
     return {
@@ -104,7 +120,9 @@ async def ready() -> dict:
         "db": db_ok,
         "redis_connected": redis_connected,
         "audit_dropped_429_total": audit_dropped,
+        "audit_outbox_dlq_total": audit_dlq,
         "counters": {
             "audit_dropped_429": audit_dropped,
+            "audit_outbox_dlq": audit_dlq,
         },
     }

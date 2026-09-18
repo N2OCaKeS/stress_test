@@ -46,9 +46,12 @@
   "db": true,
   "redis_connected": true,
   "audit_dropped_429_total": 0,
-  "counters": { "audit_dropped_429": 0 }
+  "audit_outbox_dlq_total": 0,
+  "counters": { "audit_dropped_429": 0, "audit_outbox_dlq": 0 }
 }
 ```
+
+`audit_dropped_429_total` — события, не доехавшие даже до таблицы `audit_outbox` (имя ключа историческое, см. AUDIT_EVENTS.md § «Доставка»); `audit_outbox_dlq_total` — строки, выброшенные дренажом в DLQ. Оба счётчика per-process.
 
 ## Локальный запуск
 

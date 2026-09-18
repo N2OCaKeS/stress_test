@@ -10,6 +10,18 @@
 - `details.*` проходит через `redact_payload` (см. `src/services/redaction.py`) — пароли/токены/секреты маскируются плейсхолдерами.
 - Health/ready НЕ логируются.
 
+## Доставка (durable outbox)
+
+`emit()` не ходит в сеть. Он собирает payload и складывает его в буфер запроса, который outermost-middleware (`src/middleware/audit_outbox_scope.py`) по завершении запроса пишет одним INSERT'ом в таблицу `audit_outbox`. Доставку в `loging_service` делает фоновый цикл `services/audit_outbox_publisher.run_drain_loop` (поднимается в lifespan'е `main.py` рядом с ротацией логов).
+
+- Гарантия — **at-least-once**: недоступный `loging_service` больше не означает потерянное событие, строка лежит в очереди и переотправляется. Дубликаты возможны (падение процесса между POST'ом и отметкой) и разруливаются на стороне `loging_service`.
+- Выборка — `SELECT ... LIMIT 1 FOR UPDATE SKIP LOCKED` по `(created_at, id)`, по одной строке за итерацию с отдельным commit'ом.
+- Ретраи — per-row backoff `next_retry_at = now() + 2^attempts` (cap 300 s), `Retry-After` с 429 уважается как нижняя граница.
+- DLQ — `published_at` проставлен, `last_error` начинается с `[DLQ:<reason>]`, `reason ∈ {attempts_cap, permanent_4xx, missing_action}`; в лог уходит ERROR `audit_outbox: row sent to DLQ ...`, счётчик виден в `/ready` как `audit_outbox_dlq_total`.
+- Доставленные и DLQ-строки чистятся по `AUDIT_OUTBOX_RETENTION_HOURS`, недоставленные не трогаются никогда.
+- Если `LOGGING_SERVICE_URL`/`LOGGING_SERVICE_API_KEY` не заданы (dev/test), в outbox ничего не пишется и цикл не поднимается — событие остаётся в логе процесса (`audit_event ...`).
+- Событие, эмитнутое вне запроса (фоновые циклы, `statistics_recalc`), пишется отдельной task'ой со своей сессией; счётчик не доехавших до таблицы виден в `/ready` как `audit_dropped_429_total` (имя ключа историческое).
+
 ## Lifecycle
 
 | Action | Status | Severity | Payload (`details`) |
@@ -51,6 +63,19 @@
 | `test_command_arg.copy` | failure | WARNING | Источник пуст, не найден, совпадает с текущим тестом или произошла ошибка записи. Транзакция отменена. `details = { source_test_id, reason }`. |
 
 Значения параметров и секреты в событие не включаются.
+
+## Креды учётки исполнения теста
+
+`GET /test-stands/{id}/test-credentials` — прокси на `server_service`. Гейт один (`(test_stand, view_test_credentials)`), но аудит разведён по факту раскрытия, как `server.test_credentials_viewed` / `server.test_credentials_revealed` в `server_service`: SIEM должен отличать просмотр карточки от реального выноса секрета.
+
+| Action | Status | Severity | Описание / payload |
+|---|---|---|---|
+| `test_stand.test_credentials_viewed` | success | WARNING | `reveal=false` — отданы только метаданные (`username`/`ssh_public_key`/`rotated_at`), секрета в ответе нет. `details = { reveal: false, server_id }`. |
+| `test_stand.test_credentials_viewed` | denied | WARNING | Нет права `view_test_credentials`, запрос был без `reveal`. `details = { reveal: false, reason: permission_denied }`. |
+| `test_stand.test_credentials_revealed` | success | CRITICAL | `reveal=true` — пароль и приватный ключ учётки уехали вызывающему. `details = { reveal: true, server_id }`. |
+| `test_stand.test_credentials_revealed` | denied | WARNING | Попытка раскрытия отбита матрицей — секрет не раскрыт, поэтому WARNING, а не CRITICAL. `details = { reveal: true, reason: permission_denied }`. |
+
+Отличие от `server_service`: там `viewed` — INFO, здесь оставлен WARNING. Просмотр карточки в testing_service доступен только держателю отдельного `view_test_credentials`, это не рядовая операция.
 
 ## Домен (появится по волнам)
 

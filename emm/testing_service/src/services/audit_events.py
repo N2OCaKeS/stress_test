@@ -39,7 +39,8 @@ SERVICE_EVENTS = [
     {"action": "test_stand.create", "description": "Test stand registered", "default_severity": "INFO"},
     {"action": "test_stand.update", "description": "Test stand updated", "default_severity": "INFO"},
     {"action": "test_stand.delete", "description": "Test stand deleted", "default_severity": "WARNING"},
-    {"action": "test_stand.test_credentials_viewed", "description": "Test stand's test-user credentials viewed via server_service proxy", "default_severity": "WARNING"},
+    {"action": "test_stand.test_credentials_viewed", "description": "Test stand's test-user credentials card opened via server_service proxy (reveal=false) — metadata only, no secret in the response", "default_severity": "WARNING"},
+    {"action": "test_stand.test_credentials_revealed", "description": "Test stand's test-user password and SSH private key revealed via server_service proxy (reveal=true)", "default_severity": "CRITICAL"},
     {"action": "department_test_settings.update", "description": "Department test settings upserted", "default_severity": "INFO"},
     {"action": "queue_item.launch_rejected", "description": "Queued test no longer allows a normal launch", "default_severity": "WARNING"},
     {"action": "queue_item.enqueued", "description": "Test queued on a stand", "default_severity": "INFO"},
@@ -78,6 +79,10 @@ SERVICE_EVENTS = [
 
 _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("service.started", "success"): "INFO",
+    # `AuditAccessMiddleware` эмитит 401/403 со статусом `denied`, а не
+    # `failure` — без этой пары каждый отказ доступа уезжал в loging с
+    # severity=None (AUDIT_EVENTS.md при этом обещает CRITICAL).
+    ("http.access_denied", "denied"): "CRITICAL",
     ("http.access_denied", "failure"): "CRITICAL",
     ("http.client_error", "failure"): "WARNING",
     ("http.server_error", "failure"): "CRITICAL",
@@ -122,6 +127,11 @@ _DEFAULT_SEVERITY: dict[tuple[str, str], str] = {
     ("test_stand.delete", "denied"): "WARNING",
     ("test_stand.test_credentials_viewed", "success"): "WARNING",
     ("test_stand.test_credentials_viewed", "denied"): "WARNING",
+    # Раскрытие секрета — отдельное действие с CRITICAL, как
+    # `server.test_credentials_revealed` в server_service. denied оставлен
+    # WARNING: попытка, отбитая матрицей, секрета не раскрыла.
+    ("test_stand.test_credentials_revealed", "success"): "CRITICAL",
+    ("test_stand.test_credentials_revealed", "denied"): "WARNING",
     ("department_test_settings.update", "success"): "INFO",
     ("department_test_settings.update", "denied"): "WARNING",
     ("queue_item.launch_rejected", "denied"): "WARNING",

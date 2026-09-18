@@ -8,7 +8,7 @@
 
 - `api` (FastAPI): `/api/testing/v1/health`, `/api/testing/v1/ready`, стандартный error-envelope (`AppException`/`RequestValidationError`/`IntegrityError` handlers), `SecurityHeadersMiddleware`, `HTTPSRequiredMiddleware` (prod TLS-guard), `AuditAccessMiddleware` (http.* события), slowapi rate-limit, self-host Swagger UI.
 - Auth-инфраструктура: introspect в `auth_service` (`CurrentIdentity`/`CurrentUserIdentity`), `require_internal_caller` для будущего s2s-канала (server_service → testing_service callback).
-- Audit-паблишер: `audit_service.emit()` → `loging_service`, каталог событий (`service.started` + `http.*`), редактирование секретов в details.
+- Audit-паблишер: `audit_service.emit()` → durable outbox (`audit_outbox`) → фоновый дренаж в `loging_service` (`services/audit_outbox_publisher.py`, порт паттерна из `server_worker`); каталог событий (`service.started` + `http.*`), редактирование секретов в details. At-least-once, per-row backoff, DLQ по cap'у попыток / permanent 4xx / битому payload'у.
 - `worker` — вынесен в отдельный top-level сервис `../testing_worker` (свой `pyproject.toml`/`Dockerfile`/`Makefile`, по образцу `server_worker`); пустой task-registry, broker слушает `testing_taskiq` очередь на Redis db `/3`. Своей БД у воркера пока нет.
 - Alembic wiring (`alembic.ini`, `src/db/migrations/env.py`).
 - Docker/compose/k8s/Makefile wiring — сервис поднимается в общем dev-стеке и тестовом docker-compose.

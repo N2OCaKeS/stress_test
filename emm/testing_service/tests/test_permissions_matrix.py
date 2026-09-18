@@ -449,3 +449,46 @@ class TestListScopeByDepartment:
         assert row_b["id"] not in ids
         for r in rows:
             assert r["department_id"] in (None, dept_a)
+
+
+# ── Сид системной роли guest ─────────────────────────────────────────────────
+
+class TestGuestBaselineSeed:
+    """Роль `guest` присутствует в матрице, как в server_service/secret_service.
+
+    До миграции `f4a9d2c61b38` матрица не несла о `guest` ни строки, хотя
+    `constants.SYSTEM_SERVICE_ROLES` и `permission_service._reject_system_role`
+    считают её системной с фиксированным набором «view открытых каталогов».
+    """
+
+    _EXPECTED = {
+        ("global_variable", "view"),
+        ("test_definition", "view"),
+        ("test_stand", "view"),
+        ("stp_test_case", "view"),
+    }
+
+    async def test_guest_rows_are_seeded_system_wide(self, client, admin_token):
+        resp = await client.get(f"{BASE}?role=guest", headers=_hdr(admin_token))
+        assert resp.status_code == 200, resp.text
+        rows = resp.json()["items"]
+        assert rows, "у guest должна быть хотя бы одна строка матрицы"
+        assert {(r["entity_type"], r["action"]) for r in rows} == self._EXPECTED
+        assert all(r["department_id"] is None for r in rows)
+
+    async def test_guest_gets_nothing_sensitive(self, client, admin_token):
+        resp = await client.get(f"{BASE}?role=guest", headers=_hdr(admin_token))
+        granted = {(r["entity_type"], r["action"]) for r in resp.json()["items"]}
+        # Секрет учётки, вся матрица прав и HR-данные отдела — не для guest.
+        assert ("test_stand", "view_test_credentials") not in granted
+        assert not any(entity == "permission" for entity, _a in granted)
+        assert not any(entity == "department_activity_report" for entity, _a in granted)
+        assert all(action == "view" for _e, action in granted)
+
+    async def test_guest_matrix_stays_immutable_via_api(self, client, admin_token):
+        """Сид не открыл guest'у путь к правке — системная роль по-прежнему заперта."""
+        resp = await client.put(
+            f"{BASE}/test_stand/guest/update", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 409
+        assert resp.json()["error_code"] == "SYSTEM_ROLE_IMMUTABLE"

@@ -73,7 +73,7 @@ from src.repositories import test_stand as test_stand_repo
 from src.schemas.test_command_arg import TestCommandArgCreate
 from src.schemas.test_definition import TestDefinitionCreate
 from src.schemas.test_stand import TestStandCreate
-from src.services import audit_context, audit_service, test_command_arg, test_definition, test_stand
+from src.services import audit_context, audit_outbox, test_command_arg, test_definition, test_stand
 
 logger = logging.getLogger("import_catalog")
 
@@ -334,19 +334,21 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
 
 
 async def _drain_pending_audit_tasks() -> None:
-    """Дать шанс дойти до сети in-flight audit-emit task'ам перед выходом.
+    """Дождаться task'ов, дописывающих audit-события в outbox, перед выходом.
 
-    Тот же приём, что `src/main.py::_drain_pending_audit_tasks` на shutdown'е —
-    `audit_service.emit` шедулит отправку через `create_task`, а после
-    `asyncio.run()` ничего не гарантирует, что она успела уйти.
+    Тот же приём, что `src/main.py::_drain_pending_audit_tasks` на shutdown'е:
+    вне request-скоупа `emit()` пишет строку отдельной task'ой, а после
+    `asyncio.run()` ничего не гарантирует, что она успела дойти до БД.
+    Саму доставку в loging_service делает уже фоновый цикл сервиса —
+    скрипту достаточно, чтобы строки легли в таблицу.
     """
-    pending = [t for t in audit_service._pending_audit_tasks if not t.done()]
+    pending = [t for t in audit_outbox._pending_persist_tasks if not t.done()]
     if not pending:
         return
     _done, still_pending = await asyncio.wait(pending, timeout=_AUDIT_DRAIN_TIMEOUT_SECONDS)
     if still_pending:
         logger.warning(
-            "%d audit-emit задач(а) не успели уйти за %.1fs",
+            "%d audit-задач(а) не успели записаться в outbox за %.1fs",
             len(still_pending), _AUDIT_DRAIN_TIMEOUT_SECONDS,
         )
 

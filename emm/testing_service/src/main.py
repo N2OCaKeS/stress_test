@@ -31,13 +31,21 @@ from src.core.logging import configure_logging, request_id_var
 from src.core.security import SecurityHeadersMiddleware
 from src.dependencies import auth as auth_deps
 from src.middleware.audit_middleware import AuditAccessMiddleware
+from src.middleware.audit_outbox_scope import AuditOutboxScopeMiddleware
 from src.middleware.https_guard import HTTPSRequiredMiddleware
-from src.services import audit_context, audit_events, audit_service, log_rotation
+from src.services import (
+    audit_context,
+    audit_events,
+    audit_outbox,
+    audit_outbox_publisher,
+    audit_service,
+    log_rotation,
+)
 
 logger = logging.getLogger("testing_service.startup")
 
-# Сколько ждём in-flight audit-emit task'и при shutdown'е, прежде чем закрыть
-# pooled audit-client под ними. Symmetричный бюджет с остальными сервисами.
+# Сколько ждём in-flight task'и записи аудита в outbox при shutdown'е.
+# Symmetричный бюджет с остальными сервисами.
 _AUDIT_DRAIN_TIMEOUT_SECONDS = 2.0
 
 
@@ -151,14 +159,20 @@ async def _activity_report_auto_generate_loop(interval_seconds: float) -> None:
 
 
 async def _drain_pending_audit_tasks() -> None:
-    """Дать шанс дойти до сети in-flight audit-emit task'ам перед закрытием пула."""
-    pending = [t for t in audit_service._pending_audit_tasks if not t.done()]
+    """Дождаться task'ов, дописывающих audit-события в outbox.
+
+    Это события, эмитнутые вне request-скоупа (фоновые loop'ы,
+    `statistics_recalc`) — они пишутся отдельной task'ой. Не дождаться
+    значит потерять строку, которая ещё не дошла до БД; сама доставка в
+    loging_service от shutdown'а не страдает — строки в таблице.
+    """
+    pending = [t for t in audit_outbox._pending_persist_tasks if not t.done()]
     if not pending:
         return
     _done, still_pending = await asyncio.wait(pending, timeout=_AUDIT_DRAIN_TIMEOUT_SECONDS)
     if still_pending:
         logger.warning(
-            "shutdown: %d audit-emit task(s) did not finish within %.1fs",
+            "shutdown: %d audit-outbox write(s) did not finish within %.1fs",
             len(still_pending), _AUDIT_DRAIN_TIMEOUT_SECONDS,
         )
 
@@ -198,6 +212,18 @@ def create_application() -> FastAPI:
         activity_report_task = asyncio.create_task(
             _activity_report_auto_generate_loop(settings.activity_report_auto_generate_interval_seconds)
         )
+        # Доставка audit-событий из `audit_outbox` — третий такой же цикл.
+        # Без сконфигурированного loging_service `emit()` в outbox ничего не
+        # кладёт, поднимать дренаж не за чем.
+        outbox_task = (
+            asyncio.create_task(
+                audit_outbox_publisher.run_drain_loop(
+                    settings.audit_outbox_poll_interval_seconds
+                )
+            )
+            if (settings.logging_service_url and settings.logging_service_api_key)
+            else None
+        )
 
         try:
             yield
@@ -214,17 +240,37 @@ def create_application() -> FastAPI:
             except asyncio.CancelledError:
                 pass
 
-            # Shutdown order: introspect-client → drain pending audit-tasks →
+            if outbox_task is not None:
+                outbox_task.cancel()
+                try:
+                    await outbox_task
+                except asyncio.CancelledError:
+                    pass
+
+            # Shutdown order: introspect-client → дозапись outbox'а →
             # audit-client. Закрытие introspect'а первым безопасно — uvicorn
             # graceful shutdown уже перестал принимать новые запросы к этому
-            # моменту. audit-client закрываем последним, чтобы fire-and-forget
-            # emit-таски успели уйти в сеть под ещё живым пулом.
+            # моменту. audit-client закрываем последним: финальный проход
+            # дренажа ниже ещё ходит по нему в сеть.
             introspect = auth_deps._introspect_client
             auth_deps._introspect_client = None
             if introspect is not None:
                 await introspect.aclose()
 
             await _drain_pending_audit_tasks()
+
+            # Последний проход дренажа под ещё живым пулом — чтобы события
+            # последних секунд не ждали следующего старта процесса. Строки
+            # durable, так что таймаут здесь не про потерю данных, а про то,
+            # чтобы не задерживать shutdown.
+            if outbox_task is not None:
+                try:
+                    await asyncio.wait_for(
+                        audit_outbox_publisher.flush_outbox_once(),
+                        timeout=_AUDIT_DRAIN_TIMEOUT_SECONDS,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("shutdown: final audit-outbox flush failed: %s", exc)
 
             audit_pool = audit_service._audit_client
             audit_service._audit_client = None
@@ -258,7 +304,8 @@ def create_application() -> FastAPI:
 
     # Starlette стакает `@app.middleware("http")` в обратном порядке регистрации,
     # последний зарегистрированный = outermost. Желаемый порядок outer→inner:
-    # SecurityHeaders → HTTPSGuard → SlowAPI → attach_request_id → audit_access → route.
+    # AuditOutboxScope → SecurityHeaders → HTTPSGuard → SlowAPI →
+    # attach_request_id → audit_access → route.
 
     @app.middleware("http")
     async def attach_request_id(request: Request, call_next):
@@ -295,12 +342,16 @@ def create_application() -> FastAPI:
         app_env=settings.app_env,
     )
 
-    # SecurityHeadersMiddleware — outermost.
     app.add_middleware(
         SecurityHeadersMiddleware,
         hsts_enabled=settings.security_hsts_enabled,
         assets_base=settings.swagger_ui_assets_base,
     )
+
+    # AuditOutboxScopeMiddleware — outermost: буфер audit-событий должен
+    # пережить все нижние слои, включая AuditAccessMiddleware, который
+    # эмитит http.* после возврата из своего call_next.
+    app.add_middleware(AuditOutboxScopeMiddleware)
 
     @app.exception_handler(AppException)
     async def app_exception_handler(request: Request, exc: AppException):

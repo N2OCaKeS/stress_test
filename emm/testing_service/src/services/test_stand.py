@@ -348,17 +348,29 @@ async def get_test_stand_credentials(
     Секрет остаётся у server_service, здесь только pass-through его ответа
     (bearer вызывающего, не сервисный ключ — этот эндпоинт гейтится обычной
     ролевой матрицей `server_service.admin`, не shared-secret каналом).
+
+    Аудит разведён по факту раскрытия, как в
+    `server_service.prepare_for_test.reveal_test_credentials`: просмотр
+    карточки (`reveal=False`, только метаданные) — WARNING
+    `test_stand.test_credentials_viewed`, реальное раскрытие пароля и
+    приватного ключа (`reveal=True`) — CRITICAL
+    `test_stand.test_credentials_revealed`. Одним событием на оба случая
+    SIEM не мог отличить «посмотрел карточку» от «забрал секрет».
     """
+    action = (
+        "test_stand.test_credentials_revealed" if reveal
+        else "test_stand.test_credentials_viewed"
+    )
     try:
         await permissions.require_action(
             db, identity, EntityType.TEST_STAND, Action.VIEW_TEST_CREDENTIALS,
         )
     except AuthorizationError:
         audit_service.emit(
-            "test_stand.test_credentials_viewed",
+            action,
             target_id=stand_id, target_type="test_stand",
             status="denied", allowed=False,
-            details={"reveal": reveal},
+            details={"reveal": reveal, "reason": "permission_denied"},
         )
         raise
 
@@ -370,7 +382,7 @@ async def get_test_stand_credentials(
         )
     data = await server_client.get_test_credentials(bearer_token, obj.server_id, reveal=reveal)
     audit_service.emit(
-        "test_stand.test_credentials_viewed",
+        action,
         target_id=stand_id, target_type="test_stand",
         status="success", allowed=True,
         details={"reveal": reveal, "server_id": obj.server_id},

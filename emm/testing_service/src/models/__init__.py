@@ -1,5 +1,6 @@
 """ORM-модели testing_service. Импортируются здесь, чтобы Alembic видел metadata."""
 
+from src.models.audit_outbox import AuditOutbox
 from src.models.changelog_cache import ChangelogCache
 from src.models.department_activity_report import DepartmentActivityReport
 from src.models.department_integration_settings import DepartmentIntegrationSettings
@@ -28,6 +29,7 @@ from src.models.test_run_entry import TestRunEntry
 from src.models.test_stand import TestStand
 
 __all__ = [
+    "AuditOutbox",
     "ChangelogCache",
     "DepartmentActivityReport",
     "DepartmentIntegrationSettings",

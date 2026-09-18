@@ -409,3 +409,110 @@ class TestDelete:
     async def test_unknown_id_404(self, client, admin_token):
         resp = await client.delete(f"{BASE}/stand_nope", headers=_hdr(admin_token))
         assert resp.status_code == 404
+
+
+# ── Креды учётки исполнения теста: view vs reveal ───────────────────────────
+
+class TestTestCredentialsAudit:
+    """Просмотр карточки и раскрытие секрета пишут РАЗНЫЕ audit-события.
+
+    Зеркалит `server_service.prepare_for_test.reveal_test_credentials`:
+    `viewed` (метаданные, WARNING) против `revealed` (пароль и приватный
+    ключ уехали вызывающему, CRITICAL). Одним событием на оба случая SIEM
+    не отличал бы просмотр карточки от выноса секрета.
+    """
+
+    @staticmethod
+    def _credentials_handler(reveal: bool):
+        """Handler server_service'а: карточка сервера + его test-credentials."""
+        server_handler = _server_found()
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/test-credentials"):
+                body = {
+                    "exists": True,
+                    "username": "test_runner",
+                    "ssh_public_key": "ssh-ed25519 AAAA",
+                    "rotated_at": "2026-09-01T10:00:00+00:00",
+                }
+                if reveal:
+                    body["password_b64"] = "cHdk"
+                    body["ssh_private_key_b64"] = "cGVt"
+                return httpx.Response(200, json=body)
+            return server_handler(request)
+
+        return handler
+
+    @pytest.fixture
+    def captured_audit(self, monkeypatch):
+        """Перехватывает `audit_service.emit` — собирает (action, status)."""
+        from src.services import audit_service
+
+        events: list[tuple[str, str]] = []
+
+        def _capture(action, actor_id=None, **kwargs):
+            events.append((action, kwargs.get("status", "success")))
+
+        monkeypatch.setattr(audit_service, "emit", _capture)
+        return events
+
+    async def test_view_without_reveal_stays_viewed(
+        self, client, admin_token, mock_server_service, captured_audit,
+    ):
+        created = await _create_stand(client, admin_token, mock_server_service)
+        assert created.status_code == 201, created.text
+        stand_id = created.json()["id"]
+        captured_audit.clear()
+
+        mock_server_service(self._credentials_handler(False))
+        resp = await client.get(
+            f"{BASE}/{stand_id}/test-credentials", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["password_b64"] is None
+
+        assert ("test_stand.test_credentials_viewed", "success") in captured_audit
+        assert all(a != "test_stand.test_credentials_revealed" for a, _s in captured_audit)
+
+    async def test_reveal_emits_separate_action(
+        self, client, admin_token, mock_server_service, captured_audit,
+    ):
+        created = await _create_stand(client, admin_token, mock_server_service)
+        assert created.status_code == 201, created.text
+        stand_id = created.json()["id"]
+        captured_audit.clear()
+
+        mock_server_service(self._credentials_handler(True))
+        resp = await client.get(
+            f"{BASE}/{stand_id}/test-credentials?reveal=true", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["password_b64"] == "cHdk"
+
+        assert ("test_stand.test_credentials_revealed", "success") in captured_audit
+        assert all(a != "test_stand.test_credentials_viewed" for a, _s in captured_audit)
+
+    async def test_denied_reveal_uses_revealed_action(
+        self, client, admin_token, no_role_token, mock_server_service, captured_audit,
+    ):
+        created = await _create_stand(client, admin_token, mock_server_service)
+        assert created.status_code == 201, created.text
+        stand_id = created.json()["id"]
+        captured_audit.clear()
+
+        resp = await client.get(
+            f"{BASE}/{stand_id}/test-credentials?reveal=true", headers=_hdr(no_role_token),
+        )
+        assert resp.status_code == 403
+        assert ("test_stand.test_credentials_revealed", "denied") in captured_audit
+
+    async def test_severity_split_in_catalog(self):
+        from src.services.audit_events import SERVICE_EVENTS, default_severity
+
+        assert default_severity("test_stand.test_credentials_viewed", "success") == "WARNING"
+        assert default_severity("test_stand.test_credentials_revealed", "success") == "CRITICAL"
+        # denied — попытка, секрет не раскрыт: WARNING в обоих случаях.
+        assert default_severity("test_stand.test_credentials_revealed", "denied") == "WARNING"
+        catalog = {e["action"]: e["default_severity"] for e in SERVICE_EVENTS}
+        assert catalog["test_stand.test_credentials_revealed"] == "CRITICAL"
+        assert catalog["test_stand.test_credentials_viewed"] == "WARNING"

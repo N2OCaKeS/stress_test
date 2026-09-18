@@ -231,8 +231,9 @@ async def update_test_stand(
         "bearer'ом вызывающего. Без `?reveal=true` — только метаданные "
         "(`exists`/`username`/`ssh_public_key`/`rotated_at`). С "
         "`?reveal=true` добавляет `password_b64`/`ssh_private_key_b64` — "
-        "CRITICAL-аудит на стороне server_service, отдельный от просмотра "
-        "метаданных."
+        "CRITICAL-аудит `test_stand.test_credentials_revealed` (и такой же "
+        "на стороне server_service), отдельный от WARNING-просмотра "
+        "метаданных `test_stand.test_credentials_viewed`."
     ),
     responses={
         403: {"description": "Нет `view_test_credentials`, либо server_service отказал в доступе."},

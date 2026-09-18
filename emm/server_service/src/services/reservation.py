@@ -1,16 +1,18 @@
 """Гейт деструктивных операций по брони сервера (busy_state).
 
 Бронь (`servers.busy_state` в `busy`/`testing`) сама по себе не запрещает
-деструктивные операции — её снимает только этот гейт. Логика: когда сервер
-занят, менять его состояние (power, provision/deprovision, rotate, delete и
-т.п.) вправе только владелец брони (`busy_user_id`) либо администратор отдела
-сервера. Остальным прилетает 409 `SERVER_RESERVED`.
+деструктивные операции — её снимает только этот гейт. Логика для `busy`:
+когда сервер занят, менять его состояние (power, provision/deprovision,
+rotate, delete и т.п.) вправе только владелец брони (`busy_user_id`) либо
+администратор отдела сервера. Остальным прилетает 409 `SERVER_RESERVED`.
 
 `testing` — бронь исполнения теста, её держит сервис
 (`busy_actor_type='service'`), а не человек, поэтому владельца-пользователя у
-неё нет и проверка `busy_user_id` никого не пропускает: остаются админ (тот же
-override, что и для человеческой брони) и сам держащий сервис — он ходит
-своим internal-каналом (`release-for-service`/`service-status`), не через этот
+неё нет и проверка `busy_user_id` никого не пропускает. В отличие от `busy`,
+здесь админского обхода нет вообще: пока идёт тест, менять сервер нельзя
+никому из людей, ровно как при `ensure_not_updating`. Снять бронь или
+прервать тест может только сам держащий сервис — он ходит своим
+internal-каналом (`release-for-service`/`service-status`), не через этот
 гейт. `acs` в гейт не входит: у него отдельный, более строгий
 `ensure_not_acs_locked` — там даже владелец прежней брони не проходит.
 
@@ -72,12 +74,22 @@ def is_reserved_for_other(identity: IdentityContext, server: Server) -> bool:
 
     Сервисная бронь (`busy_actor_type='service'`) сюда попадает наравне с
     человеческой: `busy_user_id` у неё пуст (CHECK `ck_servers_busy_actor`),
-    поэтому владельцем не окажется никто и пройдёт только админ.
+    поэтому владельцем не окажется никто и пройдёт только админ — кроме
+    `testing`, см. ниже.
+
+    `testing` — исключение из общего правила «владелец или админ проходят»:
+    пока идёт исполнение теста, админский обход не действует вообще, здесь
+    гейт такой же жёсткий, как `ensure_not_updating`. Проходит только сам
+    держатель брони, а держит её всегда сервис (`testing_service`) через
+    internal-канал, который эту функцию не вызывает вовсе — так что для
+    людей, включая админов, `testing` фактически непроходим никем.
     """
     if server.busy_state not in _RESERVED_STATES:
         return False
     if server.busy_user_id == identity.user_id:
         return False
+    if server.busy_state == BusyState.TESTING:
+        return True
     return not is_server_admin(identity, server)
 
 
@@ -137,11 +149,13 @@ def ensure_not_reserved_for(
 
     Сначала — жёсткий гейт обновления ОС (`ensure_not_updating`): пока сервер
     `updating`, операция отбивается 409 `SERVER_UPDATING` для всех без
-    исключения. Затем — обычная бронь: если `busy_state` в `busy`/`testing` и
-    caller не владелец брони и не админ — пишет WARNING-аудит
-    `server.reservation_denied` и бросает 409 `SERVER_RESERVED` с указанием,
-    кто держит бронь (`busy_user_id`/`busy_service_name`, `busy_note`).
-    В остальных случаях возвращается молча.
+    исключения. Затем — бронь: при `busy_state=busy` проходит владелец брони
+    или админ; при `busy_state=testing` — жёстко, без исключений, наравне с
+    `updating` (единственный, кто вправе действовать — сам держащий сервис,
+    но он ходит своим internal-каналом, а не через этот гейт). Если caller не
+    прошёл — пишет WARNING-аудит `server.reservation_denied` и бросает 409
+    `SERVER_RESERVED` с указанием, кто держит бронь (`busy_user_id`/
+    `busy_service_name`, `busy_note`). В остальных случаях возвращается молча.
 
     `action` — машинный ключ операции (например `server.power_on`,
     `server_account.delete`), попадает в детали аудита для трассировки.

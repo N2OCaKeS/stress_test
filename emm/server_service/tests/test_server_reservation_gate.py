@@ -416,9 +416,12 @@ class TestReadAndReleaseNotGated:
 
 
 class TestServiceReservationGate:
-    """Симметрия с человеческой бронью: держателя-человека нет, проходит админ.
+    """`testing` — единственная бронь, которую не обходит даже админ.
 
-    Сам держащий сервис поверх этой брони ходит своим internal-каналом
+    Пока идёт исполнение теста, гейт такой же жёсткий, как
+    `ensure_not_updating`: блокирует вообще всех людей, включая
+    department_admin и service-роль `admin`. Сам держащий сервис поверх этой
+    брони ходит своим internal-каналом
     (`/internal/servers/{id}/{release-for-service,service-status}`), а не
     пользовательскими эндпоинтами, поэтому в этот гейт он не упирается.
     """
@@ -446,20 +449,50 @@ class TestServiceReservationGate:
         )
         assert_error(resp, 409, "SERVER_RESERVED")
 
-    async def test_admin_power_off_allowed(
+    async def test_admin_power_off_blocked(
         self, client, admin_token, make_testing_server, captured_dispatch,
     ):
+        """Отличие от `busy`: во время `testing` админский обход не действует."""
         srv = await make_testing_server(with_ipmi=True)
         resp = await client.post(
             f"{SRV}/{srv.id}/ipmi/power/off", headers=_hdr(admin_token),
         )
-        assert resp.status_code == 202, resp.text
+        assert_error(resp, 409, "SERVER_RESERVED")
 
     async def test_stranger_delete_blocked(
         self, client, stranger_token, make_testing_server, stranger_can_delete,
     ):
         srv = await make_testing_server()
         resp = await client.delete(f"{SRV}/{srv.id}", headers=_hdr(stranger_token))
+        assert_error(resp, 409, "SERVER_RESERVED")
+
+    async def test_admin_delete_blocked(
+        self, client, admin_token, make_testing_server,
+    ):
+        """Отличие от `busy`: во время `testing` админ тоже не может удалить."""
+        srv = await make_testing_server()
+        resp = await client.delete(f"{SRV}/{srv.id}", headers=_hdr(admin_token))
+        assert_error(resp, 409, "SERVER_RESERVED")
+
+    async def test_admin_update_server_blocked(
+        self, client, admin_token, make_testing_server,
+    ):
+        srv = await make_testing_server()
+        resp = await client.patch(
+            f"{SRV}/{srv.id}",
+            headers=_hdr(admin_token),
+            json={"display_name": "admin-renamed"},
+        )
+        assert_error(resp, 409, "SERVER_RESERVED")
+
+    async def test_admin_rotate_password_blocked(
+        self, client, admin_token, make_testing_server, make_account,
+    ):
+        srv = await make_testing_server()
+        acc = await make_account(server_id=srv.id, login="deploy")
+        resp = await client.post(
+            f"{ACC}/{acc.id}/rotate_password", headers=_hdr(admin_token),
+        )
         assert_error(resp, 409, "SERVER_RESERVED")
 
     async def test_read_not_gated(

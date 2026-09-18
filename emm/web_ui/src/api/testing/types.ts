@@ -54,6 +54,11 @@ export type QueueItemState =
   | "skipped"
   | "paused";
 
+/** Элемент очереди в терминальном состоянии (succeeded/failed/skipped) — поллить больше нечего. */
+export function isTerminalQueueItemState(state: string): boolean {
+  return state === "succeeded" || state === "failed" || state === "skipped";
+}
+
 /**
  * Ответ `GET /test-stands/{id}/current-queue-item` — активный (не терминальный)
  * элемент очереди стенда, если он сейчас есть.

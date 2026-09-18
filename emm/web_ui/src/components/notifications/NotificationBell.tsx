@@ -1,17 +1,47 @@
 /**
- * Колокол уведомлений для TopBar. Бейдж — число непрочитанных «моих» задач,
- * клик разворачивает центр уведомлений (поповер порталом).
+ * Колокол уведомлений для TopBar. Объединяет два независимых поллера в один
+ * список: «мои» worker-задачи `server_service` и терминальные тесты своего
+ * отдела из `testing_service` (см. `useDepartmentRunNotifications`) — умышленно
+ * один колокол на оба источника, а не два разных.
  */
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { useMyTaskNotifications } from "@/api/server/useMyTaskNotifications";
+import { useDepartmentRunNotifications } from "@/api/testing/useDepartmentRunNotifications";
 import { NotificationCenter } from "@/components/notifications/NotificationCenter";
+import type { AppNotification } from "@/components/notifications/types";
+
+function rowTime(n: AppNotification): string {
+  return n.kind === "worker_task"
+    ? (n.task.finished_at ?? n.task.created_at)
+    : (n.item.finished_at ?? n.item.created_at);
+}
 
 export function NotificationBell() {
-  const { notifications, unreadCount, markAllRead, markRead } =
-    useMyTaskNotifications();
+  const workerTasks = useMyTaskNotifications();
+  const departmentRuns = useDepartmentRunNotifications();
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
+
+  const notifications = useMemo<AppNotification[]>(() => {
+    const merged: AppNotification[] = [
+      ...workerTasks.notifications.map((n) => ({ kind: "worker_task" as const, ...n })),
+      ...departmentRuns.notifications.map((n) => ({ kind: "test_run" as const, ...n })),
+    ];
+    return merged.sort((a, b) => rowTime(b).localeCompare(rowTime(a)));
+  }, [workerTasks.notifications, departmentRuns.notifications]);
+
+  const unreadCount = workerTasks.unreadCount + departmentRuns.unreadCount;
+
+  function markRead(n: AppNotification) {
+    if (n.kind === "worker_task") workerTasks.markRead(n.task.id);
+    else departmentRuns.markRead(n.item.id);
+  }
+
+  function markAllRead() {
+    workerTasks.markAllRead();
+    departmentRuns.markAllRead();
+  }
 
   const badge = unreadCount > 99 ? "99+" : String(unreadCount);
 

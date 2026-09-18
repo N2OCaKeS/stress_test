@@ -270,6 +270,25 @@ async def test_list_separates_campaigns_and_departments(
     assert response.json()["total"] == 0
 
 
+async def test_guest_reads_department_queue_items(
+    client, admin_token, guest_token, mock_server_service
+):
+    """Список очереди отдела не требует роли admin — читает и guest.
+
+    Важно для колокола уведомлений: он опрашивает эту ручку от лица любого
+    сотрудника отдела, не только тех, у кого есть права на управление
+    очередью.
+    """
+    mock_server_service()
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    await client.post(BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id))
+
+    response = await client.get(BASE, headers=auth_hdr(guest_token), params={"kind": "all"})
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+
+
 async def test_launch_and_retry_use_the_tests_own_mode(
     client, admin_token, mock_server_service, configure_internal_keys, mock_git_token
 ):

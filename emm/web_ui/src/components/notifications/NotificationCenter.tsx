@@ -1,26 +1,31 @@
 /**
- * Поповер-список «моих» уведомлений под колоколом. Рендерится порталом в
- * `document.body` и позиционируется по координатам якоря — как HelpTooltip,
- * чтобы не клипаться скроллом рабочих зон и ложиться поверх остального.
+ * Поповер-список уведомлений под колоколом — два независимых источника
+ * («мои» worker-задачи `server_service` и терминальные тесты своего отдела
+ * из `testing_service`) в одном списке, отсортированные по времени. Рендерится
+ * порталом в `document.body` и позиционируется по координатам якоря — как
+ * HelpTooltip, чтобы не клипаться скроллом рабочих зон и ложиться поверх
+ * остального.
  *
  * Клик по строке: помечаем прочитанной и уходим на карточку задачи
- * (`/tasks/:id`). Кнопка сверху отмечает все прочитанными разом.
+ * (`/tasks/:id`) либо на раздел прогонов (`/testing/runs` — у отдельного
+ * элемента очереди своей страницы пока нет, см. `pages/testing/runs.tsx`).
+ * Кнопка сверху отмечает все прочитанными разом, в обоих источниках.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { formatMskShort } from "@/lib/datetime";
-import type { TaskNotification } from "@/api/server/useMyTaskNotifications";
 import type { TaskStatus } from "@/api/server/types";
 import { Badge, type BadgeKind } from "@/components/ui/Badge";
+import type { AppNotification } from "@/components/notifications/types";
 
 const PANEL_WIDTH = 360;
 const GAP = 6;
 
 type Pos = { top?: number; bottom?: number; left: number; maxHeight: number };
 
-const STATUS_BADGE: Record<string, BadgeKind> = {
+const TASK_STATUS_BADGE: Record<string, BadgeKind> = {
   queued: "neutral",
   running: "warn",
   succeeded: "ok",
@@ -28,14 +33,52 @@ const STATUS_BADGE: Record<string, BadgeKind> = {
   cancelled: "neutral",
 };
 
+const QUEUE_STATE_BADGE: Record<string, BadgeKind> = {
+  queued: "neutral",
+  preparing: "warn",
+  ready: "warn",
+  running: "warn",
+  succeeded: "ok",
+  failed: "danger",
+  skipped: "neutral",
+  paused: "neutral",
+};
+
 function statusBadgeKind(status: TaskStatus): BadgeKind {
-  return STATUS_BADGE[status] ?? "neutral";
+  return TASK_STATUS_BADGE[status] ?? "neutral";
 }
 
-/** Короткий итог: ошибка при failed, иначе пусто. */
-function summary(n: TaskNotification): string | null {
-  if (n.task.status === "failed") {
+function queueStateBadgeKind(state: string): BadgeKind {
+  return QUEUE_STATE_BADGE[state] ?? "neutral";
+}
+
+function rowKey(n: AppNotification): string {
+  return n.kind === "worker_task" ? `worker_task:${n.task.id}` : `test_run:${n.item.id}`;
+}
+
+function rowTime(n: AppNotification): string {
+  return n.kind === "worker_task"
+    ? (n.task.finished_at ?? n.task.created_at)
+    : (n.item.finished_at ?? n.item.created_at);
+}
+
+function rowTitle(n: AppNotification): string {
+  return n.kind === "worker_task" ? n.task.kind : (n.item.test_code ?? n.item.test_name ?? n.item.test_id);
+}
+
+function rowBadge(n: AppNotification) {
+  return n.kind === "worker_task"
+    ? { kind: statusBadgeKind(n.task.status), label: n.task.status }
+    : { kind: queueStateBadgeKind(n.item.state), label: n.item.state };
+}
+
+/** Короткий итог: ошибка при провале, иначе пусто. */
+function summary(n: AppNotification): string | null {
+  if (n.kind === "worker_task" && n.task.status === "failed") {
     return n.task.last_error ?? "Задача завершилась с ошибкой";
+  }
+  if (n.kind === "test_run" && n.item.state === "failed") {
+    return n.item.error ?? "Тест завершился с ошибкой";
   }
   return null;
 }
@@ -43,9 +86,9 @@ function summary(n: TaskNotification): string | null {
 interface NotificationCenterProps {
   /** Якорь (кнопка-колокол), относительно которого позиционируем панель. */
   anchorRef: RefObject<HTMLElement | null>;
-  notifications: TaskNotification[];
+  notifications: AppNotification[];
   onClose: () => void;
-  onMarkRead: (id: string) => void;
+  onMarkRead: (n: AppNotification) => void;
   onMarkAllRead: () => void;
 }
 
@@ -105,10 +148,13 @@ export function NotificationCenter({
     };
   }, [anchorRef, onClose, place]);
 
-  function openTask(id: string) {
-    onMarkRead(id);
+  function openRow(n: AppNotification) {
+    onMarkRead(n);
     onClose();
-    navigate(`/tasks/${id}`);
+    if (n.kind === "worker_task") navigate(`/tasks/${n.task.id}`);
+    // У отдельного элемента очереди своей карточки в UI пока нет — ведём в
+    // общий раздел прогонов, найти конкретный тест там несложно.
+    else navigate("/testing/runs");
   }
 
   function openAllTasks() {
@@ -134,7 +180,7 @@ export function NotificationCenter({
       className="z-[1000] surface border border-token rounded shadow-lg text-sm text-text flex flex-col"
     >
       <div className="flex items-center justify-between px-3 py-2 border-b border-token shrink-0">
-        <span className="font-semibold">Мои задачи</span>
+        <span className="font-semibold">Уведомления</span>
         <button
           type="button"
           className="text-xs text-dim hover:text-accent disabled:opacity-50"
@@ -153,11 +199,12 @@ export function NotificationCenter({
         <ul className="flex-1 min-h-0 overflow-auto">
           {notifications.map((n) => {
             const note = summary(n);
+            const badge = rowBadge(n);
             return (
-              <li key={n.task.id}>
+              <li key={rowKey(n)}>
                 <button
                   type="button"
-                  onClick={() => openTask(n.task.id)}
+                  onClick={() => openRow(n)}
                   className={`w-full text-left px-3 py-2 border-b border-token hover-bg flex flex-col gap-1 ${
                     n.read ? "" : "font-medium"
                   }`}
@@ -169,17 +216,13 @@ export function NotificationCenter({
                         className="w-1.5 h-1.5 rounded-full bg-accent shrink-0"
                       />
                     )}
-                    <span className="truncate flex-1">{n.task.kind}</span>
-                    <Badge kind={statusBadgeKind(n.task.status)}>
-                      {n.task.status}
-                    </Badge>
+                    <span className="truncate flex-1">{rowTitle(n)}</span>
+                    <Badge kind={badge.kind}>{badge.label}</Badge>
                   </span>
                   {note && (
                     <span className="text-xs text-danger truncate">{note}</span>
                   )}
-                  <span className="text-xs text-dim">
-                    {formatMskShort(n.task.finished_at ?? n.task.created_at)}
-                  </span>
+                  <span className="text-xs text-dim">{formatMskShort(rowTime(n))}</span>
                 </button>
               </li>
             );

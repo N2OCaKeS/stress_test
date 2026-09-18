@@ -182,7 +182,7 @@ class ServerResponse(BaseModel):
     ssh_checked_at: datetime | None = Field(default=None, description="Когда последний раз пробовали SSH (UTC; None — пробы ещё не было).")
     ipmi_power_state: str | None = Field(default=None, description="Питание по BMC/IPMI: on/off/unknown (None — пробы ещё не было).")
     ipmi_checked_at: datetime | None = Field(default=None, description="Когда последний раз опрашивали питание по BMC (UTC; None — пробы ещё не было).")
-    busy_state: str = Field(description="Состояние занятости: free/busy/testing.")
+    busy_state: str = Field(description="Состояние занятости: free/busy/testing/updating/acs/testing_done.")
     busy_user_id: str | None = Field(default=None, description="user_id того, кто взял сервер (если busy/testing и бронь пользовательская).")
     busy_actor_type: str = Field(default="user", description="Кто держит бронь: user (держатель в busy_user_id) или service (держатель в busy_service_name).")
     busy_service_name: str | None = Field(default=None, description="Имя сервиса-держателя брони (acs / testing_service). Непусто только при busy_actor_type=service.")

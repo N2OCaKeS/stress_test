@@ -450,18 +450,24 @@ async def _maybe_post_run_summary(db: AsyncSession, new_status: str | None, test
 
 
 async def _advance_stand_queue(db: AsyncSession, stand) -> None:
-    """Взять следующий `queued`-item этого стенда, либо освободить бронь, если очередь пуста."""
+    """Взять следующий `queued`-item этого стенда, либо перевести бронь в
+    `testing_done`, если очередь пуста.
+
+    Не отпускаем сервер сразу в `free` — стенд паркуется в промежуточном
+    статусе, который снимает вручную любой пользователь через
+    `POST /servers/{id}/acknowledge-testing-done` на server_service.
+    """
     next_item = await repo.get_next_queued_for_stand(db, stand.id)
     if next_item is None:
         try:
-            await server_client.release_for_service(stand.server_id)
+            await server_client.release_for_service_as_done(stand.server_id)
         except AppException as exc:
             # Best-effort: бронь может повиснуть, если server_service недоступен
             # именно в этот момент. Наблюдаемость — через лог + WARNING-аудит
             # событий выше по цепочке; активной сверки/sweep'а на эту волну не
             # заводили (см. отчёт волны, раздел "вопросы").
             logger.warning(
-                "release-for-service failed for stand %s (server %s): %s",
+                "release-for-service-as-done failed for stand %s (server %s): %s",
                 stand.id, stand.server_id, exc,
             )
         return

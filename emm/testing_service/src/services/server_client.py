@@ -8,10 +8,11 @@
   (`_get_passthrough`): server_service гейтит видимость/`server_service.admin`
   по department_id держателя токена, не по факту, что testing_service вообще
   аутентифицирован.
-* `acquire_for_service`/`release_for_service`/`set_service_status`/
-  `start_prepare_for_test`/`get_connection_info` — канал брони/подготовки
-  (`_post_internal`, `SERVER_SERVICE_INTERNAL_API_KEY`): чистый shared-secret
-  под explicit-whitelist internal-эндпоинты, без пользовательской identity.
+* `acquire_for_service`/`release_for_service`/`release_for_service_as_done`/
+  `set_service_status`/`start_prepare_for_test`/`get_connection_info` —
+  канал брони/подготовки (`_post_internal`, `SERVER_SERVICE_INTERNAL_API_KEY`):
+  чистый shared-secret под explicit-whitelist internal-эндпоинты, без
+  пользовательской identity.
 
 Аутентификация каталогов — тот же shared-secret паттерн, что у audit-emit и у
 callback'ов server_service: `Authorization: Bearer <SERVER_SERVICE_API_KEY>`
@@ -349,6 +350,18 @@ async def acquire_for_service(
 async def release_for_service(server_id: str) -> dict:
     """POST /internal/servers/{id}/release-for-service — отпустить стенд, очередь опустела."""
     return await _post_internal(f"{_INTERNAL_SERVERS_PATH}/{server_id}/release-for-service", {})
+
+
+async def release_for_service_as_done(server_id: str) -> dict:
+    """POST /internal/servers/{id}/release-for-service-as-done — очередь стенда
+
+    опустела, но вместо `free` сервер паркуется в `testing_done`: кто-то
+    должен явно подтвердить приёмку через человеческий
+    `POST /servers/{id}/acknowledge-testing-done` на server_service.
+    """
+    return await _post_internal(
+        f"{_INTERNAL_SERVERS_PATH}/{server_id}/release-for-service-as-done", {},
+    )
 
 
 async def set_service_status(

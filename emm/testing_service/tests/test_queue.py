@@ -93,11 +93,11 @@ def mock_server_service(monkeypatch, recorded_calls):
                     "server_id": "srv_x", "busy_state": "acs", "busy_actor_type": "service",
                     "busy_service_name": "testing_service", "busy_note": None, "busy_since": None,
                 })
-            if request.method == "POST" and path.endswith("/release-for-service"):
+            if request.method == "POST" and path.endswith("/release-for-service-as-done"):
                 status = overrides.get("release", 200)
                 return httpx.Response(status, json={
-                    "server_id": "srv_x", "busy_state": "free", "busy_actor_type": "user",
-                    "busy_service_name": None, "busy_note": None, "busy_since": None,
+                    "server_id": "srv_x", "busy_state": "testing_done", "busy_actor_type": "service",
+                    "busy_service_name": "testing_service", "busy_note": None, "busy_since": None,
                 })
             if request.method == "POST" and path.endswith("/prepare-for-test"):
                 status = overrides.get("prepare", 202)
@@ -425,7 +425,7 @@ class TestEnqueue:
         assert retry is None
         # Бронь никогда не бралась (acquire упал первым же вызовом) — release
         # не должен был вызываться.
-        assert not any(p.endswith("/release-for-service") for _, p in recorded_calls)
+        assert not any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
 
 
 class TestPrepareCallback:
@@ -531,7 +531,7 @@ class TestPrepareCallback:
             stmt = select(QueueItem).where(QueueItem.retry_of_id == retry.id)
             grandchild = (await db.execute(stmt)).scalar_one_or_none()
         assert grandchild is None
-        assert any(p.endswith("/release-for-service") for _, p in recorded_calls)
+        assert any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
 
 
 class TestClaim:
@@ -907,7 +907,13 @@ class TestCompleted:
         assert resp.status_code == 200, resp.text
         updated = await _get_item(item.id)
         assert updated.state == QueueItemState.SUCCEEDED
-        assert any(p.endswith("/release-for-service") for _, p in recorded_calls)
+        # Очередь опустела — стенд паркуется в testing_done, а не сразу в
+        # free: голый /release-for-service тут вызывать не должны.
+        assert any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
+        assert not any(
+            p.endswith("/release-for-service") and not p.endswith("/release-for-service-as-done")
+            for _, p in recorded_calls
+        )
 
     async def test_prepare_only_success_becomes_prepared_not_succeeded(
         self, client, admin_token, mock_server_service, configure_internal_keys, recorded_calls, mock_git_token,
@@ -941,7 +947,7 @@ class TestCompleted:
         updated = await _get_item(item.id)
         assert updated.state == QueueItemState.PREPARED
         # Стенд всё равно освобождается — исход теста не блокирует очередь.
-        assert any(p.endswith("/release-for-service") for _, p in recorded_calls)
+        assert any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
 
     async def test_completion_does_not_republish_stp_matrix(
         self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,

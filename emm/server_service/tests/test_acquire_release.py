@@ -264,6 +264,85 @@ class TestReleaseServer:
         assert_error(resp, 404, "SERVER_NOT_FOUND")
 
 
+# ── POST /acknowledge-testing-done ───────────────────────────────────────────
+
+
+class TestAcknowledgeTestingDone:
+    """Снятие `testing_done` → `free`. Гейт — `view`, а не `busy_release`:
+
+    любой пользователь с доступом к карточке сервера должен уметь это
+    сделать, не только держатель роли admin/operator."""
+
+    async def test_guest_can_acknowledge(
+        self, client, guest_token_a, make_server, db,
+    ):
+        from src.core.constants import BusyState
+
+        srv = await make_server(department_id="dep_a")
+        srv.busy_state = BusyState.TESTING_DONE
+        srv.busy_actor_type = "service"
+        srv.busy_service_name = "testing_service"
+        srv.busy_note = "rc42"
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acknowledge-testing-done", headers=_hdr(guest_token_a),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["busy_state"] == "free"
+        assert body["busy_service_name"] is None
+        assert body["busy_note"] is None
+
+    async def test_no_role_cannot_acknowledge(
+        self, client, no_role_token_a, make_server, db,
+    ):
+        from src.core.constants import BusyState
+
+        srv = await make_server(department_id="dep_a")
+        srv.busy_state = BusyState.TESTING_DONE
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acknowledge-testing-done", headers=_hdr(no_role_token_a),
+        )
+        assert_error(resp, 403, "PERMISSION_DENIED")
+
+    async def test_busy_server_returns_409(
+        self, client, guest_token_a, operator_token_a, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        await client.post(f"{BASE}/{srv.id}/busy", headers=_hdr(operator_token_a))
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acknowledge-testing-done", headers=_hdr(guest_token_a),
+        )
+        assert_error(resp, 409, "SERVER_NOT_TESTING_DONE")
+
+    async def test_free_server_returns_409(
+        self, client, guest_token_a, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acknowledge-testing-done", headers=_hdr(guest_token_a),
+        )
+        assert_error(resp, 409, "SERVER_NOT_TESTING_DONE")
+
+    async def test_cross_dept_returns_404(
+        self, client, operator_token_b, make_server, db,
+    ):
+        from src.core.constants import BusyState
+
+        srv = await make_server(department_id="dep_a")
+        srv.busy_state = BusyState.TESTING_DONE
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acknowledge-testing-done", headers=_hdr(operator_token_b),
+        )
+        assert_error(resp, 404, "SERVER_NOT_FOUND")
+
+
 # ── POST /os-sync (update_os_version) ────────────────────────────────────────
 
 

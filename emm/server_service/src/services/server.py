@@ -1353,6 +1353,141 @@ async def release_server_for_service(
     return obj
 
 
+async def release_server_for_service_as_done(
+    db: AsyncSession,
+    *,
+    server_id: str,
+    service_name: str,
+) -> Server:
+    """Отпустить бронь этого сервиса в `testing_done`, а не в `free`.
+
+    Используется `testing_service`, когда очередь стенда опустела: вместо
+    немедленного `free` сервер паркуется в промежуточном статусе, который
+    снимает вручную любой пользователь через человеческий
+    `POST /servers/{id}/acknowledge-testing-done`. `busy_actor_type`/
+    `busy_service_name`/`busy_note` сохраняются как есть — это контекст «кто
+    тестировал», а не активная бронь, поэтому очищать его тут не нужно.
+
+    Проверка держателя и гонки — те же, что у `release_server_for_service`.
+    """
+    obj = await repo.get_for_update(db, server_id)
+    if obj is None:
+        audit_service.emit(
+            "server.released_for_service",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "not_found", "service_name": service_name, "mark_as": BusyState.TESTING_DONE},
+        )
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND",
+            message="Server not found",
+        )
+    if obj.busy_state == BusyState.FREE:
+        audit_service.emit(
+            "server.released_for_service",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={
+                "reason": "not_busy",
+                "service_name": service_name,
+                "department_id": obj.department_id,
+            },
+        )
+        raise ConflictError(
+            error_code="SERVER_NOT_BUSY",
+            message="Server is already free",
+        )
+    _ensure_service_holds(obj, service_name, action="server.released_for_service")
+    previous_state = obj.busy_state
+    await repo.update(db, obj, {"busy_state": BusyState.TESTING_DONE})
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit(
+        "server.released_for_service",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "service_name": service_name,
+            "department_id": obj.department_id,
+            "previous_state": previous_state,
+            "mark_as": BusyState.TESTING_DONE,
+        },
+    )
+    return obj
+
+
+async def acknowledge_testing_done(
+    db: AsyncSession,
+    identity: IdentityContext,
+    server_id: str,
+) -> Server:
+    """Снять `testing_done` → `free`. Доступно любому с `(server, *, view)`.
+
+    В отличие от `release_server` (требует `busy_release`), это узкое
+    человеческое действие намеренно доступно всем, кто видит карточку
+    сервера — владелец хочет, чтобы любой, кто наткнулся на «Тестирование
+    завершено», мог снять статус, не выпрашивая отдельную роль. Работает
+    только из `testing_done`; в остальных состояниях (включая обычный `busy`)
+    отбивается 409 — это не замена `release_server`.
+    """
+    with emit_denied_on_authz_error(
+        "server.acknowledge_testing_done",
+        target_id=server_id,
+        target_type="server",
+        extra_details={"server_id": server_id},
+        identity=identity,
+    ):
+        await permissions.require_resource_action(
+            db, identity, EntityType.SERVER, server_id, Action.VIEW,
+        )
+    try:
+        obj = await load_visible_server(db, identity, server_id)
+    except NotFoundError:
+        audit_service.emit(
+            "server.acknowledge_testing_done",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "not_found_or_cross_dept"},
+        )
+        raise
+    result = await db.execute(
+        sa_update(Server)
+        .where(Server.id == server_id, Server.busy_state == BusyState.TESTING_DONE)
+        .values(
+            busy_state=BusyState.FREE,
+            busy_user_id=None,
+            busy_actor_type=BusyActorType.USER,
+            busy_service_name=None,
+            busy_since=None,
+            busy_note=None,
+        )
+    )
+    if result.rowcount == 0:
+        db.expire(obj)
+        current = await repo.get_by_id(db, server_id)
+        current_state = current.busy_state if current is not None else None
+        audit_service.emit(
+            "server.acknowledge_testing_done",
+            target_id=server_id, target_type="server",
+            status="failure", allowed=True,
+            details={"reason": "not_testing_done", "current_state": current_state},
+        )
+        raise ConflictError(
+            error_code="SERVER_NOT_TESTING_DONE",
+            message="Server is not in testing_done state",
+            details={"current_state": current_state},
+        )
+    await db.commit()
+    await db.refresh(obj)
+    audit_service.emit(
+        "server.acknowledge_testing_done",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={"department_id": obj.department_id},
+    )
+    return obj
+
+
 async def set_service_busy_status(
     db: AsyncSession,
     *,

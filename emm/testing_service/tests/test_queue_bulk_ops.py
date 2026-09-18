@@ -266,7 +266,7 @@ class TestDeleteQueueItem:
         resp = await client.delete(f"{BASE}/{item.id}", headers=auth_hdr(admin_token))
         assert resp.status_code == 200, resp.text
         assert await _get_item(item.id) is None
-        assert any(p.endswith("/release-for-service") for _, p in recorded_calls)
+        assert any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
 
     @pytest.mark.parametrize("state", ["preparing", "ready", "running"])
     async def test_rejects_an_item_that_is_still_in_progress(

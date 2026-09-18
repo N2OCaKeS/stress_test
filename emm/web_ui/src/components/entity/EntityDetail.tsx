@@ -135,6 +135,7 @@ const BUSY_LABEL: Record<BusyState, string> = {
   testing: "В тесте",
   updating: "Обновление ОС",
   acs: "Снимок ACS",
+  testing_done: "Тестирование завершено",
 };
 
 const BUSY_KIND: Record<BusyState, "ok" | "warn" | "danger"> = {
@@ -143,6 +144,7 @@ const BUSY_KIND: Record<BusyState, "ok" | "warn" | "danger"> = {
   testing: "warn",
   updating: "warn",
   acs: "warn",
+  testing_done: "warn",
 };
 
 interface EntityDetailProps {

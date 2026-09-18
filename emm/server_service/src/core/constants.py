@@ -47,6 +47,14 @@ class BusyState(StrEnum):
     от `acs`, эту стадию ставит сам `testing_service` через internal-эндпоинт
     после получения кред от `prepare-for-test`; снимается она через
     `release-for-service`.
+
+    `testing_done` — очередь стенда опустела, `testing_service` закончил с
+    ним работу, но сервер ещё не отдан обратно в пул: кто-то должен явно
+    посмотреть на стенд и подтвердить, что тот в порядке. Гейтинг — как у
+    `busy` (зарезервирован, обычным CAS `WHERE busy_state='free'` не
+    захватывается), снимается человеческим `POST /servers/{id}/
+    acknowledge-testing-done`, доступным любому пользователю с обычным
+    view-доступом к серверу, а не только держателю `busy_release`.
     """
 
     FREE = "free"
@@ -54,6 +62,7 @@ class BusyState(StrEnum):
     TESTING = "testing"
     UPDATING = "updating"
     ACS = "acs"
+    TESTING_DONE = "testing_done"
 
 
 class BusyActorType(StrEnum):

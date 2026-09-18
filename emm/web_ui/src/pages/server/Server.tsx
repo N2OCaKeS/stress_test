@@ -825,6 +825,7 @@ const BUSY_CHIP_KIND: Record<BusyState, BadgeKind> = {
   acs: "acs",
   busy: "warn",
   updating: "warn",
+  testing_done: "warn",
 };
 
 function ServerRow({
@@ -851,7 +852,9 @@ function ServerRow({
         ? "test"
         : server.busy_state === "acs"
           ? "ACS"
-          : "busy";
+          : server.busy_state === "testing_done"
+            ? "готов к приёмке"
+            : "busy";
   const name = server.display_name ?? server.hostname;
   const { Icon: RowIcon, title: iconTitle } = serverRowIcon(server);
   // VMS-hub — не обычный сервер, а несущий ВМ узел: помечаем и подписью.

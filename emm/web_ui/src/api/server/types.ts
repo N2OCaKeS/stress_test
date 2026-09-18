@@ -47,8 +47,13 @@ export type ServerStatus =
   | "maintenance"
   | "decommissioned";
 
-/** BusyState enum (`servers.busy_state`). `acs` — идёт create/restore снимка ACS. */
-export type BusyState = "free" | "busy" | "testing" | "updating" | "acs";
+/**
+ * BusyState enum (`servers.busy_state`). `acs` — идёт create/restore снимка
+ * ACS. `testing_done` — очередь стенда опустела, testing_service закончил,
+ * но кто-то должен явно принять стенд через `acknowledge-testing-done`,
+ * прежде чем он вернётся в `free`.
+ */
+export type BusyState = "free" | "busy" | "testing" | "updating" | "acs" | "testing_done";
 
 /** PowerState enum (`servers.power_state`). */
 export type PowerState = "on" | "off" | "unknown";

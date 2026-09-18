@@ -30,7 +30,7 @@ import type {
   ServerUpdateRequest,
   TaskDispatchResponse,
 } from "@/api/server/types";
-import { inventorySync, updateServer } from "@/api/server/servers";
+import { acknowledgeTestingDone, inventorySync, updateServer } from "@/api/server/servers";
 import { listOsVersions } from "@/api/server/osVersions";
 import { updateVm, updateVmIdentity } from "@/api/server/vms";
 import type { Vm, VmIdentityUpdateRequest, VmUpdateRequest } from "@/api/server/vms";
@@ -220,6 +220,7 @@ function ServerOverview({
       canEdit={canEdit}
       onEdit={() => setEditing(true)}
       onChanged={onChanged}
+      onServerUpdated={onServerUpdated}
     />
   );
 }
@@ -229,11 +230,13 @@ function ServerOverviewView({
   canEdit,
   onEdit,
   onChanged,
+  onServerUpdated,
 }: {
   server: Server;
   canEdit: boolean;
   onEdit: () => void;
   onChanged?: () => void;
+  onServerUpdated?: (next: Server) => void;
 }) {
   const deptLabel = useDeptLabel(server.department_id);
   const createdByLabel = useUserLabel(server.created_by);
@@ -242,6 +245,7 @@ function ServerOverviewView({
   const dash = <span className="text-dim">—</span>;
   const toast = useToast();
   const [syncing, setSyncing] = useState(false);
+  const [acking, setAcking] = useState(false);
   const syncOutcome = useTaskOutcome();
   const autoSyncedRef = useRef<string | null>(null);
 
@@ -290,6 +294,24 @@ function ServerOverviewView({
       toast.error(apiErrMsg(e, "inventory_sync не запущен"));
     } finally {
       setSyncing(false);
+    }
+  }
+
+  // Снять «Тестирование завершено» → free. Гейт на бэкенде — обычный view,
+  // не busy_release, поэтому кнопка не проверяет роль: если карточка открылась,
+  // подтвердить может кто угодно.
+  async function handleAcknowledgeTestingDone() {
+    if (acking) return;
+    setAcking(true);
+    try {
+      const next = await acknowledgeTestingDone(server.id);
+      onServerUpdated?.(next);
+      onChanged?.();
+      toast.success("Статус снят, сервер свободен.");
+    } catch (e) {
+      toast.error(apiErrMsg(e, "Не удалось снять статус"));
+    } finally {
+      setAcking(false);
     }
   }
 
@@ -348,7 +370,20 @@ function ServerOverviewView({
       ),
     },
     { label: "power_state", value: server.power_state },
-    { label: "busy_state", value: server.busy_state },
+    {
+      label: "busy_state",
+      value:
+        server.busy_state === "testing_done" ? (
+          <span className="flex items-center gap-2 flex-wrap">
+            <Badge kind="warn">Тестирование завершено</Badge>
+            <Button size="sm" onClick={handleAcknowledgeTestingDone} disabled={acking}>
+              {acking ? "Снимаем…" : "Подтвердить"}
+            </Button>
+          </span>
+        ) : (
+          server.busy_state
+        ),
+    },
     {
       label: "busy_user_id",
       value: server.busy_user_id ? (

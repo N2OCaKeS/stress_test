@@ -226,6 +226,12 @@ Auth: Bearer + `(server, *, busy_release)`.
 
 Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_NOT_BUSY` (409).
 
+### `POST /servers/{server_id}/acknowledge-testing-done`
+
+Auth: Bearer + `(server, *, view)` — намеренно тот же гейт, что у `GET /servers/{id}`, не `busy_release`: снять статус «Тестирование завершено» должен уметь любой, кто видит карточку сервера. Снимает `busy_state=testing_done` → `free`, целиком чистит `busy_*` (как обычный release, а не смена стадии). Работает только из `testing_done` — в остальных состояниях 409.
+
+Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_NOT_TESTING_DONE` (409).
+
 ### `POST /servers/{server_id}/os-sync`
 
 Auth: Bearer + `(server, *, os_sync)`. Прямое выставление `os_version_id` без worker-inventory.
@@ -979,6 +985,12 @@ Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_ID
 ### `POST /internal/servers/{id}/release-for-service`
 
 Auth: та же. Снимает бронь и возвращает сервер в `free`, только если её держит именно этот caller (`busy_service_name == identity`); чужая бронь — 409 `SERVER_RESERVED_BY_OTHER`. Чистит `busy_user_id`/`busy_service_name`/`busy_actor_type`/`busy_note`/`busy_since`. INFO audit `server.released_for_service`.
+
+Errors: 401/403 как выше, `SERVER_NOT_FOUND` (404), `SERVER_NOT_BUSY` / `SERVER_RESERVED_BY_OTHER` (409).
+
+### `POST /internal/servers/{id}/release-for-service-as-done`
+
+Auth: та же. Снимает бронь этого caller'а, но не в `free`, а в `busy_state=testing_done` — `busy_actor_type`/`busy_service_name`/`busy_note` сохраняются как контекст «кто тестировал», не сбрасываются. Используется `testing_service`'ом, когда очередь стенда опустела: кто-то должен явно принять стенд через человеческий `POST /servers/{id}/acknowledge-testing-done`, прежде чем он снова станет `free`. Чужая бронь — 409 `SERVER_RESERVED_BY_OTHER`, как у обычного release-for-service. INFO audit `server.released_for_service`.
 
 Errors: 401/403 как выше, `SERVER_NOT_FOUND` (404), `SERVER_NOT_BUSY` / `SERVER_RESERVED_BY_OTHER` (409).
 

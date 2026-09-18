@@ -90,7 +90,7 @@ class TestImmediateInterrupt:
         assert (await _get_item(item.id)).state == expected
         # Пропуск освобождает стенд (очередь пуста — бронь снимается), пауза
         # оставляет стенд за собой и ждёт resume-queue.
-        released = any(p.endswith("/release-for-service") for _, p in recorded_calls)
+        released = any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
         assert released is (action == "skip")
 
     @pytest.mark.parametrize("action,expected", [
@@ -493,7 +493,7 @@ class TestPausedOccupiesTheStand:
         resp = await client.post(f"{BASE}/{item.id}/skip", headers=auth_hdr(admin_token))
         assert resp.status_code == 200, resp.text
         assert (await _get_item(item.id)).state == QueueItemState.SKIPPED
-        assert any(p.endswith("/release-for-service") for _, p in recorded_calls)
+        assert any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
 
 
 class TestCampaignAggregation:

@@ -460,6 +460,47 @@ async def release_server(
     return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))
 
 
+@router.post(
+    "/{server_id}/acknowledge-testing-done",
+    response_model=ServerResponse,
+    summary="Подтвердить, что стенд принят после «Тестирование завершено» (busy_state → free)",
+    description=(
+        "Снимает промежуточный статус `testing_done`, который `testing_service` "
+        "ставит вместо немедленного `free`, когда очередь стенда опустела. "
+        "Доступно любому пользователю с обычным `(server, *, view)` — не "
+        "требует `busy_release` и не привязано к роли admin: владелец стенда "
+        "должен уметь принять его сам, кто бы это ни был. Вне `testing_done` "
+        "(в том числе для обычного `busy`) — 409, это не замена `DELETE "
+        "/servers/{id}/busy`."
+    ),
+    responses={
+        200: {"description": "Статус снят, сервер свободен."},
+        403: {"description": "Нет `view`."},
+        404: {"description": "Сервер не найден / чужой dept."},
+        409: {"description": "SERVER_NOT_TESTING_DONE — сервер не в статусе «Тестирование завершено»."},
+    },
+)
+async def acknowledge_testing_done(
+    server_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ServerResponse:
+    """
+    Что делает: атомарный `UPDATE ... WHERE busy_state='testing_done'` →
+    `free`, чистит busy_* поля целиком (как обычный release, а не смена
+    стадии — контекст «кто тестировал» дальше не нужен).
+
+    Доступ: `(server, *, view)`. Department-isolation как в GET.
+
+    Возможные ошибки: 403 `PERMISSION_DENIED`, 404 `SERVER_NOT_FOUND`,
+    409 `SERVER_NOT_TESTING_DONE`.
+
+    Аудит: `server.acknowledge_testing_done` (success/denied/failure).
+    """
+    obj = await svc.acknowledge_testing_done(db, identity, server_id)
+    return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))
+
+
 # ── Ручной OS-sync (без inventory sync) ─────────────────────────────────────
 
 

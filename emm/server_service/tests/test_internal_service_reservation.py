@@ -299,6 +299,79 @@ class TestServiceRelease:
         assert resp.json()["error_code"] == "SERVER_NOT_BUSY"
 
 
+class TestServiceReleaseAsDone:
+    """`/release-for-service-as-done` — стенд паркуется в `testing_done`,
+    контекст держателя (кто тестировал) сохраняется, а не сбрасывается."""
+
+    async def test_release_as_done_keeps_holder_context(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv = await make_server()
+        await db.flush()
+        await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(TESTING_SECRET), json={"busy_note": "rc42"},
+        )
+        before = await _row(db, srv.id)
+        busy_since_before = before.busy_since
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/release-for-service-as-done", headers=_hdr(TESTING_SECRET),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["busy_state"] == "testing_done"
+
+        row = await _row(db, srv.id)
+        assert row.busy_state == BusyState.TESTING_DONE
+        assert row.busy_actor_type == "service"
+        assert row.busy_service_name == "testing_service"
+        assert row.busy_note == "rc42"
+        assert row.busy_since == busy_since_before
+
+    async def test_cannot_release_as_done_other_service_reservation(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv = await make_server()
+        await db.flush()
+        await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(ACS_SECRET, identity="acs"), json={},
+        )
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/release-for-service-as-done", headers=_hdr(TESTING_SECRET),
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error_code"] == "SERVER_RESERVED_BY_OTHER"
+        assert (await _row(db, srv.id)).busy_service_name == "acs"
+
+    async def test_cannot_release_as_done_user_reservation(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv = await make_server()
+        srv.busy_state = BusyState.BUSY
+        srv.busy_user_id = "usr_owner"
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/release-for-service-as-done", headers=_hdr(TESTING_SECRET),
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error_code"] == "SERVER_RESERVED_BY_OTHER"
+        assert (await _row(db, srv.id)).busy_user_id == "usr_owner"
+
+    async def test_release_as_done_free_server_is_conflict(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv = await make_server()
+        await db.flush()
+        resp = await client.post(
+            f"{BASE}/{srv.id}/release-for-service-as-done", headers=_hdr(TESTING_SECRET),
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error_code"] == "SERVER_NOT_BUSY"
+
+
 class TestServiceStatus:
     async def test_acs_to_testing_keeps_busy_since(
         self, client, make_server, db, configure_service_keys,

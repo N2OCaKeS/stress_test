@@ -110,6 +110,18 @@ export function clearBusy(id: string): Promise<Server> {
   return apiDelete<Server>(`/server/v1/servers/${id}/busy`);
 }
 
+/**
+ * `POST /api/server/v1/servers/{id}/acknowledge-testing-done` — снять статус
+ * «Тестирование завершено» (busy_state: testing_done → free).
+ *
+ * В отличие от `clearBusy`, гейтится обычным `view`, а не `busy_release` —
+ * backend намеренно пускает сюда любого, кто видит карточку сервера, а не
+ * только держателя роли admin/operator.
+ */
+export function acknowledgeTestingDone(id: string): Promise<Server> {
+  return apiPost<Server>(`/server/v1/servers/${id}/acknowledge-testing-done`, {});
+}
+
 // ── inventory / prepare dispatch'и (202 task_id) ───────────────────────────
 
 /**

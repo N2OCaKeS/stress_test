@@ -146,7 +146,7 @@ async def test_status_changed_before_claim_skips_test_without_retry(
     assert await creds_stash.pop_creds(ready.creds_stash_key) is None
     async with AsyncSessionLocal() as db:
         assert len((await db.execute(select(QueueItem))).scalars().all()) == 1
-    assert any(path.endswith("/release-for-service") for _, path in recorded_calls)
+    assert any(path.endswith("/release-for-service-as-done") for _, path in recorded_calls)
 
 
 async def test_changed_queued_test_does_not_restore_and_next_test_continues(

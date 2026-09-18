@@ -128,6 +128,40 @@ async def release_for_service(
 
 
 @router.post(
+    "/{server_id}/release-for-service-as-done",
+    response_model=ServiceReservationResponse,
+    responses={
+        **_COMMON_RESPONSES,
+        409: {"description": "SERVER_NOT_BUSY / SERVER_RESERVED_BY_OTHER."},
+    },
+)
+async def release_for_service_as_done(
+    server_id: str = Path(description="ID сервера."),
+    db: AsyncSession = Depends(get_db),
+    caller: str = Depends(require_internal_caller(*_ALLOWED_IDENTITIES)),
+) -> ServiceReservationResponse:
+    """Снять собственную бронь, но не отпустить сервер в `free`, а перевести
+    в `testing_done`.
+
+    Целевой сценарий — `testing_service`, когда очередь стенда опустела:
+    сервис закончил работу с сервером, но кто-то должен явно посмотреть на
+    стенд, прежде чем он вернётся в пул свободных. `busy_actor_type`/
+    `busy_service_name`/`busy_note` не сбрасываются — они остаются
+    справочным контекстом «кто тестировал» для человека, который снимет
+    статус через `POST /servers/{id}/acknowledge-testing-done`.
+
+    Чужая бронь отбивается 409 `SERVER_RESERVED_BY_OTHER`, как и у обычного
+    release-for-service.
+
+    Audit: `server.released_for_service`.
+    """
+    server = await server_svc.release_server_for_service_as_done(
+        db, server_id=server_id, service_name=caller,
+    )
+    return _to_response(server)
+
+
+@router.post(
     "/{server_id}/service-status",
     response_model=ServiceReservationResponse,
     responses={

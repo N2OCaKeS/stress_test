@@ -551,6 +551,16 @@ select {
   gap: 8px;
   align-items: center;
 }
+.alert-info {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
 /* СТП — транспонированная матрица результатов (pages/testing/stp.tsx) */
 .stp-cell-done { background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); font-weight: 500; }
 .stp-cell-in_progress { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); font-weight: 500; }

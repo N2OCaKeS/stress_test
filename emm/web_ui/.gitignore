@@ -7,3 +7,5 @@ coverage/
 .env.local
 .env.*.local
 *.log
+# генерируется prebuild-хуком (scripts/write-version.mjs), не коммитим
+public/version.json

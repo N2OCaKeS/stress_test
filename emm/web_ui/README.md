@@ -105,8 +105,30 @@ npm run dev        # vite dev server на :5173 (фоновый mockups :8765 н
 npm run typecheck  # tsc -b --noEmit
 npm run lint
 npm run test       # vitest run
-npm run build      # tsc -b && vite build → dist/
+npm run build      # prebuild пишет public/version.json, затем tsc -b && vite build → dist/
 ```
+
+## Баннер обновления фронта
+
+`npm run build` перед сборкой (npm-хук `prebuild`) вызывает
+`scripts/write-version.mjs`, который пишет `public/version.json`:
+
+```json
+{ "sha": "abc1234", "builtAt": "2026-09-18T12:00:00.000Z" }
+```
+
+Файл попадает в `dist/` вместе с остальной статикой и раздаётся тем же
+nginx, без отдельного бэкенд-эндпоинта. `src/components/UpdateBanner.tsx`
+запоминает SHA при загрузке страницы и раз в 5 минут опрашивает
+`/version.json` (cache-busted query); при расхождении показывает баннер
+«обновите вкладку» вместо форс-логаута легаси-версии.
+
+SHA берётся из `GIT_SHA`/`CI_COMMIT_SHA`/`SOURCE_VERSION`, если задан, иначе
+из `git rev-parse --short HEAD`. В Docker-сборке `.git` не входит в build
+context — нужно передать `--build-arg GIT_SHA=$(git rev-parse --short HEAD)`
+при `docker build`, иначе `version.json` уйдёт с `sha: "unknown"` и баннер
+никогда не сработает (текущий деплой-пайплайн этот build-arg пока не
+прокидывает — см. `obsidian/reports/`).
 
 ## Структура
 

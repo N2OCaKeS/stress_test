@@ -62,8 +62,11 @@ def is_server_admin(identity: IdentityContext, server: Server) -> bool:
 
 # Состояния, которые гейт трактует как «сервер занят под кого-то». `acs` сюда
 # не входит — у него свой, более строгий `ensure_not_acs_locked`; `updating` —
-# тоже свой, `ensure_not_updating`, где не проходит вообще никто.
-_RESERVED_STATES: frozenset[str] = frozenset({BusyState.BUSY, BusyState.TESTING})
+# тоже свой, `ensure_not_updating`, где не проходит вообще никто. `testing_done`
+# гейтится как обычная бронь (владелец/админ проходят) — тест уже закончился,
+# просто статус ждёт подтверждения любым пользователем через отдельный
+# `acknowledge_testing_done`, а не через этот гейт.
+_RESERVED_STATES: frozenset[str] = frozenset({BusyState.BUSY, BusyState.TESTING, BusyState.TESTING_DONE})
 
 
 def is_reserved_for_other(identity: IdentityContext, server: Server) -> bool:

@@ -132,6 +132,31 @@ async def make_testing_server(make_server, db):
     return _factory
 
 
+@pytest_asyncio.fixture
+async def make_testing_done_server(make_server, db):
+    """Сервер dep_a, тест на котором закончился, но статус ещё не подтверждён.
+
+    `busy_state='testing_done'` — гейтится как обычная `busy`-бронь (владелец/
+    админ проходят), в отличие от `testing`; снимается не через этот гейт, а
+    через отдельный `acknowledge_testing_done` (доступен любому пользователю).
+    """
+    from datetime import datetime, timezone
+
+    from src.core.constants import BusyState
+
+    async def _factory(*, with_ipmi: bool = False):
+        srv = await make_server(department_id="dep_a", with_ipmi=with_ipmi)
+        srv.busy_state = BusyState.TESTING_DONE
+        srv.busy_actor_type = "service"
+        srv.busy_service_name = "testing_service"
+        srv.busy_since = datetime.now(timezone.utc)
+        srv.busy_note = "smoke|1711rc42|6.6"
+        await db.flush()
+        return srv
+
+    return _factory
+
+
 # ── Power: гейт по брони ──────────────────────────────────────────────────────
 
 
@@ -503,6 +528,37 @@ class TestServiceReservationGate:
         assert resp.status_code == 200, resp.text
         assert resp.json()["busy_state"] == "testing"
         assert resp.json()["busy_service_name"] == "testing_service"
+
+
+class TestTestingDoneReservationGate:
+    """`testing_done` гейтится как обычная бронь — в отличие от `testing`."""
+
+    async def test_stranger_power_on_blocked(
+        self, client, stranger_token, make_testing_done_server,
+    ):
+        srv = await make_testing_done_server(with_ipmi=True)
+        resp = await client.post(
+            f"{SRV}/{srv.id}/ipmi/power/on", headers=_hdr(stranger_token),
+        )
+        assert_error(resp, 409, "SERVER_RESERVED")
+
+    async def test_admin_power_off_allowed(
+        self, client, admin_token, make_testing_done_server, captured_dispatch,
+    ):
+        """В отличие от `testing`, здесь админский обход по-прежнему работает."""
+        srv = await make_testing_done_server(with_ipmi=True)
+        resp = await client.post(
+            f"{SRV}/{srv.id}/ipmi/power/off", headers=_hdr(admin_token),
+        )
+        assert resp.status_code == 202, resp.text
+
+    async def test_read_not_gated(
+        self, client, stranger_token, make_testing_done_server,
+    ):
+        srv = await make_testing_done_server()
+        resp = await client.get(f"{SRV}/{srv.id}", headers=_hdr(stranger_token))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["busy_state"] == "testing_done"
 
 
 # ── Audit capture фикстура ────────────────────────────────────────────────────

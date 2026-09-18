@@ -774,17 +774,19 @@ const POOL_STATUS_META: Record<PoolStandStatus, { label: string; icon: typeof Ac
   recovering: { label: "Восстанавливается", icon: RotateCw, badge: "warn" },
   unreachable: { label: "Недоступен", icon: CircleDot, badge: "danger" },
   testing: { label: "Тест идёт", icon: Activity, badge: "info" },
+  testing_done: { label: "Тестирование завершено", icon: CheckCircle2, badge: "warn" },
   ready: { label: "Готов", icon: CheckCircle2, badge: "ok" },
   no_data: { label: "Нет данных", icon: HelpCircle, badge: "neutral" },
 };
 
-const POOL_STATUS_ORDER: PoolStandStatus[] = ["recovering", "unreachable", "testing", "ready", "no_data"];
+const POOL_STATUS_ORDER: PoolStandStatus[] = ["recovering", "unreachable", "testing", "testing_done", "ready", "no_data"];
 
 /** `Stat`-совместимый (только ok/warn/danger/undefined) цвет для карточки статуса стенда. */
 const POOL_STATUS_STAT_KIND: Record<PoolStandStatus, "ok" | "warn" | "danger" | undefined> = {
   recovering: "warn",
   unreachable: "danger",
   testing: undefined,
+  testing_done: "warn",
   ready: "ok",
   no_data: undefined,
 };
@@ -794,7 +796,7 @@ function demoPoolOverview(stands: Stand[]): PoolOverviewResponse {
   const toPoolStatus: Record<StandStatus, PoolStandStatus> = {
     testing: "testing", manual: "ready", idle: "ready", offline: "unreachable",
   };
-  const counts: Record<PoolStandStatus, number> = { recovering: 0, unreachable: 0, testing: 0, ready: 0, no_data: 0 };
+  const counts: Record<PoolStandStatus, number> = { recovering: 0, unreachable: 0, testing: 0, testing_done: 0, ready: 0, no_data: 0 };
   let remaining = 0, running = 0, succeeded = 0, failed = 0;
   const now = new Date().toISOString();
   const standRows = stands.map((s) => {

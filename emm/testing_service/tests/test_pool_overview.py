@@ -92,7 +92,7 @@ class TestEmptyPool:
         assert body["failed"] == 0
         assert body["stands"] == []
         assert body["stand_status_counts"] == {
-            "recovering": 0, "unreachable": 0, "testing": 0, "ready": 0, "no_data": 0,
+            "recovering": 0, "unreachable": 0, "testing": 0, "testing_done": 0, "ready": 0, "no_data": 0,
         }
 
 
@@ -254,6 +254,19 @@ class TestStandStatuses:
         }))
         resp = await client.get(BASE, headers=auth_hdr(admin_token))
         assert resp.json()["stands"][0]["status"] == "testing"
+
+    async def test_testing_done_when_busy_testing_done(self, client, admin_token, monkeypatch):
+        stand, server_id = await _create_stand(client, admin_token)
+        monkeypatch.setattr(server_client, "get_servers_status_batch", AsyncMock(return_value={
+            server_id: {
+                "server_id": server_id, "found": True, "busy_state": "testing_done",
+                "ping_reachable": True, "ping_checked_at": _fresh(),
+            },
+        }))
+        resp = await client.get(BASE, headers=auth_hdr(admin_token))
+        body = resp.json()
+        assert body["stands"][0]["status"] == "testing_done"
+        assert body["stand_status_counts"]["testing_done"] == 1
 
     async def test_ready_when_free_and_reachable(self, client, admin_token, monkeypatch):
         stand, server_id = await _create_stand(client, admin_token)

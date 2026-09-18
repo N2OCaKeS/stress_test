@@ -36,7 +36,9 @@ PoolContext = Literal["all", "run", "standalone"]
 # же стадию до финального callback'а). `updating` — блокировка astra_update.
 _RECOVERING_BUSY_STATES = frozenset({"acs", "updating"})
 
-StandStatus = Literal["recovering", "unreachable", "testing", "ready", "no_data"]
+# Тест закончился, но статус ещё не подтверждён (`acknowledge_testing_done`) —
+# стенд не "ready", попытка занять его снова упрётся в бронь.
+StandStatus = Literal["recovering", "unreachable", "testing", "testing_done", "ready", "no_data"]
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,8 @@ def _classify_stand(
         return "unreachable"
     if busy_state == "testing":
         return "testing"
+    if busy_state == "testing_done":
+        return "testing_done"
     if stale:
         return "no_data"
     return "ready"
@@ -164,7 +168,7 @@ async def get_overview(
 
     stands = await _stand_overviews(db, department_id)
     stand_status_counts: dict[StandStatus, int] = {
-        "recovering": 0, "unreachable": 0, "testing": 0, "ready": 0, "no_data": 0,
+        "recovering": 0, "unreachable": 0, "testing": 0, "testing_done": 0, "ready": 0, "no_data": 0,
     }
     for stand in stands:
         stand_status_counts[stand.status] += 1

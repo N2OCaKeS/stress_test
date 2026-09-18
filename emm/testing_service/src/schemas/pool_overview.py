@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-StandStatusLiteral = Literal["recovering", "unreachable", "testing", "ready", "no_data"]
+StandStatusLiteral = Literal["recovering", "unreachable", "testing", "testing_done", "ready", "no_data"]
 
 
 class PoolOverviewTestRun(BaseModel):

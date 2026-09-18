@@ -1002,7 +1002,7 @@ export interface StatisticsCategoriesResponse {
 export type PoolOverviewContext = "all" | "run" | "standalone";
 
 /** Статус стенда в обзоре пула, приоритет — §F плана 2026-09-11. */
-export type PoolStandStatus = "recovering" | "unreachable" | "testing" | "ready" | "no_data";
+export type PoolStandStatus = "recovering" | "unreachable" | "testing" | "testing_done" | "ready" | "no_data";
 
 /** Заголовок кампании в обзоре пула — только при `context=run`. */
 export interface PoolOverviewTestRun {

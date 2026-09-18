@@ -483,6 +483,10 @@ services:
       TESTING_SERVICE_URL: http://testing_service:8004
       TESTING_SERVICE_INTERNAL_API_KEY: dev-testing-worker-internal-key-do-not-use-in-prod
       WORKER_LOG_LEVEL: INFO
+      # Пре-флайт (§ P1 allta-parity) ждёт до 2ч, если jira/life/git.astralinux.ru
+      # недоступны — из dev-окружения они обычно недоступны, так что здесь
+      # он выключен, чтобы не вешать запуск теста на два часа впустую.
+      PREFLIGHT_ENABLED: "false"
     command: ["taskiq", "worker", "src.main:broker", "--workers", "2"]
     volumes:
       - ./testing_worker/src:/app/src

@@ -16,7 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.auth import BearerToken, CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse, PaginatedResponse
-from src.schemas.public_queue import PublicQueueItem
+from src.schemas.public_queue import (
+    PublicQueueItem,
+    QueueClearResponse,
+    QueueRetryFailedResponse,
+)
 from src.schemas.queue import QueueItemSummaryResponse
 from src.schemas.test_stand import (
     TestStandCreate,
@@ -194,6 +198,65 @@ async def resume_queue(
     item = await public_queue_svc.resume_stand_queue(db, identity, stand_id)
     logs = await log_availability.for_items(db, [item])
     return public_queue_svc.response(item).model_copy(update={"log_status": logs[item.id]})
+
+
+@router.post(
+    "/{stand_id}/clear-queue",
+    response_model=QueueClearResponse,
+    summary="Очистить очередь стенда",
+    description=(
+        "Убирает из очереди стенда все ещё не стартовавшие item'ы (`queued`) "
+        "— насовсем, без терминальной записи. Активный/приостановленный/"
+        "исполняющийся item эта операция не трогает — его можно снять только "
+        "по одному через skip/pause/delete."
+    ),
+    responses={
+        403: {"description": "Нет прав на этот стенд."},
+        404: {"description": "Стенд не найден."},
+    },
+)
+async def clear_queue(
+    stand_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> QueueClearResponse:
+    """Bulk-очистка очереди стенда. Доступ: как у постановки в очередь."""
+    count = await public_queue_svc.clear_queue(db, identity, stand_id)
+    return QueueClearResponse(cleared_count=count)
+
+
+@router.post(
+    "/{stand_id}/retry-failed",
+    response_model=QueueRetryFailedResponse,
+    summary="Повторить все упавшие item'ы стенда",
+    description=(
+        "Заводит новый item на каждый ещё не перезапущенный `failed`-item "
+        "этого стенда — массовый аналог поштучного `POST /queue-items/"
+        "{item_id}/retry`. Item, который больше нельзя перезапустить (тест "
+        "ушёл в другой отдел, снят со СТП, уже перезапущен), тихо "
+        "пропускается — `skipped_count` в ответе."
+    ),
+    responses={
+        403: {"description": "Нет прав на этот стенд."},
+        404: {"description": "Стенд не найден."},
+    },
+)
+async def retry_failed(
+    stand_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> QueueRetryFailedResponse:
+    """Bulk-retry упавших item'ов стенда. Доступ: как у постановки в очередь."""
+    items, skipped_count = await public_queue_svc.retry_failed(db, identity, stand_id)
+    logs = await log_availability.for_items(db, items) if items else {}
+    return QueueRetryFailedResponse(
+        retried_count=len(items),
+        skipped_count=skipped_count,
+        items=[
+            public_queue_svc.response(item).model_copy(update={"log_status": logs[item.id]})
+            for item in items
+        ],
+    )
 
 
 @router.patch(

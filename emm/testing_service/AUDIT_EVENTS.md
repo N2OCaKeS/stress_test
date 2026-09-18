@@ -81,7 +81,9 @@
 
 По `ALLTA MIGRATION.md` §11 ожидаются (пока не реализовано):
 
-`test.launch`, `test.cancel`, `stp.status_updated`, `stp.test_case_created`, `test_definition.updated`, `department_report.generated`, `run_summary_comment.posted` и т.д. — заводятся вместе с сервисом, который их производит. Имена приводятся к конвенции `<object>.<verb>` (§11 плана пишет `global_variable.created` — в коде `global_variable.create`, как в остальных сервисах emm).
+`test.launch`, `stp.status_updated`, `stp.test_case_created`, `test_definition.updated`, `department_report.generated`, `run_summary_comment.posted` и т.д. — заводятся вместе с сервисом, который их производит. Имена приводятся к конвенции `<object>.<verb>` (§11 плана пишет `global_variable.created` — в коде `global_variable.create`, как в остальных сервисах emm).
+
+`test.cancel` из этого списка реализован под именем `queue_item.delete` — см. «Управление очередью стенда» ниже; название переиграно в пользу конвенции `<object>.<verb>` этого сервиса, где объектом лифецикла очереди всегда выступает `queue_item`/`test_stand`, а не `test`.
 
 ## Отказ допуска ожидающего теста
 
@@ -97,3 +99,6 @@
 | `queue_item.skipped` | success | WARNING | `stand_id`, `from_state`; тест снят с исполнения без исхода, стенд продолжает со следующего элемента. |
 | `queue_item.paused` | success | WARNING | `stand_id`, `from_state`; тест снят с исполнения без исхода, стенд стоит до `resume-queue`. |
 | `queue_item.resumed` | success | INFO | `stand_id`, новая `position`; остановленный элемент вернулся в конец очереди стенда. |
+| `queue_item.delete` | success | WARNING | `stand_id`, `from_state`; элемент убран из очереди насовсем — терминальной записи (как у `skip`) не остаётся. Недоступно для `preparing`/`ready`/`running` — сначала `skip`/`pause`. |
+| `test_stand.queue_cleared` | success | WARNING | `stand_id`, `count`; массово убраны все ещё не стартовавшие (`queued`) item'ы очереди стенда. |
+| `test_stand.queue_retry_failed` | success | INFO | `stand_id`, `retried_count`, `skipped_count`; массовый retry всех ещё не перезапущенных `failed`-item'ов стенда. Каждый заведённый retry-item отдельно эмитит свой обычный `queue_item.enqueued`. |

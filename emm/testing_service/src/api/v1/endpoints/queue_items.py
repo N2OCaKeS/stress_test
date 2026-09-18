@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
-from src.schemas.common import PaginatedResponse
+from src.schemas.common import OkResponse, PaginatedResponse
 from src.schemas.public_queue import (
     PublicQueueItem,
     QueueLaunchRequest,
@@ -93,6 +93,31 @@ async def pause(
     item = await svc.pause(db, identity, item_id)
     logs = await log_availability.for_items(db, [item])
     return svc.response(item).model_copy(update={"log_status": logs[item.id]})
+
+
+@router.delete(
+    "/{item_id}",
+    response_model=OkResponse,
+    summary="Удалить элемент очереди",
+    description=(
+        "Убирает элемент из очереди насовсем — в отличие от `skip`, "
+        "терминальной записи не остаётся. Работает для ещё не стартовавших "
+        "и уже терминальных элементов; для того, что прямо сейчас занимает "
+        "стенд (`preparing`/`ready`/`running`), сначала нужен `skip`/`pause`."
+    ),
+    responses={
+        403: {"description": "Нет прав на стенд этого элемента."},
+        404: {"description": "Элемент очереди не найден."},
+        409: {"description": "QUEUE_ITEM_IN_PROGRESS — элемент сейчас занимает стенд."},
+    },
+)
+async def delete_queue_item(
+    item_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+):
+    await svc.delete(db, identity, item_id)
+    return OkResponse()
 
 
 @router.get("", response_model=PaginatedResponse[PublicQueueItem])

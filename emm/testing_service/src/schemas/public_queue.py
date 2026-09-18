@@ -54,3 +54,17 @@ class PublicQueueItem(BaseModel):
     # Непустое значение видно только у `running`-элемента — фронт по нему
     # показывает «Останавливается…» и дизейблит кнопки управления очередью.
     interrupt_action: str | None = None
+
+
+class QueueClearResponse(BaseModel):
+    """Ответ массовой очистки очереди стенда."""
+
+    cleared_count: int
+
+
+class QueueRetryFailedResponse(BaseModel):
+    """Ответ массового retry упавших item'ов стенда."""
+
+    retried_count: int
+    skipped_count: int
+    items: list[PublicQueueItem]

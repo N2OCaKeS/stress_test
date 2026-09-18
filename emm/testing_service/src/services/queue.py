@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import (
     ACTIVE_QUEUE_STATES,
+    IN_FLIGHT_QUEUE_STATES,
     QueueInterruptAction,
     QueueItemState,
     TERMINAL_TEST_RUN_STATUSES,
@@ -50,7 +51,7 @@ from src.core.exceptions import (
     ServiceUnavailableError,
 )
 from src.dependencies.auth import Identity
-from src.models import QueueItem, TestRunEntry
+from src.models import QueueItem, TestRun, TestRunEntry
 from src.repositories import department_integration_settings as dis_repo
 from src.repositories import queue_item as repo
 from src.repositories import test_definition as test_definition_repo
@@ -885,3 +886,136 @@ async def resume_stand_queue(db: AsyncSession, stand) -> QueueItem:
         await _advance_stand_queue(db, stand)
     await db.refresh(item)
     return item
+
+
+async def clear_queue(db: AsyncSession, stand) -> int:
+    """Убрать из очереди стенда всё, что ещё ни разу не бралось в работу.
+
+    Трогает только `queued` — по определению это item, до которого цикл
+    стенда ещё не дошёл (стенд занят головным item'ом этой же очереди или
+    его нет вовсе, но тогда очередь и так пуста). Активный/приостановленный/
+    исполняющийся item эта операция не задевает — за ним бронь стенда, снять
+    его можно только по одному через skip/pause/delete. Строки удаляются
+    насовсем, не переводятся в терминал — это и есть отличие «очистить» от
+    массового skip.
+    """
+    items = await repo.list_queued_for_stand(db, stand.id)
+    if not items:
+        return 0
+    affected_runs = {item.test_run_id for item in items if item.test_run_id}
+    for item in items:
+        await repo.delete(db, item)
+    await db.commit()
+    audit_service.emit(
+        "test_stand.queue_cleared",
+        target_id=stand.id, target_type="test_stand",
+        status="success", allowed=True,
+        details={"stand_id": stand.id, "count": len(items)},
+    )
+    for run_id in affected_runs:
+        await test_run_status.recompute(db, run_id)
+    if affected_runs:
+        await db.commit()
+    return len(items)
+
+
+async def retry_failed(db: AsyncSession, identity: Identity, stand) -> tuple[list[QueueItem], int]:
+    """Повторить одним вызовом все ещё не перезапущенные упавшие item'ы стенда.
+
+    Каждый кандидат проверяется и заводится независимо — тест, ушедший в
+    другой отдел, снятый со СТП, или уже перезапущенный кем-то ещё, просто
+    пропускается. Так массовый retry не срывается целиком из-за одного
+    проблемного item'а, в отличие от одиночного `public_queue.retry()`,
+    который для того же случая честно возвращает 4xx одному вызывающему.
+    """
+    candidates = await repo.list_failed_for_stand(db, stand.id)
+    retried: list[QueueItem] = []
+    skipped = 0
+    for candidate in candidates:
+        source = await repo.get_by_id_for_update(db, candidate.id)
+        if source is None or source.state != QueueItemState.FAILED or await repo.has_successor(db, source.id):
+            skipped += 1
+            continue
+        if source.test_run_id:
+            run = await db.get(TestRun, source.test_run_id)
+            if not run or run.department_id != identity.department_id:
+                skipped += 1
+                continue
+        test = await test_definition_repo.get_by_id(db, source.test_id, for_update=True)
+        if not test or (test.department_id and test.department_id != stand.department_id):
+            skipped += 1
+            continue
+        try:
+            stp = (
+                None
+                if source.debug_mode
+                else await launch_stp.require_membership(
+                    db, test.code, stand.id, source.launch_context, source.stp_test_run_id,
+                )
+            )
+        except AppException:
+            skipped += 1
+            continue
+        item = await enqueue(
+            db, identity, source.test_id,
+            launch_context=dict(source.launch_context),
+            debug_mode=source.debug_mode,
+            stand_id=source.stand_id,
+            test_run_id=source.test_run_id,
+            test_run_entry_id=source.test_run_entry_id,
+            retry_source=source,
+            stp_test_run_id=stp.id if stp else None,
+        )
+        retried.append(item)
+    audit_service.emit(
+        "test_stand.queue_retry_failed",
+        target_id=stand.id, target_type="test_stand",
+        status="success", allowed=True,
+        details={"stand_id": stand.id, "retried_count": len(retried), "skipped_count": skipped},
+    )
+    return retried, skipped
+
+
+async def delete_item(db: AsyncSession, item: QueueItem, stand) -> None:
+    """Убрать элемент очереди насовсем — не путать со `skip`.
+
+    `skip` оставляет терминальную запись (`skipped`), эта операция строку
+    целиком удаляет. Годится для ещё не начавших исполняться (`queued`) и
+    уже терминальных (`succeeded`/`failed`/`skipped`) item'ов, а также для
+    приостановленного (`paused`) — но не для того, что прямо сейчас занимает
+    стенд физической работой (`preparing`/`ready`/`running`): там сначала
+    нужен `skip`/`pause` (или дождаться завершения), иначе `testing_worker`
+    рано или поздно обратится за уже не существующим item'ом, а бронь стенда
+    повиснет без владельца.
+    """
+    if item.state in IN_FLIGHT_QUEUE_STATES:
+        raise ConflictError(
+            error_code="QUEUE_ITEM_IN_PROGRESS",
+            message="Элемент сейчас занимает стенд — сначала остановите его (skip/pause), потом удалите",
+            details={"state": item.state},
+        )
+
+    item_id = item.id
+    from_state = item.state
+    test_run_id = item.test_run_id
+    was_active = item.state in ACTIVE_QUEUE_STATES
+    if item.creds_stash_key:
+        await creds_stash.pop_creds(item.creds_stash_key)
+        item.creds_stash_key = None
+    await repo.delete(db, item)
+    await db.commit()
+    audit_service.emit(
+        "queue_item.delete",
+        target_id=item_id, target_type="queue_item",
+        status="success", allowed=True,
+        details={"stand_id": stand.id, "from_state": from_state},
+    )
+    if test_run_id:
+        await test_run_status.recompute(db, test_run_id)
+        await db.commit()
+    # Тот же приём, что у `skip`/`resume`: только когда именно этот item
+    # держал очередь стенда (был головным `queued`/`paused`), убрав его,
+    # нужно поехать дальше или снять бронь. Если он был не головным (просто
+    # ждал в хвосте позади активного item'а), стенд эту потерю не заметит.
+    if was_active and not await repo.has_in_flight_for_stand(db, stand.id):
+        await _advance_stand_queue(db, stand)

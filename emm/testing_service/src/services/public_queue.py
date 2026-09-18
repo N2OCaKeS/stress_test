@@ -158,6 +158,24 @@ async def resume_stand_queue(db: AsyncSession, identity: Identity, stand_id: str
     return await queue.resume_stand_queue(db, stand)
 
 
+async def clear_queue(db: AsyncSession, identity: Identity, stand_id: str) -> int:
+    """Очистить очередь стенда от ещё не стартовавших item'ов. Возвращает их число."""
+    stand = await authorize(db, identity, stand_id)
+    return await queue.clear_queue(db, stand)
+
+
+async def retry_failed(db: AsyncSession, identity: Identity, stand_id: str) -> tuple[list, int]:
+    """Повторить разом все упавшие item'ы стенда, ещё не перезапущенные."""
+    stand = await authorize(db, identity, stand_id)
+    return await queue.retry_failed(db, identity, stand)
+
+
+async def delete(db: AsyncSession, identity: Identity, item_id: str) -> None:
+    """Убрать элемент очереди насовсем — доступ такой же, как у skip/pause."""
+    item, stand = await _authorize_item(db, identity, item_id)
+    await queue.delete_item(db, item, stand)
+
+
 async def retry(
     db: AsyncSession, identity: Identity, item_id: str, body: QueueRetryRequest
 ):

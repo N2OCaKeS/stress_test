@@ -80,6 +80,37 @@ async def get_next_queued_for_stand(db: AsyncSession, stand_id: str) -> QueueIte
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def list_queued_for_stand(db: AsyncSession, stand_id: str) -> list[QueueItem]:
+    """Все `queued`-item'ы этого стенда — ещё ни разу не тронутые, просто ждут своей позиции.
+
+    Используется массовой очисткой очереди (`clear_queue`): активный/
+    приостановленный/уже исполняющийся item сюда не попадает, его снимают
+    по одному через skip/pause/delete.
+    """
+    stmt = (
+        select(QueueItem)
+        .where(QueueItem.stand_id == stand_id, QueueItem.state == QueueItemState.QUEUED)
+        .order_by(QueueItem.position.asc(), QueueItem.created_at.asc())
+        .with_for_update()
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
+async def list_failed_for_stand(db: AsyncSession, stand_id: str) -> list[QueueItem]:
+    """Все `failed`-item'ы этого стенда — кандидаты массового retry.
+
+    Не фильтрует по "последней попытке" сама — вызывающий (`retry_failed`)
+    отсеивает уже перезапущенные через `has_successor`, как и одиночный
+    `retry()`.
+    """
+    stmt = (
+        select(QueueItem)
+        .where(QueueItem.stand_id == stand_id, QueueItem.state == QueueItemState.FAILED)
+        .order_by(QueueItem.position.asc(), QueueItem.created_at.asc())
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
 async def get_paused_for_stand(db: AsyncSession, stand_id: str) -> QueueItem | None:
     """Поставленный на паузу элемент этого стенда, если он есть.
 
@@ -157,6 +188,18 @@ async def update(db: AsyncSession, obj: QueueItem, changes: dict) -> QueueItem:
         setattr(obj, key, value)
     await db.flush()
     return obj
+
+
+async def delete(db: AsyncSession, obj: QueueItem) -> None:
+    """DELETE строки насовсем. commit — на caller'е.
+
+    Отличается от терминального перехода (`skip`/`failed`/...): та запись
+    остаётся историей, эта убирается из очереди целиком. `retry_of_id`/
+    `test_run_id`/`test_run_entry_id` у ссылающихся строк — `ON DELETE
+    SET NULL`, так что удаление не рвёт чужие FK.
+    """
+    await db.delete(obj)
+    await db.flush()
 
 
 async def lock_request(db: AsyncSession, actor: str, request_id: str) -> None:

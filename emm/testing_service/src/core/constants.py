@@ -247,6 +247,54 @@ IN_FLIGHT_QUEUE_STATES: frozenset[str] = frozenset({
 })
 
 
+class QueueOrchestrationEventKind(StrEnum):
+    """Причины, по которым диспетчер очереди не продвинулся (`queue_orchestration_events`).
+
+    Закрытый список — не журнал произвольных сообщений, каждое значение
+    отвечает на конкретный вопрос «что именно не дало тесту стартовать»:
+
+    `stand_busy_blocked` — попытка занять/переключить стадию брони стенда
+    (`acquire-for-service`/`service-status`) отбита конфликтом: стенд занят
+    кем-то или чем-то вне testing_service (ручная бронь, ACS уже крутится по
+    другой причине). Отличается от `prepare_request_failed` тем, что причина
+    известна и понятна — ждать освобождения, а не чинить интеграцию.
+
+    `prepare_request_failed` — вызов к server_service (`acquire-for-service`/
+    `service-status`/`prepare-for-test`) провалился по любой другой причине:
+    сеть, таймаут, 404, неожиданный ответ. В отличие от `stand_busy_blocked`
+    это обычно требует внимания оператора/дежурного, не просто ожидания.
+
+    `item_stuck_in_head` — головной item стенда (`preparing`/`ready`) не
+    продвинулся дольше `QUEUE_STUCK_THRESHOLD_SECONDS` — самостоятельный
+    признак зависания, даже если ни одна отдельная попытка не вернула ошибку
+    (например, callback от server_service потерялся, или testing_worker не
+    поллит).
+
+    `claim_found_nothing_with_queue` — `claim_next_ready()` не взял ни одной
+    строки, хотя `ready`-item с истёкшей выдержкой всё ещё существует —
+    самый прямой признак рассинхрона: item должен был уйти воркеру, но
+    почему-то остаётся на месте дольше, чем можно списать на обычную гонку
+    `SKIP LOCKED` между конкурентными вызовами `claim`.
+    """
+
+    STAND_BUSY_BLOCKED = "stand_busy_blocked"
+    PREPARE_REQUEST_FAILED = "prepare_request_failed"
+    ITEM_STUCK_IN_HEAD = "item_stuck_in_head"
+    CLAIM_FOUND_NOTHING_WITH_QUEUE = "claim_found_nothing_with_queue"
+
+
+# Сколько item может провести в `preparing`/`ready` без прогресса, прежде чем
+# это считается зависанием (`item_stuck_in_head`). 15 минут — с запасом
+# выше типичного времени ACS revert + prepare.sh (минуты), но достаточно
+# короткое, чтобы диагностика не отставала от оператора на часы.
+QUEUE_STUCK_THRESHOLD_SECONDS = 15 * 60
+
+# Ниже какой выдержки `ready`-item не считается рассинхроном сам по себе —
+# обычная гонка `SKIP LOCKED` между конкурентными вызовами `claim` разрешается
+# за миллисекунды, а не секунды.
+CLAIM_DESYNC_GRACE_SECONDS = 30
+
+
 class TestRunStatus(StrEnum):
     """Агрегатный статус кампании (§2.4, §6.1 плана миграции).
 

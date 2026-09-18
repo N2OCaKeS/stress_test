@@ -9,6 +9,7 @@ from src.models.department_test_settings import DepartmentTestSettings
 from src.models.entity_permission import EntityPermission
 from src.models.global_variable import GlobalVariable
 from src.models.queue_item import QueueItem
+from src.models.queue_orchestration_event import QueueOrchestrationEvent
 from src.models.run_summary_comment import RunSummaryComment
 from src.models.statistics_recalc import StatisticsRecalcState
 from src.models.statistics_settings import StatisticsSettings
@@ -38,6 +39,7 @@ __all__ = [
     "EntityPermission",
     "GlobalVariable",
     "QueueItem",
+    "QueueOrchestrationEvent",
     "RunSummaryComment",
     "StatisticsRecalcState",
     "StatisticsSettings",

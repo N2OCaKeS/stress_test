@@ -40,6 +40,7 @@ from src.core.constants import (
     IN_FLIGHT_QUEUE_STATES,
     QueueInterruptAction,
     QueueItemState,
+    QueueOrchestrationEventKind,
     TERMINAL_TEST_RUN_STATUSES,
     TestReadiness,
 )
@@ -62,6 +63,7 @@ from src.services import (
     creds_stash,
     department_test_settings as dts_svc,
     launch_context as launch_context_svc,
+    queue_orchestration_log,
     run_summary,
     secret_client,
     server_client,
@@ -265,6 +267,19 @@ async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, 
             correlation_id=item.id,
         )
     except AppException as exc:
+        # ConflictError здесь означает буквально "стенд занят" — server_service
+        # отбил acquire/service-status конфликтом (чужая бронь, ручной ACS).
+        # Отдельный kind от прочих провалов: причина ясна сама по себе, ждать
+        # освобождения, а не чинить интеграцию с server_service.
+        event_kind = (
+            QueueOrchestrationEventKind.STAND_BUSY_BLOCKED
+            if isinstance(exc, ConflictError)
+            else QueueOrchestrationEventKind.PREPARE_REQUEST_FAILED
+        )
+        await queue_orchestration_log.record(
+            db, stand.id, event_kind, queue_item_id=item.id,
+            detail=f"{exc.error_code}: {exc.message}",
+        )
         await _fail_and_advance(
             db, item, stand,
             failed_step=None,
@@ -503,6 +518,10 @@ async def handle_prepare_completed(
         )
         return item
 
+    await queue_orchestration_log.record(
+        db, stand.id, QueueOrchestrationEventKind.PREPARE_REQUEST_FAILED, queue_item_id=item.id,
+        detail=f"{body.failed_step or ''}: {body.error or 'prepare-for-test callback reported failure'}",
+    )
     await _fail_and_advance(
         db, item, stand,
         failed_step=body.failed_step, error=body.error,
@@ -579,9 +598,21 @@ async def _resolve_git_token(db: AsyncSession, department_id: str) -> str:
 
 
 async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
-    """Атомарно забрать один `ready`-item (по любому стенду) для `testing_worker`."""
+    """Атомарно забрать один `ready`-item (по любому стенду) для `testing_worker`.
+
+    `testing_worker` дёргает этот путь каждые несколько секунд
+    (`QUEUE_POLL_INTERVAL_SECONDS`), пока очередь пуста — это заодно и
+    единственный регулярный "тик" на стороне testing_service, поэтому сюда
+    же подвешены обе периодические диагностические проверки
+    (`queue_orchestration_log`): head-item, зависший дольше разумного порога,
+    и `ready`-item, который должен был уйти воркеру, но почему-то остаётся на
+    месте. См. `services/queue_orchestration_log.py`.
+    """
+    await queue_orchestration_log.check_stuck_items(db)
     item = await repo.claim_next_ready(db)
     if item is None:
+        await queue_orchestration_log.check_claim_desync(db)
+        await db.commit()
         return None
 
     stand = await stand_repo.get_by_id(db, item.stand_id)

@@ -117,3 +117,8 @@ def stp_add_test_operation_id() -> str:
 def stp_pull_operation_id() -> str:
     """`stppull_<uuid>` — для stp_pull_operations."""
     return _new_id("stppull_")
+
+
+def queue_orchestration_event_id() -> str:
+    """`qoe_<uuid>` — для queue_orchestration_events."""
+    return _new_id("qoe_")

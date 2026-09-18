@@ -22,6 +22,7 @@ from src.schemas.public_queue import (
     QueueRetryFailedResponse,
 )
 from src.schemas.queue import QueueItemSummaryResponse
+from src.schemas.queue_orchestration_event import QueueOrchestrationEventResponse
 from src.schemas.test_stand import (
     TestStandCreate,
     TestStandResponse,
@@ -30,6 +31,7 @@ from src.schemas.test_stand import (
 )
 from src.services import public_queue as public_queue_svc
 from src.services import queue as queue_svc
+from src.services import queue_orchestration_log
 from src.services import test_stand as svc
 from src.services import log_availability
 
@@ -172,6 +174,36 @@ async def get_current_queue_item(
         started_at=item.started_at, interrupt_action=item.interrupt_action,
         estimated_finish_at=estimated_finish_at,
     )
+
+
+@router.get(
+    "/{stand_id}/orchestration-log",
+    response_model=list[QueueOrchestrationEventResponse],
+    summary="Диагностический лог диспетчера очереди этого стенда",
+    description=(
+        "Содержательные события диспетчера (P2-остаток, №4) — не каждый "
+        "пустой поллинг, а только то, что объясняет «почему тест не "
+        "стартовал»: стенд занят вне testing_service, provisioning-запрос "
+        "упал, head-item завис дольше разумного порога, `claim` не нашёл "
+        "ready-item несмотря на непустую очередь. Последние записи первыми, "
+        "короткий ретеншн (см. `services/queue_orchestration_log.py`)."
+    ),
+    responses={
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — стенд чужого отдела."},
+        404: {"description": "Стенд не найден."},
+    },
+)
+async def get_orchestration_log(
+    stand_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=200),
+) -> list[QueueOrchestrationEventResponse]:
+    """Get диагностического лога очереди стенда. Свой отдел."""
+    await svc.get_stand_or_404(db, stand_id, identity)
+    events = await queue_orchestration_log.list_for_stand(db, stand_id, limit=limit)
+    return [QueueOrchestrationEventResponse.model_validate(e) for e in events]
 
 
 @router.post(

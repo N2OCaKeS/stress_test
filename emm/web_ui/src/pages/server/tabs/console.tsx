@@ -223,6 +223,17 @@ function ServerConsoleTab({ serverId = "", server }: Props) {
         <LiveTestLogSection queueItemId={activeQueueItem.queue_item_id} />
       )}
 
+      {server?.busy_state === "testing" && (
+        <div className="alert flex items-start gap-2">
+          <Radio className="w-4 h-4 mt-0.5 text-accent" />
+          <div className="flex-1 text-xs text-dim">
+            Сейчас на стенде идёт тест. Консоль подключится под учёткой
+            исполнения теста автоматически — выбор аккаунта ниже на это не
+            влияет.
+          </div>
+        </div>
+      )}
+
       <AccountConsolePanel
         target={target}
         accounts={accessible}

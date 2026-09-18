@@ -21,8 +21,19 @@ stash, а worker коннектится под аккаунтом по password-
      после: 4401 нет токена, 4400 нет `account_id`, 4403 нет права console /
      нет права на креды аккаунта, 4404 сервер/аккаунт не найден или не
      привязан, 4409 server decommissioned / сервер занят другим
-     пользователем (`SERVER_BUSY`) / у аккаунта нет пароля, 4503 Redis
-     недоступен.
+     пользователем (`SERVER_BUSY`) / у аккаунта нет пароля / нет учётки теста
+     (`TEST_CREDENTIALS_NOT_FOUND`, см. ниже), 4503 Redis недоступен.
+
+  Пока сервер в `busy_state=testing` (идёт исполнение теста), консоль не
+  блокируется — но `account_id` из query полностью игнорируется: подключение
+  принудительно идёт под учёткой исполнения теста (`server_test_credentials`,
+  см. `services/prepare_for_test.py`), а не под аккаунтом, который выбрал
+  вызывающий. Право на консоль сервера при этом всё равно нужно — только
+  серверный ролевой `(server, console)`, потому что учётку-то caller больше
+  не выбирает, значит и account-level обход (`view_password` на конкретном
+  аккаунте) здесь не при чём. Если тестовых кред на сервере нет — WS
+  закрывается `TEST_CREDENTIALS_NOT_FOUND`, тихого фолбэка на обычный
+  `account_id` нет.
   3. После accept'а server_service генерит `session_id` (`csn_<hex>`),
      стэшит креды в Redis под `dbos:console_creds:<ccd_id>`, публикует `start`
      (с `creds_stash_key`) в `console:ctl:<sid>` (worker поднимает PTY под
@@ -57,6 +68,7 @@ from src.core.exceptions import (
 from src.db.session import AsyncSessionLocal
 from src.dependencies import auth as auth_deps
 from src.services import audit_service, permissions, worker_client
+from src.services import prepare_for_test as pft_svc
 from src.services import server as server_svc
 from src.services import server_account as account_svc
 from src.services import vm as vm_svc
@@ -137,6 +149,10 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
     под кредами аккаунта, не под управляющим ключом. `account_id` берётся из
     query-параметра (обязателен). Department-scope сервера и аккаунта —
     `load_visible_server` / resolve бутстрап-кред.
+
+    Исключение — сервер в `busy_state=testing`: доступ не блокируется, но
+    `account_id` игнорируется и креды резолвятся через тестовую учётку сервера
+    (см. модульный докстринг выше).
 
     Связано: `server_worker/src/services/console_bridge.py` (PTY + bridge).
     """
@@ -223,10 +239,54 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
             # Account-гейт консоли: серверный `(server, console)` ИЛИ на учётке
             # `console`/`view_password` (роль/грант) + аккаунт виден/привязан +
             # есть пароль. Возвращает {"login", "password", "ssh_private_key"}.
-            creds = await account_svc.resolve_console_credentials(
-                db, identity, account_id, server,
-                allow_via_server_console=has_server_console,
-            )
+            #
+            # Исключение — сервер занят тестом (`busy_state=testing`): выбор
+            # аккаунта вызывающим здесь не учитывается, консоль обязана идти
+            # под учёткой самого теста, чтобы инженер мог просто посмотреть,
+            # что происходит на стенде, не подбирая креды руками.
+            # `account_id` из query в этом случае игнорируется полностью, а
+            # account-level обход (console/view_password на конкретном
+            # аккаунте) не применяется вовсе — единственная проверка права
+            # остаётся серверная `has_server_console`.
+            using_test_credentials = server.busy_state == BusyState.TESTING
+            if using_test_credentials:
+                if not has_server_console:
+                    audit_service.emit(
+                        "ssh_console.session_open", target_id=server_id, target_type="server",
+                        status="denied", allowed=False,
+                        details={
+                            "reason": "permission_denied",
+                            "account_id": account_id,
+                            "busy_state": "testing",
+                        },
+                    )
+                    await websocket.close(code=_WS_CLOSE_FORBIDDEN, reason="PERMISSION_DENIED")
+                    return
+                test_creds = await pft_svc.read_test_credentials(db, server.id)
+                if test_creds is None:
+                    audit_service.emit(
+                        "ssh_console.session_open", target_id=server_id, target_type="server",
+                        status="failure", allowed=True,
+                        details={
+                            "reason": "test_credentials_missing",
+                            "account_id": account_id,
+                            "busy_state": "testing",
+                        },
+                    )
+                    await websocket.close(
+                        code=_WS_CLOSE_CONFLICT, reason="TEST_CREDENTIALS_NOT_FOUND",
+                    )
+                    return
+                creds = {
+                    "login": test_creds["username"],
+                    "password": test_creds["password"],
+                    "ssh_private_key": test_creds["ssh_private_key"],
+                }
+            else:
+                creds = await account_svc.resolve_console_credentials(
+                    db, identity, account_id, server,
+                    allow_via_server_console=has_server_console,
+                )
     except AuthenticationError as exc:
         await websocket.close(code=_WS_CLOSE_UNAUTHENTICATED, reason=exc.error_code)
         return
@@ -292,6 +352,7 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
             "department_id": server.department_id,
             "account_id": account_id,
             "login": creds["login"],
+            "credentials_source": "test" if using_test_credentials else "account",
         },
     )
 
@@ -329,6 +390,7 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
                 "department_id": server.department_id,
                 "account_id": account_id,
                 "login": creds["login"],
+                "credentials_source": "test" if using_test_credentials else "account",
             },
         )
 

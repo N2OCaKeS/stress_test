@@ -15,7 +15,15 @@ prepare НЕ требуется. Покрытие:
   * happy-path bridge: креды аккаунта стэшатся в Redis, после `ready` ввод
     клиента публикуется в `console:in:<sid>`, вывод из `console:out:<sid>`
     уходит клиенту, на disconnect публикуется `stop`; start несёт
-    `creds_stash_key`, аудит несёт `account_id`/`login`.
+    `creds_stash_key`, аудит несёт `account_id`/`login`;
+  * занят тестом (`busy_state=testing`) → консоль НЕ блокируется, но
+    `account_id` из query игнорируется — креды берутся из
+    `server_test_credentials` (`pft_svc.read_test_credentials`), аудит несёт
+    `credentials_source=test`;
+  * `testing` без серверного `(server, console)` → close 4403 (account-level
+    обход тут не при чём, аккаунт-то не выбор пользователя);
+  * `testing` без тестовых кред на сервере → close 4409
+    TEST_CREDENTIALS_NOT_FOUND, без тихого фолбэка на `account_id`.
 
 WebSocket не гоняем через реальный handshake (конфликт sync-TestClient с
 async-DB-фикстурой) — вызываем хендлер с фейковым WebSocket'ом и подменяем
@@ -399,6 +407,56 @@ async def test_busy_by_self_passes_gate(monkeypatch, _patch_console):
 
 
 @pytest.mark.asyncio
+async def test_testing_without_server_console_closes_4403(monkeypatch, _patch_console):
+    """`testing` + нет серверного console → 4403, аккаунт-обход не выручает.
+
+    В отличие от обычного гейта, при `testing` account-level `view_password`
+    на аккаунте не спасает — учётка вызывающего вообще не используется.
+    """
+    async def no_server_console(*a, **k):
+        return False
+
+    async def load(*a, **k):
+        return _make_server(busy_state=BusyState.TESTING)
+
+    async def resolve_should_not_be_called(*a, **k):
+        raise AssertionError("resolve_console_credentials must not be called for testing")
+
+    monkeypatch.setattr(console.permissions, "has_resource_action", no_server_console)
+    monkeypatch.setattr(console.server_svc, "load_visible_server", load)
+    monkeypatch.setattr(
+        console.account_svc, "resolve_console_credentials", resolve_should_not_be_called,
+    )
+    ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
+    await console.server_console_ws(ws, "srv_console1")
+    assert ws.closed_code == console._WS_CLOSE_FORBIDDEN
+    assert ws.closed_reason == "PERMISSION_DENIED"
+    assert not ws.accepted
+    assert any(
+        e["action"] == "ssh_console.session_open" and e["status"] == "denied"
+        for e in _patch_console
+    )
+
+
+@pytest.mark.asyncio
+async def test_testing_missing_test_credentials_closes_4409(monkeypatch, _patch_console):
+    """`testing` без строки в `server_test_credentials` → 4409, без фолбэка."""
+    async def load(*a, **k):
+        return _make_server(busy_state=BusyState.TESTING)
+
+    async def no_test_creds(*a, **k):
+        return None
+
+    monkeypatch.setattr(console.server_svc, "load_visible_server", load)
+    monkeypatch.setattr(console.pft_svc, "read_test_credentials", no_test_creds)
+    ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
+    await console.server_console_ws(ws, "srv_console1")
+    assert ws.closed_code == console._WS_CLOSE_CONFLICT
+    assert ws.closed_reason == "TEST_CREDENTIALS_NOT_FOUND"
+    assert not ws.accepted
+
+
+@pytest.mark.asyncio
 async def test_cross_dept_closes_4404(monkeypatch, _patch_console):
     async def allow(*a, **k):
         return None
@@ -558,3 +616,65 @@ async def test_bridge_start_timeout_closes_with_error(monkeypatch, _patch_consol
     # session_close с reason start_failed.
     close = [e for e in _patch_console if e["action"] == "ssh_console.session_close"]
     assert close and close[0]["details"]["reason"].startswith("start_failed")
+
+
+@pytest.mark.asyncio
+async def test_testing_uses_forced_test_credentials(monkeypatch, _patch_console):
+    """`busy_state=testing` — доступ не блокируется, но подключение идёт под
+    учёткой теста, а не под `account_id` из query.
+    """
+    async def load(*a, **k):
+        return _make_server(busy_state=BusyState.TESTING)
+
+    async def resolve_should_not_be_called(*a, **k):
+        raise AssertionError("resolve_console_credentials must not be called for testing")
+
+    async def fake_test_creds(db, server_id):
+        assert server_id == "srv_console1"
+        return {
+            "username": "test_runner",
+            "password": "test-pw",
+            "ssh_public_key": "ssh-ed25519 AAAA...",
+            "ssh_private_key": None,
+            "rotated_at": None,
+        }
+
+    monkeypatch.setattr(console.server_svc, "load_visible_server", load)
+    monkeypatch.setattr(
+        console.account_svc, "resolve_console_credentials", resolve_should_not_be_called,
+    )
+    monkeypatch.setattr(console.pft_svc, "read_test_credentials", fake_test_creds)
+    monkeypatch.setattr(console, "console_session_id", lambda: "csn_testing")
+
+    ctl_ch = console.worker_client.console_ctl_channel("csn_testing")
+    messages = [
+        {"type": "message", "channel": ctl_ch, "data": json.dumps({"event": "ready"})},
+        {"type": "message", "channel": ctl_ch, "data": json.dumps({"event": "closed", "reason": "pty_eof"})},
+    ]
+    pubsub = FakePubSub(messages)
+    redis = FakeRedis(pubsub)
+    monkeypatch.setattr(console.worker_client, "get_worker_redis", lambda: redis)
+    monkeypatch.setattr(console.worker_client, "_creds_redis_client", redis)
+
+    # `account_id` из query — заведомо чужой/произвольный, должен быть
+    # полностью проигнорирован при резолве кред.
+    ws = FakeWebSocket(
+        headers={"Authorization": "Bearer tok"},
+        query_params={"account_id": "acc_whatever"},
+    )
+    await asyncio.wait_for(console.server_console_ws(ws, "srv_console1"), timeout=5.0)
+
+    assert ws.accepted
+    start = [m for ch, m in redis.published if ch == ctl_ch and '"start"' in m]
+    assert start, "start control message not published"
+
+    opened = [e for e in _patch_console if e["action"] == "ssh_console.session_open"][0]
+    assert opened["status"] == "success"
+    assert opened["details"]["login"] == "test_runner"
+    assert opened["details"]["credentials_source"] == "test"
+    # account_id остаётся в аудите как «что запрашивал вызывающий», но креды
+    # реально резолвились не через него.
+    assert opened["details"]["account_id"] == "acc_whatever"
+
+    closed = [e for e in _patch_console if e["action"] == "ssh_console.session_close"][0]
+    assert closed["details"]["credentials_source"] == "test"

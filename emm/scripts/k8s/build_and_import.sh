@@ -50,8 +50,11 @@ done
 
 # web-ui: отдельный multi-stage Dockerfile (vite build → nginx), путь и
 # контекст отличаются от сервисов, поэтому собираем отдельным шагом.
-echo "→ Собираем dbos/web-ui:${TAG}..."
-$DOCKER build -t "dbos/web-ui:${TAG}" -f "$ROOT_DIR/web_ui/Dockerfile" "$ROOT_DIR/web_ui"
+# GIT_SHA передаём явно: сборочный контекст — web_ui/, там нет .git
+# (он в корне монорепо), а SHA нужен фронту для баннера «обновите вкладку».
+GIT_SHA="$(cd "$ROOT_DIR" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+echo "→ Собираем dbos/web-ui:${TAG} (GIT_SHA=${GIT_SHA})..."
+$DOCKER build --build-arg "GIT_SHA=${GIT_SHA}" -t "dbos/web-ui:${TAG}" -f "$ROOT_DIR/web_ui/Dockerfile" "$ROOT_DIR/web_ui"
 $DOCKER save "dbos/web-ui:${TAG}" -o "$TMP/web-ui.tar"
 sudo chmod 644 "$TMP/web-ui.tar" 2>/dev/null || true
 echo "→ Импортируем dbos/web-ui:${TAG} в k3s containerd..."

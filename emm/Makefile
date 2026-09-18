@@ -954,13 +954,13 @@ update: ## [docker] Обновить стек из git: git pull → перес�
 	@echo "→ [1/3] git pull (--ff-only)..."
 	@git pull --ff-only
 	@echo "→ [2/3] Пересборка образов..."
-	@$(PROD) build
+	@GIT_SHA=$$(git rev-parse --short HEAD) $(PROD) build
 	@echo "→ [3/3] Рестарт стека + миграции (up -d --wait)..."
 	@$(PROD) up -d --wait
 	@echo "✓ update завершён."
 
 prod-build: ## Пересобрать образы prod-стека (без подъёма)
-	@$(PROD) build
+	@GIT_SHA=$$(git rev-parse --short HEAD) $(PROD) build
 
 prod-down: ## Остановить prod-стек (данные в volume'ах сохраняются)
 	@$(PROD) down

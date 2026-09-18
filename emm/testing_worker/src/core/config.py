@@ -72,6 +72,25 @@ class Settings(BaseSettings):
         ),
     )
 
+    queue_concurrency: int = Field(
+        default=4,
+        ge=1,
+        alias="QUEUE_CONCURRENCY",
+        description=(
+            "Сколько независимых `run_polling_loop`-слотов крутится КОНКУРЕНТНО "
+            "внутри ОДНОГО процесса воркера (см. `main.py::_start_queue_polling_loop`) "
+            "— не отдельные процессы/поды, а `asyncio.Task` в одном event loop'е. "
+            "Каждый слот сам ходит в `claim()`, `claim_next_ready()` на стороне "
+            "testing_service гарантирует (`SELECT ... FOR UPDATE SKIP LOCKED`), "
+            "что два слота не заберут один и тот же item. SSH-сессия почти всё "
+            "время ждёт сеть, не грузит CPU — конкурентность внутри одного процесса "
+            "дешевле, чем N процессов. Значение должно быть не меньше числа "
+            "стендов, которые реально могут одновременно готовиться/выполнять "
+            "тест, иначе часть стендов будет простаивать в очереди на claim, "
+            "даже когда сами физически свободны."
+        ),
+    )
+
     interrupt_poll_interval_seconds: float = Field(
         default=7.0,
         alias="INTERRUPT_POLL_INTERVAL_SECONDS",

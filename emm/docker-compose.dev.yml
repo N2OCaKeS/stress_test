@@ -487,7 +487,7 @@ services:
       # недоступны — из dev-окружения они обычно недоступны, так что здесь
       # он выключен, чтобы не вешать запуск теста на два часа впустую.
       PREFLIGHT_ENABLED: "false"
-    command: ["taskiq", "worker", "src.main:broker", "--workers", "2"]
+    command: ["taskiq", "worker", "src.main:broker"]
     volumes:
       - ./testing_worker/src:/app/src
     depends_on:

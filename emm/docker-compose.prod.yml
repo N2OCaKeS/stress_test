@@ -515,7 +515,7 @@ services:
       context: ./testing_worker
       dockerfile: docker/Dockerfile
     init: true
-    command: ["taskiq", "worker", "src.main:broker", "--workers", "2"]
+    command: ["taskiq", "worker", "src.main:broker"]
     env_file: [.env.prod]
     environment:
       APP_ENV: production
@@ -525,6 +525,10 @@ services:
       # /completed на testing_service. worker поллит это и исполняет тест по SSH.
       TESTING_SERVICE_URL: http://testing_service:8004
       TESTING_SERVICE_INTERNAL_API_KEY: ${TESTING_SERVICE_INTERNAL_API_KEY}
+      # Сколько стендов могут одновременно готовиться/выполнять тест — не
+      # меньше реального числа стендов пула, иначе часть будет простаивать в
+      # очереди на claim. Поднять при добавлении новых стендов.
+      QUEUE_CONCURRENCY: "7"
     depends_on:
       redis:
         condition: service_healthy

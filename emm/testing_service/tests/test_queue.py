@@ -345,6 +345,30 @@ class TestEnqueue:
         assert retry.state == QueueItemState.PREPARING
         assert retry.prepare_request_id is not None
 
+    async def test_acquire_failure_retry_keeps_prepare_only(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        # Автосозданный retry обязан унаследовать prepare_only от исходного
+        # item'а — иначе провалившийся testenv-прогон незаметно превратится
+        # в обычный запуск теста после автоматического retry.
+        mock_server_service(acquire_fail_times=1)
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, prepare_only=True,
+            )
+
+        assert item.state == QueueItemState.FAILED
+        async with AsyncSessionLocal() as db:
+            from sqlalchemy import select
+            from src.models import QueueItem
+            retry = (await db.execute(
+                select(QueueItem).where(QueueItem.retry_of_id == item.id)
+            )).scalar_one()
+        assert retry.prepare_only is True
+
     async def test_acquire_failure_terminal_when_retry_also_fails(
         self, client, admin_token, mock_server_service, recorded_calls,
     ):

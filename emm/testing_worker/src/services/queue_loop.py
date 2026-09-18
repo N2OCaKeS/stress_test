@@ -46,14 +46,26 @@
    заводит — `completed(succeeded=False)` сам по себе достаточно
    информативен для этого случая.
 7. `testing_client.report_completed(...)` с исходом.
-8. Сразу следующая итерация, без сна — под нагрузкой воркер вычерпывает
-   очередь максимально быстро; пауза нужна только когда реально нечего делать.
 
-Тело цикла обёрнуто в `try/except Exception`: неожиданная ошибка (баг в
-коде, а не транзиентная сетевая недоступность — та уже обработана внутри
-`testing_client`) не должна убивать весь loop навсегда. На такой ошибке —
-ERROR-лог и сон `queue_poll_interval_seconds`, чтобы систематический баг не
-заспамил лог тысячами повторов в секунду.
+`run_polling_loop()` НЕ ждёт шаги 2-7 перед следующим `claim()` — item
+запускается как отдельный `asyncio.Task` (`_run_one_item`), а цикл сразу же
+идёт за следующим. Никакого искусственного потолка одновременных item'ов
+здесь нет и не нужен: `claim_next_ready()` на стороне testing_service отдаёт
+только `state=ready` item'ы, а по конструкции самой очереди (сериализация по
+стенду, `services/queue.py`) `ready` одновременно может быть не больше одного
+на стенд — реальный предел параллельности сам получается «один тест на
+стенд», без счётчика, который надо подбирать и держать в синхроне с числом
+стендов. SSH-сессия почти всё время ждёт сеть, не грузит CPU — конкурентные
+задачи внутри одного процесса вместо последовательной очереди только это и
+используют, не более того.
+
+Тело цикла обёрнуто в `try/except Exception`: неожиданная ошибка `claim()`а
+(баг в коде, а не транзиентная сетевая недоступность — та уже обработана
+внутри `testing_client`) не должна убивать весь loop навсегда. На такой
+ошибке — ERROR-лог и сон `queue_poll_interval_seconds`, чтобы систематический
+баг не заспамил лог тысячами повторов в секунду. Упавшая задача одного item'а
+— тем же приёмом (лог + продолжение), но не тормозит остальные уже
+запущенные item'ы: у каждой задачи свой `done`-callback.
 """
 
 from __future__ import annotations
@@ -360,24 +372,55 @@ async def _run_one_item(item: dict) -> None:
     )
 
 
+def _on_item_task_done(task: asyncio.Task) -> None:
+    """Safety-net на упавшую задачу одного item'а — `_run_one_item` сам ловит
+    ожидаемые провалы и всегда репортит `completed`, но неожиданный
+    `BaseException`-подкласс (не `CancelledError`) проскочит мимо и задача
+    молча завершится. Один упавший item не должен молчать и не должен
+    задевать остальные — они независимые задачи."""
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.critical("queue item task %s failed unexpectedly: %s: %s", task.get_name(), type(exc).__name__, exc)
+
+
 async def run_polling_loop() -> None:
-    """Бесконечный polling loop. Останавливается только через `CancelledError`."""
+    """Бесконечный polling loop. Останавливается только через `CancelledError`.
+
+    Каждый забранный item выполняется своей задачей, цикл не ждёт её
+    завершения перед следующим `claim()` — см. module docstring про предел
+    параллельности «один item на стенд», который получается сам по себе на
+    стороне testing_service, без счётчика здесь.
+    """
     settings = get_settings()
     poll_interval = settings.queue_poll_interval_seconds
+    in_flight: set[asyncio.Task] = set()
 
     logger.info("queue polling loop started (poll_interval=%ss)", poll_interval)
 
-    while True:
-        try:
-            item = await testing_client.claim()
+    try:
+        while True:
+            try:
+                item = await testing_client.claim()
+            except Exception:  # noqa: BLE001 — один сбойный claim не должен убивать loop
+                logger.exception("queue polling loop: unexpected error in iteration")
+                await asyncio.sleep(poll_interval)
+                continue
+
             if item is None:
                 await asyncio.sleep(poll_interval)
                 continue
 
-            await _run_one_item(item)
-            # Задание обработано — сразу пробуем забрать следующее, без сна.
-        except asyncio.CancelledError:
-            raise
-        except Exception:  # noqa: BLE001 — один сбойный проход не должен убивать loop
-            logger.exception("queue polling loop: unexpected error in iteration")
-            await asyncio.sleep(poll_interval)
+            task = asyncio.create_task(_run_one_item(item), name=f"queue_item_{item['queue_item_id']}")
+            task.add_done_callback(_on_item_task_done)
+            task.add_done_callback(in_flight.discard)
+            in_flight.add(task)
+            # Без сна и без ожидания завершения — сразу пробуем забрать
+            # следующий готовый item, параллельно с уже запущенными.
+    except asyncio.CancelledError:
+        for task in in_flight:
+            task.cancel()
+        if in_flight:
+            await asyncio.gather(*in_flight, return_exceptions=True)
+        raise

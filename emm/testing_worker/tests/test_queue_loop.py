@@ -908,3 +908,108 @@ class TestRunPollingLoop:
         # Loop пережил RuntimeError и продолжил поллинг.
         assert calls["claim"] >= 2
         assert calls["sleep"] >= 1
+
+    async def test_second_item_is_claimed_before_first_one_finishes(self, monkeypatch):
+        """Ядро задачи: никакого фиксированного потолка одновременных item'ов —
+        второй `claim()` не ждёт, пока первый item полностью выполнится.
+
+        `fake_claim` отдаёт ровно два item'а, а на третьем вызове зависает на
+        никогда не срабатывающем `Event` — намеренно, а не `return None`:
+        `None`-ветка ушла бы в `asyncio.sleep`, а зависание — единственная
+        точка, где `run_polling_loop` реально уступает event loop, не завися
+        от того, сколько раз event loop прокрутит `sleep(0)` за один шаг.
+        """
+        claimed: list[str] = []
+        first_item_started = asyncio.Event()
+        first_item_may_finish = asyncio.Event()
+
+        async def fake_claim():
+            if len(claimed) == 0:
+                claimed.append("qi_1")
+                return {"queue_item_id": "qi_1"}
+            if len(claimed) == 1:
+                claimed.append("qi_2")
+                return {"queue_item_id": "qi_2"}
+            await asyncio.Event().wait()  # больше отдавать нечего — просто виснем
+
+        async def fake_run_one_item(item):
+            if item["queue_item_id"] == "qi_1":
+                first_item_started.set()
+                await first_item_may_finish.wait()
+
+        monkeypatch.setattr(queue_loop.testing_client, "claim", fake_claim)
+        monkeypatch.setattr(queue_loop, "_run_one_item", fake_run_one_item)
+
+        loop_task = asyncio.ensure_future(queue_loop.run_polling_loop())
+        try:
+            await asyncio.wait_for(first_item_started.wait(), timeout=2.0)
+            # Первый item ещё висит на своём событии — второй уже был забран.
+            assert claimed == ["qi_1", "qi_2"]
+        finally:
+            first_item_may_finish.set()
+            loop_task.cancel()
+            try:
+                await asyncio.wait_for(loop_task, timeout=2.0)
+            except asyncio.CancelledError:
+                pass
+
+    async def test_shutdown_cancels_in_flight_items(self, monkeypatch):
+        """Отмена самого `run_polling_loop` (shutdown-хук) обязана отменить и
+        уже запущенные задачи item'ов, а не бросить их работать без присмотра."""
+        item_task_started = asyncio.Event()
+        item_task_cancelled = asyncio.Event()
+        claimed = {"n": 0}
+
+        async def fake_claim():
+            if claimed["n"] == 0:
+                claimed["n"] += 1
+                return {"queue_item_id": "qi_hang"}
+            await asyncio.Event().wait()  # больше отдавать нечего — просто виснем
+
+        async def fake_run_one_item(item):
+            item_task_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                item_task_cancelled.set()
+                raise
+
+        monkeypatch.setattr(queue_loop.testing_client, "claim", fake_claim)
+        monkeypatch.setattr(queue_loop, "_run_one_item", fake_run_one_item)
+
+        loop_task = asyncio.ensure_future(queue_loop.run_polling_loop())
+        await asyncio.wait_for(item_task_started.wait(), timeout=2.0)
+
+        loop_task.cancel()
+        try:
+            await asyncio.wait_for(loop_task, timeout=2.0)
+        except asyncio.CancelledError:
+            pass
+
+        assert item_task_cancelled.is_set()
+
+    async def test_one_crashing_item_does_not_stop_the_loop_from_claiming_more(self, monkeypatch, caplog):
+        calls = {"claim": 0, "run_one_item": []}
+
+        async def fake_claim():
+            calls["claim"] += 1
+            if calls["claim"] <= 2:
+                return {"queue_item_id": f"qi_{calls['claim']}"}
+            return None
+
+        async def fake_run_one_item(item):
+            calls["run_one_item"].append(item["queue_item_id"])
+            if item["queue_item_id"] == "qi_1":
+                raise RuntimeError("item bug")
+
+        async def fake_sleep(seconds):
+            await _REAL_SLEEP(0)
+
+        monkeypatch.setattr(queue_loop.testing_client, "claim", fake_claim)
+        monkeypatch.setattr(queue_loop, "_run_one_item", fake_run_one_item)
+        monkeypatch.setattr(queue_loop.asyncio, "sleep", fake_sleep)
+
+        await _run_briefly(queue_loop.run_polling_loop())
+
+        assert set(calls["run_one_item"]) == {"qi_1", "qi_2"}
+        assert any("failed unexpectedly" in r.message for r in caplog.records)

@@ -48,6 +48,25 @@
 # легаси-конфига (сознательно не переведено/не переформулировано — так его
 # знают QA-инженеры).
 #
+# `matrix_label` = сокращение того же имени для заголовка строки СТП-матрицы,
+# дословно из легаси `allta_image_conf.py::testname_columns` ("file system
+# benchmark. EXT4" → "FS_EXT4"). `zefir.py:329-330` переименовывал колонки
+# этим словарём ПЕРЕД сортировкой, поэтому в матрице строки упорядочены по
+# сокращению, а не по полному имени — `services/stp_matrix.py` повторяет это.
+# Легаси покрывал сокращениями 63 теста, из них 61 есть здесь (нет "OS usage"
+# и "file system benchmark. OCFS2 parsec" — их нет и в этом каталоге).
+#
+# `changelog_component` = компонент, по которому тест попадает в СТП со
+# `scope=changelog`. Источник — легаси `tests_list` (`allta_image_conf.py:
+# 109-119`): словарь «компонент → список тестов», по ключам которого
+# `changelog_testcycle_handler` фильтрует состав ответом changelog-сервиса.
+# Десять значений, буквально ключи `tests_list`: "PostgreSQL", "Файловые
+# системы", "Системные службы", "UnixBench", "FreeIPA", "Parsec", "Apache",
+# "Docker/Podman/LXC", "Qemu/KVM/Libvirt", "Network". НЕ то же самое, что
+# `category` (та — git-ветка монорепо с кодом теста): например
+# `cluster_file_systems.*` и `kernel.xfs_memleak` лежат в своих ветках, но
+# changelog'ом отслеживаются как "Файловые системы" и "Системные службы".
+#
 # `readiness: ready`  — реально исполняемый скрипт (`git show <branch>:<путь>`)
 #   и его argparse дочитаны, каждый токен команды либо литерал напрямую из
 #   backup_image.py, либо значение из closed enum (`choices=[...]`) целевого
@@ -143,6 +162,8 @@ tests:
 
   - code: postgresql.base
     full_name: "postgresql benchmark"
+    matrix_label: "PostgreSQL"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: ready
@@ -207,6 +228,8 @@ tests:
 
   - code: postgresql.vanilla
     full_name: "postgresql benchmark vanilla"
+    matrix_label: "PSQL_vanilla"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: ready
@@ -275,6 +298,8 @@ tests:
 
   - code: postgresql.tantor_vanilla
     full_name: "tantor benchmark vanilla"
+    matrix_label: "Tantor_vanilla"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: ready
@@ -343,6 +368,8 @@ tests:
 
   - code: postgresql.parsec
     full_name: "postgresql benchmark parsec"
+    matrix_label: "PSQL_parsec"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: ready
@@ -411,6 +438,8 @@ tests:
 
   - code: postgresql.audit_off
     full_name: "postgresql benchmark audit-off"
+    matrix_label: "PSQL_audit-off"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: ready
@@ -483,6 +512,8 @@ tests:
 
   - code: postgresql.smolensk
     full_name: "postgresql benchmark smol"
+    matrix_label: "PostgreSQL_smol"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: draft
@@ -554,6 +585,8 @@ tests:
 
   - code: postgresql.balance
     full_name: "postgresql benchmark balance"
+    matrix_label: "PSQL_balance"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: draft
@@ -621,6 +654,8 @@ tests:
 
   - code: postgresql.oom
     full_name: "postgresql benchmark oom"
+    matrix_label: "PSQL_OOM"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: draft
@@ -682,6 +717,8 @@ tests:
 
   - code: postgresql.info_sys
     full_name: "postgresql benchmark info-sys"
+    matrix_label: "PSQL_info-sys"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: draft
@@ -748,6 +785,8 @@ tests:
 
   - code: postgresql.info_sys_orel
     full_name: "postgresql benchmark info-sys-orel"
+    matrix_label: "PSQL_info-sys_orel"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: draft
@@ -812,6 +851,8 @@ tests:
 
   - code: postgresql.kernels
     full_name: "postgresql benchmark kernels"
+    matrix_label: "PSQL_kernels"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: draft
@@ -890,6 +931,8 @@ tests:
 
   - code: postgresql.tantor_kernels
     full_name: "tantor benchmark kernels"
+    matrix_label: "Tantor_kernels"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: draft
@@ -963,6 +1006,8 @@ tests:
 
   - code: postgresql.olap_hq
     full_name: "postgresql benchmark olap"
+    matrix_label: "PSQL_OLAP-hq"
+    changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
     readiness: ready
@@ -1036,6 +1081,8 @@ tests:
 
   - code: file_systems.ext4
     full_name: "file system benchmark. EXT4"
+    matrix_label: "FS_EXT4"
+    changelog_component: "Файловые системы"
     category: file_systems
     owner: null
     readiness: ready
@@ -1097,6 +1144,8 @@ tests:
 
   - code: file_systems.xfs
     full_name: "file system benchmark. XFS"
+    matrix_label: "FS_XFS"
+    changelog_component: "Файловые системы"
     category: file_systems
     owner: null
     readiness: ready
@@ -1156,6 +1205,8 @@ tests:
 
   - code: file_systems.ntfs
     full_name: "file system benchmark. NTFS"
+    matrix_label: "FS_NTFS"
+    changelog_component: "Файловые системы"
     category: file_systems
     owner: null
     readiness: ready
@@ -1215,6 +1266,8 @@ tests:
 
   - code: file_systems.ext3
     full_name: "file system benchmark. EXT3"
+    matrix_label: "FS_EXT3"
+    changelog_component: "Файловые системы"
     category: file_systems
     owner: null
     readiness: ready
@@ -1274,6 +1327,8 @@ tests:
 
   - code: file_systems.ext2
     full_name: "file system benchmark. EXT2"
+    matrix_label: "FS_EXT2"
+    changelog_component: "Файловые системы"
     category: file_systems
     owner: null
     readiness: ready
@@ -1333,6 +1388,8 @@ tests:
 
   - code: file_systems.fat
     full_name: "file system benchmark. FAT"
+    matrix_label: "FS_FAT"
+    changelog_component: "Файловые системы"
     category: file_systems
     owner: null
     readiness: ready
@@ -1392,6 +1449,8 @@ tests:
 
   - code: file_systems.exfat
     full_name: "file system benchmark. EXFAT"
+    matrix_label: "FS_EXFAT"
+    changelog_component: "Файловые системы"
     category: file_systems
     owner: null
     readiness: ready
@@ -1451,6 +1510,8 @@ tests:
 
   - code: file_systems.ext4_parsec
     full_name: "file system benchmark. EXT4 parsec"
+    matrix_label: "FS_EXT4_parsec"
+    changelog_component: "Файловые системы"
     category: file_systems
     owner: null
     readiness: ready
@@ -1513,6 +1574,8 @@ tests:
 
   - code: file_systems.xfs_parsec
     full_name: "file system benchmark. XFS parsec"
+    matrix_label: "FS_XFS_parsec"
+    changelog_component: "Файловые системы"
     category: file_systems
     owner: null
     readiness: ready
@@ -1576,6 +1639,8 @@ tests:
 
   - code: cluster_file_systems.ocfs2
     full_name: "file system benchmark. OCFS2"
+    matrix_label: "FS_OCFS2"
+    changelog_component: "Файловые системы"
     category: cluster_file_systems
     owner: null
     readiness: ready
@@ -1648,6 +1713,8 @@ tests:
 
   - code: cluster_file_systems.ceph
     full_name: "ceph benchmark"
+    matrix_label: "FS_CEPH"
+    changelog_component: "Файловые системы"
     category: cluster_file_systems
     owner: null
     readiness: ready
@@ -1716,6 +1783,8 @@ tests:
 
   - code: cluster_file_systems.ceph_fio
     full_name: "ceph fio benchmark"
+    matrix_label: "FS_CEPH_fio"
+    changelog_component: "Файловые системы"
     category: cluster_file_systems
     owner: null
     readiness: ready
@@ -1788,6 +1857,8 @@ tests:
 
   - code: cluster_file_systems.ceph_parsec
     full_name: "ceph parsec benchmark"
+    matrix_label: "FS_CEPH_parsec"
+    changelog_component: "Файловые системы"
     category: cluster_file_systems
     owner: null
     readiness: ready
@@ -1860,6 +1931,8 @@ tests:
 
   - code: auditd.psaud
     full_name: "auditd benchmark. psaud"
+    matrix_label: "Auditd_psaud"
+    changelog_component: "Системные службы"
     category: auditd
     owner: null
     readiness: ready
@@ -1925,6 +1998,8 @@ tests:
 
   - code: auditd.fileaud
     full_name: "auditd benchmark. fileaud"
+    matrix_label: "Auditd_fileaud"
+    changelog_component: "Системные службы"
     category: auditd
     owner: null
     readiness: ready
@@ -1984,6 +2059,8 @@ tests:
 
   - code: auditd.useraud
     full_name: "auditd benchmark. useraud"
+    matrix_label: "Auditd_useraud"
+    changelog_component: "Системные службы"
     category: auditd
     owner: null
     readiness: ready
@@ -2047,6 +2124,8 @@ tests:
 
   - code: syslog_ng.base
     full_name: "syslog-ng benchmark"
+    matrix_label: "Syslog-NG"
+    changelog_component: "Системные службы"
     category: syslog_ng
     owner: null
     readiness: ready
@@ -2103,6 +2182,8 @@ tests:
 
   - code: syslog_ng.check_write_log
     full_name: "syslog-ng benchmark check-write-log"
+    matrix_label: "Syslog-NG-cwl"
+    changelog_component: "Системные службы"
     category: syslog_ng
     owner: null
     readiness: ready
@@ -2165,6 +2246,8 @@ tests:
 
   - code: linux_system.unixbench
     full_name: "linux_system_benchmark. UnixBench"
+    matrix_label: "UnixBench"
+    changelog_component: "UnixBench"
     category: linux_system
     owner: null
     readiness: ready
@@ -2221,6 +2304,8 @@ tests:
 
   - code: linux_system.unixbench_parsec
     full_name: "linux_system_benchmark. UnixBench parsec"
+    matrix_label: "UnixBench_parsec"
+    changelog_component: "UnixBench"
     category: linux_system
     owner: null
     readiness: ready
@@ -2284,6 +2369,8 @@ tests:
 
   - code: overflow.ram
     full_name: "ram overflow"
+    matrix_label: "RAM_overflow"
+    changelog_component: "Системные службы"
     category: overflow
     owner: null
     readiness: ready
@@ -2330,6 +2417,8 @@ tests:
 
   - code: overflow.storage_drive
     full_name: "storage drive overflow"
+    matrix_label: "SD_overflow"
+    changelog_component: "Системные службы"
     category: overflow
     owner: null
     readiness: ready
@@ -2376,6 +2465,8 @@ tests:
 
   - code: parsec.impact_fs
     full_name: "Parsec impact fs benchmark"
+    matrix_label: "Parsec_impact-fs"
+    changelog_component: "Parsec"
     category: parsec
     owner: null
     readiness: ready
@@ -2432,6 +2523,8 @@ tests:
 
   - code: parsec.impact_fs_audit_off
     full_name: "Parsec impact fs benchmark audit-off"
+    matrix_label: "Parsec_imp-fs_aud-off"
+    changelog_component: "Parsec"
     category: parsec
     owner: null
     readiness: ready
@@ -2492,6 +2585,8 @@ tests:
 
   - code: parsec.digsig_cdt
     full_name: "DIGSIG. Check digsig time"
+    matrix_label: "DIGSIG-cdt"
+    changelog_component: "Parsec"
     category: parsec
     owner: null
     readiness: ready
@@ -2550,6 +2645,8 @@ tests:
 
   - code: parsec.raw_spin_lock
     full_name: "Raw spin lock benchmark"
+    matrix_label: "Raw_spin-lock"
+    changelog_component: "Parsec"
     category: parsec
     owner: null
     readiness: ready
@@ -2610,6 +2707,8 @@ tests:
 
   - code: apache2.reverse_proxy
     full_name: "Apache_ReverseProxy"
+    matrix_label: "Apache_RP"
+    changelog_component: "Apache"
     category: apache2
     owner: null
     readiness: ready
@@ -2671,6 +2770,8 @@ tests:
 
   - code: apache2.bench_pam
     full_name: "Apache_BenchPam"
+    matrix_label: "Apache_BP"
+    changelog_component: "Apache"
     category: apache2
     owner: null
     readiness: ready
@@ -2731,6 +2832,8 @@ tests:
 
   - code: apache2.balance
     full_name: "Apache_Balance"
+    matrix_label: "Apache_Balance"
+    changelog_component: "Apache"
     category: apache2
     owner: null
     readiness: ready
@@ -2796,6 +2899,8 @@ tests:
 
   - code: virt.steal_time
     full_name: "Steal time"
+    matrix_label: "Steal_time"
+    changelog_component: "Qemu/KVM/Libvirt"
     category: virt
     owner: null
     readiness: draft
@@ -2863,6 +2968,8 @@ tests:
 
   - code: virt.steal_time_smolensk
     full_name: "Steal time smolensk"
+    matrix_label: "Steal_time-sm"
+    changelog_component: "Qemu/KVM/Libvirt"
     category: virt
     owner: null
     readiness: draft
@@ -2928,6 +3035,8 @@ tests:
 
   - code: virt.fio
     full_name: "FIO benchmark"
+    matrix_label: "FIO"
+    changelog_component: "Qemu/KVM/Libvirt"
     category: virt
     owner: null
     readiness: draft
@@ -2992,6 +3101,8 @@ tests:
 
   - code: virt.fio_large
     full_name: "Large FIO benchmark"
+    matrix_label: "FIO_large"
+    changelog_component: "Qemu/KVM/Libvirt"
     category: virt
     owner: null
     readiness: draft
@@ -3056,6 +3167,8 @@ tests:
 
   - code: virt.unixbench
     full_name: "Virt UnixBench"
+    matrix_label: "vUnixBench"
+    changelog_component: "Qemu/KVM/Libvirt"
     category: virt
     owner: null
     readiness: draft
@@ -3120,6 +3233,8 @@ tests:
 
   - code: virt.pingpong
     full_name: "vPingPong"
+    matrix_label: "vPingPong"
+    changelog_component: "Qemu/KVM/Libvirt"
     category: virt
     owner: null
     readiness: draft
@@ -3186,6 +3301,8 @@ tests:
 
   - code: docker.web_application
     full_name: "docker web-application"
+    matrix_label: "Docker-WA"
+    changelog_component: "Docker/Podman/LXC"
     category: docker
     owner: null
     readiness: ready
@@ -3249,6 +3366,8 @@ tests:
 
   - code: astra_openvpn.client_connections
     full_name: "astra openvpn client connections"
+    matrix_label: "AOpenVPNcc"
+    changelog_component: "Системные службы"
     category: astra_openvpn
     owner: null
     readiness: ready
@@ -3313,6 +3432,8 @@ tests:
 
   - code: exim.dovecot_imap
     full_name: "dovecot benchmark"
+    matrix_label: "Dovecot-IMAP"
+    changelog_component: "Системные службы"
     category: exim
     owner: null
     readiness: ready
@@ -3375,6 +3496,8 @@ tests:
 
   - code: exim.exim_smtp
     full_name: "exim benchmark"
+    matrix_label: "Exim4-SMTP"
+    changelog_component: "Системные службы"
     category: exim
     owner: null
     readiness: ready
@@ -3436,6 +3559,8 @@ tests:
 
   - code: network.init_on_free
     full_name: "Network benchmark. Init_on_free"
+    matrix_label: "InitOnFree"
+    changelog_component: "Network"
     category: network
     owner: null
     readiness: draft
@@ -3502,6 +3627,8 @@ tests:
 
   - code: network.dhcp
     full_name: "Network benchmark. DHCP"
+    matrix_label: "DHCP"
+    changelog_component: "Network"
     category: network
     owner: null
     readiness: draft
@@ -3568,6 +3695,8 @@ tests:
 
   - code: kernel.segfault
     full_name: "segmentation_fault"
+    matrix_label: "SegFault"
+    changelog_component: "Системные службы"
     category: kernel
     owner: null
     readiness: draft
@@ -3634,6 +3763,8 @@ tests:
 
   - code: kernel.xfs_memleak
     full_name: "xfs memory leak"
+    matrix_label: "XFS_mem_leak"
+    changelog_component: "Системные службы"
     category: kernel
     owner: null
     readiness: draft
@@ -3700,6 +3831,8 @@ tests:
 
   - code: freeipa.auth
     full_name: "freeipa authentication test"
+    matrix_label: "FreeIPA_auth"
+    changelog_component: "FreeIPA"
     category: freeipa
     owner: null
     readiness: draft
@@ -3772,6 +3905,8 @@ tests:
 
   - code: freeipa.create_users
     full_name: "freeipa create users test"
+    matrix_label: "FreeIPA_c-users"
+    changelog_component: "FreeIPA"
     category: freeipa
     owner: null
     readiness: draft
@@ -3834,6 +3969,8 @@ tests:
 
   - code: freeipa.plugin
     full_name: "freeipa plugin test"
+    matrix_label: "FreeIPA_plugin"
+    changelog_component: "FreeIPA"
     category: freeipa
     owner: null
     readiness: draft
@@ -3895,6 +4032,8 @@ tests:
 
   - code: astraevents.base
     full_name: "astraeventsd benchmark"
+    matrix_label: "Astraevents"
+    changelog_component: "Системные службы"
     category: astraevents
     owner: null
     readiness: draft
@@ -3962,6 +4101,8 @@ tests:
 
   - code: astraevents.smolensk
     full_name: "astraeventsd benchmark smolensk"
+    matrix_label: "Astraevents_sm"
+    changelog_component: "Системные службы"
     category: astraevents
     owner: null
     readiness: draft

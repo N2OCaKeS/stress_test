@@ -9,9 +9,10 @@
    `changelog`/`full`) — параметр, который задаёт вызывающий (кнопки «По
    changelog»/«Полный набор», §D5), НЕ угадывается по виду строки версии.
    `changelog` фильтрует через `_filter_by_changelog` (§1/§7): тест проходит,
-   если его `changelog_component` пуст (безопасный дефолт) или входит в
-   список изменившихся компонентов из changelog-сервиса; недоступность
-   changelog-сервиса — тоже безопасный дефолт (полный набор).
+   если его `changelog_component` входит в список изменившихся компонентов
+   из changelog-сервиса; тест без компонента не проходит (как в легаси).
+   Недоступность самого changelog-сервиса — безопасный дефолт (полный
+   набор).
 3. Группирует тесты по `pinned_stand_id`, резолвит Jira-креды отдела.
 4. На каждый стенд — либо заводит новый Zephyr test-run (первый вызов для
    этой пары стенд/РЦ/режим/ядро), либо РЕКОНЦИЛИРУЕТ уже существующий:
@@ -75,14 +76,29 @@ def _validate_scope(scope: str) -> None:
 async def _filter_by_changelog(
     db: AsyncSession, tests: list[TestDefinition], rc: str, scope: str,
 ) -> list[TestDefinition]:
+    """`scope=changelog` — оставить только тесты изменившихся компонентов.
+
+    Тест без `changelog_component` из changelog-объёма ВЫПАДАЕТ. Так же вёл
+    себя легаси: `changelog_testcycle_handler` набирал состав через
+    `tests_list[<компонент>]`, и тест, не перечисленный ни под одним
+    компонентом, не мог попасть в выборку ни при каком changelog (в легаси
+    такими были ровно два теста, вручную запускаемых). Весь импортированный
+    каталог компонент имеет, так что пустое поле — это новый тест, которому
+    компонент ещё не проставили: тихо тащить его в КАЖДЫЙ changelog-прогон
+    хуже, чем не взять — полный набор (`scope=full`) берёт его в любом
+    случае.
+
+    Недоступность самого changelog-сервиса — отдельный случай и трактуется
+    по-прежнему «берём всё»: это сбой инфраструктуры, а не утверждение о
+    составе, и молча урезать прогон до нуля тестов из-за таймаута нельзя.
+    """
     if _is_full_scope(scope):
         return tests
     changed = await changelog_service.fetch_changed_components(db, rc)
     if changed is None:
-        # changelog-сервис недоступен/не настроен — безопасный дефолт: полный набор.
         return tests
     changed_set = set(changed)
-    return [t for t in tests if not t.changelog_component or t.changelog_component in changed_set]
+    return [t for t in tests if t.changelog_component and t.changelog_component in changed_set]
 
 
 def _derive_release(rc: str, *, is_urgent_update: bool = False) -> str:

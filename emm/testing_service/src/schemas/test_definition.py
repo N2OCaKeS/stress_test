@@ -40,6 +40,13 @@ class TestDefinitionCreate(BaseModel):
         description="Человекочитаемое название теста.",
     )
     category: str | None = Field(default=None, max_length=64, description="Категория теста.")
+    matrix_label: str | None = Field(
+        default=None, max_length=64,
+        description=(
+            "Короткая подпись строки в СТП-матрице (\"FS_EXT4\"). Пусто — "
+            "матрица печатает полное название."
+        ),
+    )
     owner: str | None = Field(default=None, max_length=128, description="Ответственный за тест.")
     readiness: TestReadiness = Field(
         default=TestReadiness.DEVELOPMENT,
@@ -67,7 +74,8 @@ class TestDefinitionCreate(BaseModel):
         default=None, max_length=128,
         description=(
             "Компонент ОС, используемый ТОЛЬКО changelog-фильтром СТП-генерации "
-            "(§7). Пусто — тест считается затронутым любым changelog (безопасный дефолт)."
+            "(§7). Пусто — тест в changelog-объём не попадает (как в легаси); "
+            "в полный набор попадает по-прежнему."
         ),
     )
     starter_suffix: str | None = Field(
@@ -94,6 +102,9 @@ class TestDefinitionUpdate(BaseModel):
     code: str | None = Field(default=None, min_length=1, max_length=64, description="Сменить код (UNIQUE).")
     full_name: str | None = Field(default=None, min_length=1, max_length=256, description="Сменить название.")
     category: str | None = Field(default=None, max_length=64, description="Сменить категорию.")
+    matrix_label: str | None = Field(
+        default=None, max_length=64, description="Сменить короткую подпись строки в СТП-матрице.",
+    )
     owner: str | None = Field(default=None, max_length=128, description="Сменить ответственного.")
     readiness: TestReadiness | None = Field(default=None, description="Сменить статус теста вручную.")
 
@@ -140,6 +151,7 @@ class TestDefinitionResponse(BaseModel):
     code: str = Field(description="Машинный код теста.")
     full_name: str = Field(description="Отображаемое название.")
     category: str | None = Field(default=None, description="Категория теста.")
+    matrix_label: str | None = Field(default=None, description="Короткая подпись строки в СТП-матрице.")
     owner: str | None = Field(default=None, description="Ответственный за тест.")
     readiness: TestReadiness = Field(description="Ручной статус теста; не зависит от исхода запуска.")
     mode: TestMode = Field(description="Режим безопасности Astra, под которым тест исполняется.")

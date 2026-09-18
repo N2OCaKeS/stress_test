@@ -101,15 +101,35 @@ class TestChangelogFilter:
         assert result == [t]
         assert called is False
 
-    async def test_filter_keeps_tests_without_component(self):
+    async def test_unavailable_changelog_service_keeps_everything(self):
         from src.models import TestDefinition
 
         t = TestDefinition(id="t1", code="a", full_name="A", changelog_component=None)
         async with AsyncSessionLocal() as db:
             result = await stp_svc._filter_by_changelog(db, [t], "1.8.5.46-nocache1", "changelog")
-        # changelog service not configured in tests → fetch_changed_components
-        # returns None → safe default is "keep everything" regardless of component.
+        # changelog-сервис в тестах не настроен → fetch_changed_components
+        # отдаёт None → сбой инфраструктуры, а не пустой состав: берём всё.
         assert result == [t]
+
+    async def test_test_without_component_is_out_of_changelog_scope(self, monkeypatch):
+        """Легаси набирал состав через `tests_list[<компонент>]`, поэтому тест,
+        не приписанный ни одному компоненту, не попадал ни в один
+        changelog-прогон. Пустое поле здесь значит то же самое."""
+        from src.models import TestDefinition
+
+        t = TestDefinition(id="t1", code="a", full_name="A", changelog_component=None)
+
+        async def fake_fetch(db, rc: str):
+            return ["PostgreSQL", "Файловые системы"]
+
+        monkeypatch.setattr(changelog_service, "fetch_changed_components", fake_fetch)
+        async with AsyncSessionLocal() as db:
+            result = await stp_svc._filter_by_changelog(db, [t], "1.8.5.46", "changelog")
+        assert result == []
+
+        async with AsyncSessionLocal() as db:
+            # scope=full компонент вообще не смотрит — тест на месте.
+            assert await stp_svc._filter_by_changelog(db, [t], "1.8.5.46", "full") == [t]
 
     async def test_filter_by_changed_components(self, monkeypatch):
         from src.models import TestDefinition
@@ -126,7 +146,7 @@ class TestChangelogFilter:
             result = await stp_svc._filter_by_changelog(
                 db, [kept, dropped, no_component], "1.8.5.46", "changelog",
             )
-        assert result == [kept, no_component]
+        assert result == [kept]
 
     async def test_changelog_service_non_success_status_yields_empty_result(self, monkeypatch):
         settings_stub = type("S", (), {

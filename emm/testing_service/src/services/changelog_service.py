@@ -12,8 +12,8 @@ return_dct_component_with_packages=false` и ждёт
 
 Не-`success` статус (или сетевой сбой/сервис не настроен) → безопасный дефолт:
 `None`, что означает у caller'а "фильтрация недоступна — берём всё" (§1: "лучше
-лишний прогон, чем пропущенный" — тот же принцип, что и у
-`test_definitions.changelog_component` пустого поля).
+лишний прогон, чем пропущенный"). Пустой `test_definitions.changelog_component`
+— случай другой и трактуется наоборот, см. `services/stp.py::_filter_by_changelog`.
 
 Ответ кэшируется в `changelog_cache` по `build_version` (RC), см.
 `ChangelogCache`/`repositories/changelog_cache.py`: RC не переиздаётся задним

@@ -199,6 +199,35 @@ class TestAlltaCatalogResolves:
         assert useraud.timeout_seconds == 20 * 3600
         assert cwl.timeout_seconds == 36 * 3600
 
+    async def test_legacy_matrix_labels_and_components_cover_the_catalog(
+        self, imported_allta_catalog,
+    ):
+        """Сокращения строк СТП-матрицы (`testname_columns`) и компоненты
+        changelog-фильтра (`tests_list`) — из `allta_image_conf.py`. Обе
+        колонки заполнены у всех 61 теста: пустое сокращение печатало бы в
+        матрице полное имя, а пустой компонент выкидывал бы тест из
+        changelog-объёма."""
+        data = yaml.safe_load(ALLTA_CATALOG.read_text(encoding="utf-8"))
+        assert all(t.get("matrix_label") for t in data["tests"])
+        assert all(t.get("changelog_component") for t in data["tests"])
+        # Компонент — ключ легаси `tests_list`, а не `category` (git-ветка).
+        assert {t["changelog_component"] for t in data["tests"]} == {
+            "PostgreSQL", "Файловые системы", "Системные службы", "UnixBench",
+            "FreeIPA", "Parsec", "Apache", "Docker/Podman/LXC",
+            "Qemu/KVM/Libvirt", "Network",
+        }
+
+        async with AsyncSessionLocal() as db:
+            ext4 = await test_definition_repo.get_by_code(db, "file_systems.ext4")
+            memleak = await test_definition_repo.get_by_code(db, "kernel.xfs_memleak")
+        assert ext4.matrix_label == "FS_EXT4"
+        assert ext4.changelog_component == "Файловые системы"
+        # Ветка `kernel`, но changelog отслеживает его как системную службу —
+        # компонент и категория это разные вещи.
+        assert memleak.matrix_label == "XFS_mem_leak"
+        assert memleak.category == "kernel"
+        assert memleak.changelog_component == "Системные службы"
+
     async def test_stand3_tests_are_pinned_and_others_report_missing_stand(
         self, imported_allta_catalog,
     ):

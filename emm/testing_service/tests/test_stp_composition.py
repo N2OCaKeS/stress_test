@@ -46,26 +46,29 @@ async def _get_composition(department_id: str, os_version_id: str):
 
 class TestStpCompositionSwitch:
     async def _seed_two_tests(self, client, admin_token, stand_id, dept_a):
-        """Тест `always` без changelog_component (всегда в объёме) + тест
-        `pg` с `changelog_component="postgresql"` (в объёме только когда
-        changelog-сервис называет postgresql изменившимся)."""
-        _id_always, code_always = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
+        """Тест `kern` с `changelog_component="kernel"` + тест `pg` с
+        `changelog_component="postgresql"`. Дальше по файлу changelog-сервис
+        называет изменившимся только `kernel` — `pg` в changelog-объём не
+        входит, а в полный входит."""
+        _id_kern, code_kern = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
         _id_pg, code_pg = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
         async with AsyncSessionLocal() as db:
             from src.repositories import test_definition as test_definition_repo
 
+            test_kern = await test_definition_repo.get_by_id(db, _id_kern)
+            await test_definition_repo.update(db, test_kern, {"changelog_component": "kernel"})
             test_pg = await test_definition_repo.get_by_id(db, _id_pg)
             await test_definition_repo.update(db, test_pg, {"changelog_component": "postgresql"})
             await db.commit()
-        await _seed_stp_test_case(code_always, zephyr_id="BT-T-ALWAYS")
+        await _seed_stp_test_case(code_kern, zephyr_id="BT-T-KERN")
         await _seed_stp_test_case(code_pg, zephyr_id="BT-T-PG")
-        return code_always, code_pg
+        return code_kern, code_pg
 
     async def test_first_call_creates_composition_revision_1(
         self, client, admin_token, mock_server_service, mock_zephyr, mock_secret_client, dept_a, monkeypatch,
     ):
         mock_server_service()
-        _mock_changelog(monkeypatch, changed_components=[])
+        _mock_changelog(monkeypatch, changed_components=["kernel"])
         stand_id, _ = await _create_stand(client, admin_token, department_id=dept_a)
         await self._seed_two_tests(client, admin_token, stand_id, dept_a)
         await _seed_integration_settings(dept_a)
@@ -88,7 +91,7 @@ class TestStpCompositionSwitch:
         self, client, admin_token, mock_server_service, mock_zephyr, mock_secret_client, dept_a, monkeypatch,
     ):
         mock_server_service()
-        _mock_changelog(monkeypatch, changed_components=[])
+        _mock_changelog(monkeypatch, changed_components=["kernel"])
         stand_id, _ = await _create_stand(client, admin_token, department_id=dept_a)
         await self._seed_two_tests(client, admin_token, stand_id, dept_a)
         await _seed_integration_settings(dept_a)
@@ -111,7 +114,7 @@ class TestStpCompositionSwitch:
 
         async with AsyncSessionLocal() as db:
             cells_after_second = await stp_cell_repo.list_by_run(db, run_id)
-        assert len(cells_after_second) == len(cells_after_first) == 1  # только "always"-тест
+        assert len(cells_after_second) == len(cells_after_first) == 1  # только "kernel"-тест
 
         composition = await _get_composition(dept_a, rc)
         assert composition.revision == 1  # scope не менялся — ревизия не растёт
@@ -135,7 +138,7 @@ class TestStpCompositionSwitch:
         run_id = changelog_resp.json()["test_runs"][0]["id"]
         async with AsyncSessionLocal() as db:
             cells = await stp_cell_repo.list_by_run(db, run_id)
-        assert len(cells) == 1  # только "always" — "pg" не в changelog-объёме
+        assert len(cells) == 1  # только "kernel" — "pg" не в changelog-объёме
 
         full_resp = await client.post(
             f"{STP_BASE}/generate", headers=_hdr(admin_token),
@@ -165,7 +168,7 @@ class TestStpCompositionSwitch:
         mock_server_service()
         _mock_changelog(monkeypatch, changed_components=["kernel"])  # "postgresql" НЕ изменился
         stand_id, _ = await _create_stand(client, admin_token, department_id=dept_a)
-        _code_always, code_pg = await self._seed_two_tests(client, admin_token, stand_id, dept_a)
+        _code_kern, code_pg = await self._seed_two_tests(client, admin_token, stand_id, dept_a)
         await _seed_integration_settings(dept_a)
         mock_secret_client["cred_x"] = ("jira_bot", "tok123")
         rc = f"1.9.0.{uuid.uuid4().hex[:6]}"
@@ -211,7 +214,7 @@ class TestStpCompositionSwitch:
         assert deactivated.updated_by == "usr_qa"
 
         active_cells = [c for c in cells if c.is_active]
-        assert len(active_cells) == 1  # только "always"
+        assert len(active_cells) == 1  # только "kernel"
 
         composition = await _get_composition(dept_a, rc)
         assert composition.scope == "changelog"
@@ -253,9 +256,15 @@ class TestStpCompositionEndpoint:
         self, client, admin_token, guest_token, mock_server_service, mock_zephyr, mock_secret_client, dept_a, monkeypatch,
     ):
         mock_server_service()
-        _mock_changelog(monkeypatch, changed_components=[])
+        _mock_changelog(monkeypatch, changed_components=["kernel"])
         stand_id, _ = await _create_stand(client, admin_token, department_id=dept_a)
         _id, code = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
+        async with AsyncSessionLocal() as db:
+            from src.repositories import test_definition as test_definition_repo
+
+            obj = await test_definition_repo.get_by_id(db, _id)
+            await test_definition_repo.update(db, obj, {"changelog_component": "kernel"})
+            await db.commit()
         await _seed_stp_test_case(code, zephyr_id="BT-T1")
         await _seed_integration_settings(dept_a)
         mock_secret_client["cred_x"] = ("jira_bot", "tok123")

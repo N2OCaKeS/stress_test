@@ -21,10 +21,12 @@ from src.repositories import department_integration_settings as dis_repo
 from src.repositories import stp_cell as stp_cell_repo
 from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
+from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_stand as test_stand_repo
 from src.services import confluence_client, secret_client, server_client, stp_matrix as stp_matrix_svc
 from src.utils.ids import department_integration_settings_id
 from src.utils.ids import stp_cell_id, stp_test_case_id, stp_test_run_id
+from src.utils.ids import test_definition_id as new_test_definition_id
 from src.utils.ids import test_stand_id as new_test_stand_id
 from tests.conftest import auth_hdr as _hdr
 
@@ -51,6 +53,16 @@ async def _seed_case(code: str, title: str) -> str:
         })
         await db.commit()
         return case.id
+
+
+async def _seed_definition(code: str, full_name: str, matrix_label: str | None) -> str:
+    async with AsyncSessionLocal() as db:
+        obj = await test_definition_repo.create(db, {
+            "id": new_test_definition_id(), "code": code, "full_name": full_name,
+            "matrix_label": matrix_label, "readiness": "ready", "mode": "orel",
+        })
+        await db.commit()
+        return obj.id
 
 
 async def _seed_run(*, os_version_id: str, mode: str, kernel: str, stand_id: str) -> str:
@@ -226,6 +238,52 @@ class TestRenderMatrixHtml:
         # stand10 < stand4 лексикографически — ровно как у легаси
         assert html.index("stand10") < html.index("stand4")
 
+    def test_case_row_uses_short_label_and_sorts_by_it(self):
+        """Заголовок строки — сокращение, и по нему же порядок строк.
+
+        Легаси (`zefir.py:329-330`) переименовывал колонки словарём
+        `testname_columns` ДО сортировки — матрица упорядочена по
+        сокращениям. Пара ниже настоящая и порядок в ней расходится: по
+        полным именам первым идёт UnixBench ("linux_system_benchmark." <
+        "postgresql benchmark"), по сокращениям — PostgreSQL.
+        """
+        from src.models import StpTestCase, StpTestRun
+
+        run = StpTestRun(
+            id="run_1", os_version_id="1.8.5.46", mode="orel", kernel="6.1.0", stand_id="stand_1",
+        )
+        unix = StpTestCase(
+            id="case_u", code="linux_system.unixbench", title="linux_system_benchmark. UnixBench",
+        )
+        pg = StpTestCase(id="case_p", code="postgresql.base", title="postgresql benchmark")
+
+        html = stp_matrix_svc.render_matrix_html(
+            rc_number="1.8.5.46", runs=[run], cases=[unix, pg], cells=[],
+            case_labels={"case_u": "UnixBench", "case_p": "PostgreSQL"},
+        )
+        assert "linux_system_benchmark. UnixBench" not in html
+        assert "postgresql benchmark" not in html
+        assert html.index("PostgreSQL") < html.index("UnixBench")
+
+    def test_case_without_short_label_falls_back_to_title(self):
+        """Тест, заведённый после импорта легаси-каталога, ещё не имеет
+        сокращения — строка печатается полным именем, а не пустой."""
+        from src.models import StpTestCase, StpTestRun
+
+        run = StpTestRun(
+            id="run_1", os_version_id="1.8.5.46", mode="orel", kernel="6.1.0", stand_id="stand_1",
+        )
+        labelled = StpTestCase(id="case_1", code="pg", title="postgresql benchmark")
+        plain = StpTestCase(id="case_2", code="new", title="совсем новый тест")
+
+        html = stp_matrix_svc.render_matrix_html(
+            rc_number="1.8.5.46", runs=[run], cases=[labelled, plain], cells=[],
+            case_labels={"case_1": "PostgreSQL"},
+        )
+        assert "PostgreSQL" in html
+        assert "совсем новый тест" in html
+        assert "postgresql benchmark" not in html
+
     def test_stand_without_alias_falls_back_to_internal_id(self):
         from src.models import StpTestCase, StpTestRun
 
@@ -337,6 +395,30 @@ class TestPublishStpMatrix:
             "Состав тестового прогона", "STRESS_stp ⬝ 1.8.5", "1.8.5.46",
         ]
         assert pages[result.confluence_page_id]["parent_id"] == result.confluence_parent_page_id
+
+    async def test_short_label_comes_from_the_test_catalog(
+        self, dept_a, mock_secret_client, mock_confluence_pages,
+    ):
+        """Сокращение живёт в `test_definitions.matrix_label` и подтягивается
+        к кейсу СТП по общему `code` — второго источника имён нет."""
+        mock_secret_client["cred_x"] = ("bot", "tok123")
+        await _seed_integration_settings(dept_a)
+        await _seed_definition("file_systems.ext4", "file system benchmark. EXT4", "FS_EXT4")
+        stand_id = await _seed_stand(dept_a)
+        case_id = await _seed_case("file_systems.ext4", "file system benchmark. EXT4")
+        run_id = await _seed_run(os_version_id="1.8.5.46", mode="orel", kernel="6.1.0", stand_id=stand_id)
+        await _seed_cell(case_id=case_id, run_id=run_id, status="pass")
+
+        async with AsyncSessionLocal() as db:
+            from tests.test_queue import _identity
+            result = await stp_matrix_svc.publish_stp_matrix(
+                db, _identity(department_id=dept_a),
+                department_id=dept_a, os_version_id="1.8.5.46",
+            )
+
+        assert result.status == StpMatrixPublicationStatus.POSTED
+        assert "FS_EXT4" in result.body_snapshot
+        assert "file system benchmark. EXT4" not in result.body_snapshot
 
     async def test_deactivated_cells_are_excluded_from_matrix(
         self, dept_a, mock_secret_client, mock_confluence_pages,

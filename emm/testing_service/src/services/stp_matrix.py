@@ -48,6 +48,7 @@ from src.repositories import stp_cell as stp_cell_repo
 from src.repositories import stp_matrix_publication as repo
 from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
+from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_stand as test_stand_repo
 from src.services import audit_service, confluence_client, permissions, secret_client, server_client
 from src.utils.ids import stp_matrix_publication_id as new_id
@@ -119,6 +120,7 @@ def _hierarchy_titles(rc_number: str) -> tuple[str | None, str]:
 def render_matrix_html(
     *, rc_number: str, runs: list[StpTestRun], cases: list[StpTestCase],
     cells: list[StpCell], stand_labels: dict[str, str] | None = None,
+    case_labels: dict[str, str] | None = None,
 ) -> str:
     """Сводная таблица версия/ядро/режим/стенд × тест-кейс → статус.
 
@@ -137,21 +139,34 @@ def render_matrix_html(
     сортируются столбцы: легаси упорядочивал прогоны строкой имени стенда,
     а сортировка по uuid'у случайна и меняется от отдела к отделу. Стенд без
     алиаса печатается своим id — столбец хотя бы остаётся различимым.
+
+    `case_labels` — `stp_test_cases.id` → короткая подпись строки
+    (`test_definitions.matrix_label`, легаси `testname_columns`: "file system
+    benchmark. EXT4" → "FS_EXT4"). Ровно тот же приём, что и у
+    `stand_labels`: подпись подставляется в заголовок строки и по ней же
+    идёт сортировка строк — легаси переименовывал колонки ДО сортировки, то
+    есть упорядочивал их по сокращению, а не по полному имени. Кейс без
+    подписи печатается и сортируется своим `title` — новый тест, которому
+    сокращение ещё не задали, остаётся видимым, а не пустым.
     """
     if not runs:
         return f"<h1>Прогресс выполнения тестового прогона {_escape(rc_number)}</h1><p><em>Нет прогонов.</em></p>"
 
     labels = stand_labels or {}
+    row_labels = case_labels or {}
 
     def _label(run: StpTestRun) -> str:
         return labels.get(run.stand_id) or run.stand_id
+
+    def _case_label(case: StpTestCase) -> str:
+        return row_labels.get(case.id) or case.title
 
     runs = sorted(runs, key=lambda r: (r.mode, _label(r)))
 
     status_by_run_and_case: dict[tuple[str, str], str] = {
         (cell.stp_test_run_id, cell.stp_test_case_id): cell.status for cell in cells
     }
-    cases_sorted = sorted(cases, key=lambda c: c.title)
+    cases_sorted = sorted(cases, key=_case_label)
 
     def _row(label: str, values: list[str]) -> str:
         cells_html = "".join(f"<td>{v}</td>" for v in values)
@@ -173,7 +188,7 @@ def render_matrix_html(
             label = _STATUS_LABELS_RU.get(status, "") if status else ""
             bg, fg = _STATUS_COLORS.get(label, (None, None))
             cells_html.append(f"<td{_cell_style(bg, fg)}>{_escape(label)}</td>")
-        case_rows.append(f"<tr><th>{_escape(case.title)}</th>{''.join(cells_html)}</tr>")
+        case_rows.append(f"<tr><th>{_escape(_case_label(case))}</th>{''.join(cells_html)}</tr>")
 
     table = (
         '<table style="border-collapse:collapse;" border="1">'
@@ -373,9 +388,17 @@ async def publish_stp_matrix(
     stands = await test_stand_repo.list_by_ids(db, sorted({r.stand_id for r in runs}))
     stand_labels = {s.id: s.legacy_token for s in stands if s.legacy_token}
 
+    # Сокращения строк живут в каталоге тестов, а не в зеркале Zephyr:
+    # `stp_test_cases.title` и так копируется из `test_definitions.full_name`
+    # (`services/stp_add_test.py`), второму источнику имён взяться неоткуда.
+    # Связка — по общему `code` (см. docstring `models/stp_test_case.py`).
+    definitions = await test_definition_repo.list_by_codes(db, sorted({c.code for c in cases}))
+    label_by_code = {d.code: d.matrix_label for d in definitions if d.matrix_label}
+    case_labels = {c.id: label_by_code[c.code] for c in cases if c.code in label_by_code}
+
     body_html = render_matrix_html(
         rc_number=rc_number, runs=runs, cases=cases, cells=cells,
-        stand_labels=stand_labels,
+        stand_labels=stand_labels, case_labels=case_labels,
     )
 
     if existing is not None and existing.confluence_page_id and existing.body_snapshot == body_html:

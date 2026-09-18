@@ -32,6 +32,12 @@ class TestDefinition(Base):
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     full_name: Mapped[str] = mapped_column(String(256), nullable=False)
     category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Короткая подпись строки в СТП-матрице (`services/stp_matrix.py`). Полное
+    # название теста в матрице занимает всю ширину первой колонки, поэтому
+    # легаси держал отдельный словарь сокращений (`testname_columns`):
+    # "file system benchmark. EXT4" → "FS_EXT4". Пусто — матрица печатает
+    # полное название, и по нему же сортирует строки.
+    matrix_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
     owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
     readiness: Mapped[str] = mapped_column(String(32), nullable=False, default="development", server_default="development")
     # Режим безопасности Astra (orel/smolensk), под которым тест всегда
@@ -49,8 +55,9 @@ class TestDefinition(Base):
     pinned_stand_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Компонент ОС, чьё изменение в changelog "затрагивает" этот тест (§1/§7
     # плана миграции — фильтр СТП-прогона по changelog). Используется ТОЛЬКО
-    # этим фильтром, больше нигде. Пусто — тест считается затронутым всегда
-    # (безопасный дефолт: лучше лишний прогон, чем пропущенный).
+    # этим фильтром, больше нигде. Пусто — тест в changelog-объём НЕ попадает
+    # (легаси `tests_list`: тест без компонента не выбирался ни одним
+    # changelog'ом); в полный набор (`scope=full`) попадает по-прежнему.
     changelog_component: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Позиционный $5 у legacy `starter.sh` — какой флаг `run.py` клонированной
     # ветки передаст конечному скрипту: "kernel"/"balance"/"oom" или пусто

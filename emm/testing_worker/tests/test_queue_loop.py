@@ -1127,6 +1127,58 @@ class TestInterruptWatcher:
 
         assert recorded["report"] == (False, 3, "boom", None)
 
+    async def test_external_cancellation_uses_quiet_cancel_for_both_nested_tasks(self, monkeypatch):
+        """Отмена самого `_execute_with_interrupt_watch` (shutdown посреди
+        теста) обязана дождаться `execute_task`/`watch_task` через
+        `_quiet_cancel`, а не просто `cancel()`нуть их и сразу `raise` —
+        иначе event loop может остановиться раньше, чем cleanup внутри
+        `execute()` (закрытие SSH-соединения, flush аккумулятора) успеет
+        докрутиться. Реальная гонка события цикла не гарантирует, что голый
+        `cancel()` без `await` не сработает — раз в `_execute_with_interrupt_watch`
+        уже есть `_quiet_cancel` для ровно этого случая на happy-path, эта
+        ветка обязана пользоваться тем же приёмом, что и проверяет тест."""
+        quiet_cancel_calls: list[asyncio.Task] = []
+        original_quiet_cancel = queue_loop._quiet_cancel
+
+        async def spy_quiet_cancel(task):
+            quiet_cancel_calls.append(task)
+            await original_quiet_cancel(task)
+
+        async def fake_execute(host, username, key, command, **kwargs):
+            await asyncio.Event().wait()
+
+        async def fake_check_interrupt(queue_item_id):
+            await asyncio.Event().wait()
+            return None
+
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.testing_client, "check_interrupt", fake_check_interrupt)
+        monkeypatch.setattr(queue_loop, "_quiet_cancel", spy_quiet_cancel)
+        self._patch_fast_polling(monkeypatch)
+
+        async def noop_chunk(text):
+            return None
+
+        item = self._item()
+        outer_task = asyncio.ensure_future(
+            queue_loop._execute_with_interrupt_watch(item, queue_loop.get_settings(), noop_chunk)
+        )
+        # Дать наблюдателю время дойти до первого `check_interrupt` — не
+        # принципиально для самой проверки (оба пути ведут в CancelledError-
+        # ветку), но так сценарий ближе к реальному «тест уже идёт».
+        await _REAL_SLEEP(0.05)
+
+        outer_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await outer_task
+
+        # Обе вложенные задачи реально дождались через `_quiet_cancel` (не
+        # просто получили `cancel()` без последующего `await`), и обе к этому
+        # моменту действительно завершены.
+        assert len(quiet_cancel_calls) == 2
+        assert len(set(quiet_cancel_calls)) == 2
+        assert all(task.done() for task in quiet_cancel_calls)
+
 
 class TestRunPollingLoop:
     async def test_empty_queue_sleeps_and_retries(self, monkeypatch):

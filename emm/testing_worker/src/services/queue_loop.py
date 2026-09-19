@@ -368,8 +368,8 @@ async def _execute_with_interrupt_watch(item: dict, settings, on_output_chunk):
     try:
         await asyncio.wait({execute_task, watch_task}, return_when=asyncio.FIRST_COMPLETED)
     except asyncio.CancelledError:
-        execute_task.cancel()
-        watch_task.cancel()
+        await _quiet_cancel(execute_task)
+        await _quiet_cancel(watch_task)
         raise
 
     interrupted: str | None = None

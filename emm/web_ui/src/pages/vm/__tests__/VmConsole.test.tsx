@@ -148,6 +148,26 @@ describe("Консоль ВМ — селектор вида + переиспол
     openSpy.mockRestore();
   });
 
+  it("токен VNC-сессии скрыт по умолчанию и раскрывается по клику", async () => {
+    renderConsole();
+    fireEvent.click(screen.getByRole("button", { name: "VNC" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Подключиться \(VNC\)/ }),
+    );
+    await screen.findByText(/Графическая консоль \(VNC\)/);
+
+    expect(screen.queryByText("mock-vnc-token-9f3a")).not.toBeInTheDocument();
+    expect(screen.getByText("••••••••••••")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("Показать"));
+    expect(screen.getByText("mock-vnc-token-9f3a")).toBeInTheDocument();
+    expect(screen.queryByText("••••••••••••")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTitle("Скрыть"));
+    expect(screen.queryByText("mock-vnc-token-9f3a")).not.toBeInTheDocument();
+    expect(screen.getByText("••••••••••••")).toBeInTheDocument();
+  });
+
   it("SPICE встраивает вьювер iframe'ом в рабочую область", async () => {
     const { container } = renderConsole();
     fireEvent.click(screen.getByRole("button", { name: "SPICE" }));

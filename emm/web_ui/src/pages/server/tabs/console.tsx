@@ -30,6 +30,8 @@ import "@xterm/xterm/css/xterm.css";
 import {
   AlertCircle,
   Boxes,
+  Eye,
+  EyeOff,
   KeyRound,
   Lock,
   Maximize2,
@@ -1130,9 +1132,9 @@ function VmGraphicalConsole({
               mono
             />
             {session.ws_url && <Field k="ws-прокси" v={session.ws_url} mono />}
-            <Field k="Токен" v={session.token} mono />
+            <Field k="Токен" v={session.token} mono secret />
             {session.password && (
-              <Field k={`Пароль ${proto}`} v={session.password} mono />
+              <Field k={`Пароль ${proto}`} v={session.password} mono secret />
             )}
           </dl>
         </div>
@@ -1141,11 +1143,49 @@ function VmGraphicalConsole({
   );
 }
 
-function Field({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+function Field({
+  k,
+  v,
+  mono,
+  secret,
+}: {
+  k: string;
+  v: string;
+  mono?: boolean;
+  secret?: boolean;
+}) {
+  // Токен/пароль VNC-SPICE сессии не так чувствителен, как SSH-пароль
+  // долгоживущей учётки (см. injectPassword ниже), поэтому без серверного
+  // throttle — просто прячем от шаринга экрана и скриншотов по умолчанию.
+  const [shown, setShown] = useState(false);
+  const masked = secret && !shown;
+
   return (
     <>
       <dt className="text-dim text-xs">{k}</dt>
-      <dd className={mono ? "mono" : undefined}>{v}</dd>
+      <dd className={mono ? "mono" : undefined}>
+        {secret ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className={masked ? "select-none" : "break-all"}>
+              {masked ? "••••••••••••" : v}
+            </span>
+            <button
+              type="button"
+              onClick={() => setShown((prev) => !prev)}
+              className="text-dim hover:text-fg shrink-0"
+              title={masked ? "Показать" : "Скрыть"}
+            >
+              {masked ? (
+                <Eye className="w-3.5 h-3.5" />
+              ) : (
+                <EyeOff className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </span>
+        ) : (
+          v
+        )}
+      </dd>
     </>
   );
 }

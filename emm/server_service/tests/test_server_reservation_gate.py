@@ -393,7 +393,7 @@ class TestServerCrudReservationGate:
         assert resp.status_code == 200, resp.text
 
 
-# ── Read и release не гейтятся ────────────────────────────────────────────────
+# ── Read и release обычной busy-брони не гейтятся ──────────────────────────────
 
 
 class TestReadAndReleaseNotGated:
@@ -434,6 +434,62 @@ class TestReadAndReleaseNotGated:
             f"{SRV}/{srv.id}/busy", headers=_hdr(admin_role_token_a),
         )
         assert resp.status_code == 200
+        assert resp.json()["busy_state"] == "free"
+
+
+class TestReleaseServerTestingAndAcsGate:
+    """`DELETE /servers/{id}/busy` — в отличие от `busy`, `testing` и `acs`
+    этим путём не снимаются вообще для людей (`testing`) или снимаются только
+    админом (`acs`), симметрично тому, как эти же стадии гейтят остальные
+    деструктивные операции."""
+
+    async def test_admin_cannot_release_testing(
+        self, client, admin_token, make_testing_server,
+    ):
+        srv = await make_testing_server()
+        resp = await client.delete(f"{SRV}/{srv.id}/busy", headers=_hdr(admin_token))
+        assert_error(resp, 409, "SERVER_TESTING_IN_PROGRESS")
+
+    async def test_release_role_holder_cannot_release_testing(
+        self, client, admin_role_token_a, make_testing_server,
+    ):
+        srv = await make_testing_server()
+        resp = await client.delete(
+            f"{SRV}/{srv.id}/busy", headers=_hdr(admin_role_token_a),
+        )
+        assert_error(resp, 409, "SERVER_TESTING_IN_PROGRESS")
+
+    async def test_stranger_cannot_release_acs(
+        self, client, stranger_token, make_server, db,
+    ):
+        from datetime import datetime, timezone
+
+        from src.core.constants import BusyState
+
+        srv = await make_server(department_id="dep_a")
+        srv.busy_state = BusyState.ACS
+        srv.busy_note = "save|osv_test"
+        srv.busy_since = datetime.now(timezone.utc)
+        await db.flush()
+
+        resp = await client.delete(f"{SRV}/{srv.id}/busy", headers=_hdr(stranger_token))
+        assert_error(resp, 409, "SERVER_ACS_BUSY")
+
+    async def test_admin_can_release_acs(
+        self, client, admin_token, make_server, db,
+    ):
+        from datetime import datetime, timezone
+
+        from src.core.constants import BusyState
+
+        srv = await make_server(department_id="dep_a")
+        srv.busy_state = BusyState.ACS
+        srv.busy_note = "save|osv_test"
+        srv.busy_since = datetime.now(timezone.utc)
+        await db.flush()
+
+        resp = await client.delete(f"{SRV}/{srv.id}/busy", headers=_hdr(admin_token))
+        assert resp.status_code == 200, resp.text
         assert resp.json()["busy_state"] == "free"
 
 
@@ -530,6 +586,257 @@ class TestServiceReservationGate:
         assert resp.json()["busy_service_name"] == "testing_service"
 
 
+# ── prepare / clean / install-node-exporter: гейт по брони ─────────────────────
+
+
+@pytest.fixture
+def captured_prepare_dispatch(monkeypatch):
+    """Заглушка worker-инфраструктуры для `worker_dispatch.py`-эндпоинтов.
+
+    prepare/clean(rerun_prepare) кладут bootstrap-креды в Redis-стэш перед
+    dispatch'ем — в тест-окружении его нет, поэтому `store_prepare_creds`/
+    `delete_prepare_creds` мочим наравне с самим `dispatch_task[_with_hit]`,
+    как в `test_server_prepare.py::captured_dispatch`.
+    """
+    class _Recorder(list):
+        """list-подкласс — позволяет держать `stored_creds` рядом со списком
+        вызовов, как в `test_server_prepare.py::captured_dispatch`."""
+
+    calls: _Recorder = _Recorder()
+    stored: dict[str, dict] = {}
+
+    async def fake_store(creds_key, creds):
+        stored[creds_key] = creds
+
+    async def fake_delete(creds_key):
+        stored.pop(creds_key, None)
+
+    async def fake_dispatch(*, db=None, task_kind, target_server_id, payload,
+                            created_by, request_id,
+                            target_resource_id=None, idempotency_key=None,
+                            priority=0,
+                            return_hit=False):
+        calls.append({"task_kind": task_kind, "target_server_id": target_server_id})
+        new_id = f"tsk_{task_kind.replace('.', '_')}_fake_{len(calls)}"
+        return (new_id, False) if return_hit else new_id
+
+    async def fake_dispatch_with_hit(**kwargs):
+        kwargs["return_hit"] = True
+        return await fake_dispatch(**kwargs)
+
+    import src.services.worker_client as worker_mod
+
+    monkeypatch.setattr(worker_mod, "store_prepare_creds", fake_store)
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.store_prepare_creds",
+        fake_store,
+    )
+    monkeypatch.setattr(worker_mod, "delete_prepare_creds", fake_delete)
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.delete_prepare_creds",
+        fake_delete,
+    )
+    monkeypatch.setattr(worker_mod, "dispatch_task", fake_dispatch)
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task",
+        fake_dispatch,
+    )
+    monkeypatch.setattr(worker_mod, "dispatch_task_with_hit", fake_dispatch_with_hit)
+    monkeypatch.setattr(
+        "src.api.v1.endpoints.worker_dispatch.worker_client.dispatch_task_with_hit",
+        fake_dispatch_with_hit,
+    )
+    calls.stored_creds = stored  # type: ignore[attr-defined]
+    return calls
+
+
+_PREPARE_BODY = {
+    "username_b64": "Ym9vdGFkbWlu",  # "bootadmin"
+    "password_b64": "Qm9vdDEyMzQhU3Ryb25nUHdk",  # "Boot1234!StrongPwd"
+}
+
+
+class TestPrepareReservationGate:
+    """`POST /servers/{id}/prepare` раньше вообще не звал `ensure_not_reserved_for`
+    — любой держатель `update` мог перебутстрапить управление и переразвернуть
+    все привязанные аккаунты поверх занятого/тестируемого сервера."""
+
+    async def test_stranger_blocked_when_busy(
+        self, client, stranger_token, make_busy_server, captured_prepare_dispatch,
+    ):
+        srv = await make_busy_server()
+        resp = await client.post(
+            f"{SRV}/{srv.id}/prepare", headers=_hdr(stranger_token), json=_PREPARE_BODY,
+        )
+        assert_error(resp, 409, "SERVER_RESERVED")
+        assert captured_prepare_dispatch == []
+        assert captured_prepare_dispatch.stored_creds == {}
+
+    async def test_owner_allowed_when_busy(
+        self, client, owner_token, make_busy_server, captured_prepare_dispatch,
+    ):
+        srv = await make_busy_server()
+        resp = await client.post(
+            f"{SRV}/{srv.id}/prepare", headers=_hdr(owner_token), json=_PREPARE_BODY,
+        )
+        assert resp.status_code == 202, resp.text
+
+    async def test_admin_allowed_when_busy(
+        self, client, admin_token, make_busy_server, captured_prepare_dispatch,
+    ):
+        srv = await make_busy_server()
+        resp = await client.post(
+            f"{SRV}/{srv.id}/prepare", headers=_hdr(admin_token), json=_PREPARE_BODY,
+        )
+        assert resp.status_code == 202, resp.text
+
+    async def test_admin_blocked_when_testing(
+        self, client, admin_token, make_testing_server, captured_prepare_dispatch,
+    ):
+        """`testing` не обходит даже админ — как и остальные деструктивные операции."""
+        srv = await make_testing_server()
+        resp = await client.post(
+            f"{SRV}/{srv.id}/prepare", headers=_hdr(admin_token), json=_PREPARE_BODY,
+        )
+        assert_error(resp, 409, "SERVER_RESERVED")
+        assert captured_prepare_dispatch == []
+
+
+class TestInstallNodeExporterReservationGate:
+    async def test_stranger_blocked_when_busy(
+        self, client, stranger_token, make_busy_server, captured_prepare_dispatch, db,
+    ):
+        srv = await make_busy_server()
+        srv.is_managed = True
+        await db.flush()
+        resp = await client.post(
+            f"{SRV}/{srv.id}/install-node-exporter", headers=_hdr(stranger_token),
+        )
+        assert_error(resp, 409, "SERVER_RESERVED")
+        assert captured_prepare_dispatch == []
+
+    async def test_owner_allowed_when_busy(
+        self, client, owner_token, make_busy_server, captured_prepare_dispatch, db,
+    ):
+        srv = await make_busy_server()
+        srv.is_managed = True
+        await db.flush()
+        resp = await client.post(
+            f"{SRV}/{srv.id}/install-node-exporter", headers=_hdr(owner_token),
+        )
+        assert resp.status_code == 202, resp.text
+
+
+class TestCleanReservationGate:
+    """`POST /servers/{id}/clean` — `unbind_accounts`/`delete_vms` тоже
+    раньше не гейтились вообще (даже `updating`/`acs`), а `rerun_prepare`
+    шёл через тот же непровязанный `_prepare_resolve_and_dispatch`."""
+
+    async def test_stranger_delete_vms_blocked_when_busy(
+        self, client, stranger_token, make_busy_server,
+    ):
+        srv = await make_busy_server()
+        resp = await client.post(
+            f"{SRV}/{srv.id}/clean", headers=_hdr(stranger_token),
+            json={"delete_vms": True},
+        )
+        assert_error(resp, 409, "SERVER_RESERVED")
+
+    async def test_stranger_unbind_accounts_blocked_when_testing(
+        self, client, stranger_token, make_testing_server,
+    ):
+        srv = await make_testing_server()
+        resp = await client.post(
+            f"{SRV}/{srv.id}/clean", headers=_hdr(stranger_token),
+            json={"unbind_accounts": True},
+        )
+        assert_error(resp, 409, "SERVER_RESERVED")
+
+    async def test_admin_blocked_when_testing(
+        self, client, admin_token, make_testing_server,
+    ):
+        srv = await make_testing_server()
+        resp = await client.post(
+            f"{SRV}/{srv.id}/clean", headers=_hdr(admin_token),
+            json={"delete_vms": True},
+        )
+        assert_error(resp, 409, "SERVER_RESERVED")
+
+    async def test_owner_rerun_prepare_allowed_when_busy(
+        self, client, owner_token, make_busy_server, captured_prepare_dispatch,
+    ):
+        srv = await make_busy_server()
+        resp = await client.post(
+            f"{SRV}/{srv.id}/clean", headers=_hdr(owner_token),
+            json={"rerun_prepare": True, "prepare": _PREPARE_BODY},
+        )
+        assert resp.status_code == 202, resp.text
+        assert resp.json()["rerun_prepare"]["status"] == "dispatched"
+
+
+# ── fanout_update_on_host (PATCH server-account OS-managed поля) ───────────────
+
+
+class TestFanoutUpdateOnHostReservationGate:
+    """`fanout_update_on_host` — близнец `fanout_apply_credentials`, но раньше
+    не проверял бронь вообще (только decommissioned). Раскатка usermod'а на
+    занятый/тестируемый сервер должна пропускаться, а не проходить best-effort.
+
+    `PATCH /server-accounts/{id}` сам по себе уже блокируется общим гейтом
+    мутации аккаунта (`_ensure_no_linked_server_reserved`) на любом привязанном
+    сервере под чужой бронью — так что в обычном (не гоночном) сценарии до
+    fan-out'а дело просто не доходит. Ниже — юнит-уровень самого
+    `fanout_update_on_host`: даже если вызвать его напрямую на аккаунте,
+    привязанном к занятому серверу (например, из-за гонки между общим
+    гейтом и fan-out'ом на параллельном запросе), он теперь сам пропускает
+    такой сервер, а не best-effort раскатывает usermod."""
+
+    async def test_skips_busy_server_for_stranger(
+        self, db, make_busy_server, make_account, captured_emits,
+    ):
+        from fastapi import Request
+
+        from src.api.v1.endpoints.worker_dispatch import fanout_update_on_host
+        from src.schemas.identity import IdentityContext
+
+        srv = await make_busy_server()
+        acc = await make_account(server_id=srv.id, login="deploy", has_sudo=False)
+        identity = IdentityContext(
+            user_id="usr_stranger99", username="stranger",
+            department_id="dep_a", service_roles={"server_service": ["operator"]},
+        )
+        request = Request({"type": "http", "method": "PATCH", "path": "/", "headers": []})
+        tasks = await fanout_update_on_host(
+            db=db, identity=identity, request=request, account=acc,
+        )
+        assert tasks == []
+        skipped = [
+            e for e in captured_emits
+            if e["action"] == "server_account.update_on_host" and e["status"] == "failure"
+        ]
+        assert skipped and skipped[0]["details"]["reason"] == "reserved"
+
+    async def test_allows_reservation_owner(
+        self, db, make_busy_server, make_account, owner_user_id, captured_prepare_dispatch,
+    ):
+        from fastapi import Request
+
+        from src.api.v1.endpoints.worker_dispatch import fanout_update_on_host
+        from src.schemas.identity import IdentityContext
+
+        srv = await make_busy_server()
+        acc = await make_account(server_id=srv.id, login="deploy", has_sudo=False)
+        identity = IdentityContext(
+            user_id=owner_user_id, username="owner",
+            department_id="dep_a", service_roles={"server_service": ["operator"]},
+        )
+        request = Request({"type": "http", "method": "PATCH", "path": "/", "headers": []})
+        tasks = await fanout_update_on_host(
+            db=db, identity=identity, request=request, account=acc,
+        )
+        assert [t["server_id"] for t in tasks] == [srv.id]
+
+
 class TestTestingDoneReservationGate:
     """`testing_done` гейтится как обычная бронь — в отличие от `testing`."""
 
@@ -573,4 +880,5 @@ def captured_emits(monkeypatch):
         "src.services.reservation.audit_service.emit",
         "src.services.server.audit_service.emit",
         "src.api.v1.endpoints.ipmi.audit_service.emit",
+        "src.api.v1.endpoints.worker_dispatch.audit_service.emit",
     )

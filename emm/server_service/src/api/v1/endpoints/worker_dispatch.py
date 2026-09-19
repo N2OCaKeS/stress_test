@@ -979,6 +979,26 @@ async def fanout_update_on_host(
                 },
             )
             continue
+        # Reserve/ACS-gate: usermod на боксе — та же деструктивная мутация,
+        # что и apply_credentials fan-out рядом. Занятый сервер пропускаем,
+        # остальной fan-out продолжаем.
+        try:
+            reservation.ensure_not_reserved_for(identity, server, action=audit_action)
+            reservation.ensure_not_acs_locked(identity, server)
+        except ConflictError as exc:
+            reason = "acs_busy" if exc.error_code == "SERVER_ACS_BUSY" else "reserved"
+            audit_service.emit(
+                audit_action, target_id=account.id, target_type="server_account",
+                status="failure", allowed=True,
+                details={
+                    "reason": reason,
+                    "server_id": server.id,
+                    "operation": "update",
+                    "source": "edit_fanout",
+                    "department_id": server.department_id,
+                },
+            )
+            continue
         per_server_key = f"{idempotency_key}:{server.id}" if idempotency_key else None
         payload = _build_account_task_payload(
             server=server, account=account, include_attrs=True,
@@ -2698,6 +2718,7 @@ async def install_node_exporter_dispatch(
             message="Server is not prepared; run prepare before installing node_exporter",
         )
     reservation.ensure_not_updating(identity, server, action=audit_action)
+    reservation.ensure_not_reserved_for(identity, server, action=audit_action)
     reservation.ensure_not_acs_locked(identity, server)
 
     task_id, _ = await dispatch_server_ssh_task(
@@ -2881,6 +2902,11 @@ async def _prepare_resolve_and_dispatch(
     # bootstrap посреди astra-update раскатал бы управляющую учётку на
     # полуобновлённый бокс. Блокирует всех, включая владельца брони и админа.
     reservation.ensure_not_updating(identity, server, action=audit_action)
+    # Prepare раскатывает управляющие креды и заново провижнит все привязанные
+    # аккаунты поверх живого бокса — если сервер занят тестом или чужой бронью,
+    # это ничем не отличается от prepare/rotate по другим путям и должно
+    # гейтиться так же.
+    reservation.ensure_not_reserved_for(identity, server, action=audit_action)
     reservation.ensure_not_acs_locked(identity, server)
 
     # Креды собирает caller-specific резолвер: single поддерживает account- и
@@ -3445,6 +3471,12 @@ async def server_clean_dispatch(
             error_code="SERVER_DECOMMISSIONED",
             message="Server is decommissioned and cannot accept worker operations",
         )
+
+    # Гейт на весь endpoint, а не только на rerun_prepare: unbind_accounts и
+    # delete_vms — тоже деструктив (детач + userdel-fanout всех аккаунтов,
+    # row-only снос ВМ хаба) и раньше проходили без единой проверки busy_state.
+    reservation.ensure_not_reserved_for(identity, server, action=audit_action)
+    reservation.ensure_not_acs_locked(identity, server)
 
     request_id = getattr(request.state, "request_id", None)
     # Каждое действие коммитит транзакцию и экспайрит ORM-атрибуты `server`.

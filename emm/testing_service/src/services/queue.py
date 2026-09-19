@@ -294,6 +294,12 @@ async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, 
     этой же очереди — пробуем просто сменить стадию (`service-status`), и
     только если server_service отвечает `SERVER_NOT_BUSY` (бронь почему-то не
     держится), падаем обратно на `acquire-for-service`.
+
+    Провал на этом шаге (бронь не взялась) отдаёт `_fail_and_advance` исходный
+    `is_first_ever` — освобождать действительно нечего. А вот провал ПОСЛЕ
+    него, на `start_prepare_for_test`, всегда идёт с `is_first_ever=False` —
+    к этому моменту бронь уже наша, и её нужно либо продвинуть на следующий
+    item, либо отпустить, а не молча оставить висеть.
     """
     if await _reject_unready_item(db, stand, item, is_first_ever=is_first_ever):
         return
@@ -321,6 +327,23 @@ async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, 
                     )
                 else:
                     raise
+    except AppException as exc:
+        # Бронь не взялась вообще — исходный is_first_ever ещё в силе, отдавать
+        #/продвигать нечего.
+        await queue_orchestration_log.record(
+            db, stand.id, QueueOrchestrationEventKind.STAND_BUSY_BLOCKED, queue_item_id=item.id,
+            detail=f"{exc.error_code}: {exc.message}",
+        )
+        await _fail_and_advance(
+            db, item, stand,
+            failed_step=None,
+            error=f"{exc.error_code}: {exc.message}",
+            audit_action="queue_item.prepare_start_failed",
+            is_first_ever=is_first_ever,
+        )
+        return
+
+    try:
         resp = await server_client.start_prepare_for_test(
             stand.server_id,
             os_version_id=rc,
@@ -331,10 +354,10 @@ async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, 
             correlation_id=item.id,
         )
     except AppException as exc:
-        # ConflictError здесь означает буквально "стенд занят" — server_service
-        # отбил acquire/service-status конфликтом (чужая бронь, ручной ACS).
-        # Отдельный kind от прочих провалов: причина ясна сама по себе, ждать
-        # освобождения, а не чинить интеграцию с server_service.
+        # С этой точки бронь уже наша (acquire/service-status выше прошли),
+        # независимо от того, каким был is_first_ever на входе в функцию —
+        # дальнейший провал обязан её отпустить/продвинуть очередь, иначе
+        # бронь виснет на server_service навсегда.
         event_kind = (
             QueueOrchestrationEventKind.STAND_BUSY_BLOCKED
             if isinstance(exc, ConflictError)
@@ -349,7 +372,7 @@ async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, 
             failed_step=None,
             error=f"{exc.error_code}: {exc.message}",
             audit_action="queue_item.prepare_start_failed",
-            is_first_ever=is_first_ever,
+            is_first_ever=False,
         )
         return
 
@@ -1037,7 +1060,9 @@ async def clear_queue(db: AsyncSession, stand) -> int:
     return len(items)
 
 
-async def retry_failed(db: AsyncSession, identity: Identity, stand) -> tuple[list[QueueItem], int]:
+async def retry_failed(
+    db: AsyncSession, identity: Identity, stand, *, force: bool = False,
+) -> tuple[list[QueueItem], int]:
     """Повторить одним вызовом все ещё не перезапущенные упавшие item'ы стенда.
 
     Каждый кандидат проверяется и заводится независимо — тест, ушедший в
@@ -1045,6 +1070,10 @@ async def retry_failed(db: AsyncSession, identity: Identity, stand) -> tuple[lis
     пропускается. Так массовый retry не срывается целиком из-за одного
     проблемного item'а, в отличие от одиночного `public_queue.retry()`,
     который для того же случая честно возвращает 4xx одному вызывающему.
+
+    `force` прокидывается в каждый `enqueue()` как есть — право на него
+    (department_admin/admin отдела стенда) перепроверяет сам `enqueue()`,
+    здесь дублировать проверку незачем.
     """
     candidates = await repo.list_failed_for_stand(db, stand.id)
     retried: list[QueueItem] = []
@@ -1083,6 +1112,7 @@ async def retry_failed(db: AsyncSession, identity: Identity, stand) -> tuple[lis
             test_run_id=source.test_run_id,
             test_run_entry_id=source.test_run_entry_id,
             retry_source=source,
+            force=force,
             stp_test_run_id=stp.id if stp else None,
         )
         retried.append(item)

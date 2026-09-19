@@ -454,6 +454,32 @@ class TestEnqueue:
         # не должен был вызываться.
         assert not any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
 
+    async def test_reservation_released_when_prepare_fails_through_exhausted_retry(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        # Бронь взялась успешно (acquire прошёл), а вот сам prepare-for-test
+        # падает — и у исходного item'а, и у его единственного retry. Раньше
+        # это оставляло бронь висеть навсегда: _fail_and_advance получал
+        # is_first_ever=True (значение, унаследованное с самого начала цикла)
+        # и пропускал release, хотя acquire уже реально её взял.
+        mock_server_service(overrides={"prepare": 500})
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert item.state == QueueItemState.FAILED
+        assert any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
+        async with AsyncSessionLocal() as db:
+            from sqlalchemy import select
+            from src.models import QueueItem
+            retry = (await db.execute(
+                select(QueueItem).where(QueueItem.retry_of_id == item.id)
+            )).scalar_one()
+        assert retry.state == QueueItemState.FAILED
+        assert any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
+
 
 class TestBusyPreflight:
     """`_ensure_stand_free_for_launch` — отказ на входе, до commit'а item'а (§1 плана 2026-09-18)."""

@@ -890,7 +890,6 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         queue_item_id=item.id,
         host=connection["host"],
         test_username=creds.get("test_username"),
-        test_password=creds.get("test_password"),
         test_ssh_private_key=creds.get("test_ssh_private_key"),
         command=command,
         command_masked=command_masked,

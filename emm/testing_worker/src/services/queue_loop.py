@@ -278,16 +278,21 @@ def _build_prepare_only_command(item: dict) -> str:
     `$3` — это `dates_filename` (позиционный аргумент `starter.sh`, не имя
     теста, так исторически заведено в легаси), `$5` — `starter_suffix` теста.
     Оба присланы testing_service в `item`.
+
+    `starter_suffix` не enum'ится схемой на стороне testing_service (обычная
+    строка до 16 символов) — `shlex.quote` вместо ручных кавычек, чтобы `"`/
+    `` ` ``/`$(...)` в значении не сделали `command.txt` шелл-инъекцией,
+    если оператор скопирует его руками на стенд.
     """
-    dates_filename = item.get("dates_filename") or ""
+    dates_filename = shlex.quote(item.get("dates_filename") or "")
     suffix = item.get("starter_suffix") or ""
     if suffix == "kernel":
-        return f'python3 run.py -n "{dates_filename}" -kn "{suffix}"'
+        return f"python3 run.py -n {dates_filename} -kn {shlex.quote(suffix)}"
     if suffix == "balance":
-        return f'python3 run.py -n "{dates_filename}" -bl "{suffix}"'
+        return f"python3 run.py -n {dates_filename} -bl {shlex.quote(suffix)}"
     if suffix == "oom":
-        return f'python3 run.py -n "{dates_filename}" -oom "{suffix}"'
-    return f'python3 run.py -n "{dates_filename}"'
+        return f"python3 run.py -n {dates_filename} -oom {shlex.quote(suffix)}"
+    return f"python3 run.py -n {dates_filename}"
 
 
 async def _write_prepare_only_command_file(item: dict, settings) -> str | None:

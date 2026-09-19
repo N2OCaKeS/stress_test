@@ -790,28 +790,36 @@ class TestBuildPrepareOnlyCommand:
         command = queue_loop._build_prepare_only_command({
             "dates_filename": "dates_qi_1.conf", "starter_suffix": "",
         })
-        assert command == 'python3 run.py -n "dates_qi_1.conf"'
+        assert command == "python3 run.py -n dates_qi_1.conf"
 
     def test_kernel_suffix_adds_kn_flag(self):
         command = queue_loop._build_prepare_only_command({
             "dates_filename": "dates_qi_2.conf", "starter_suffix": "kernel",
         })
-        assert command == 'python3 run.py -n "dates_qi_2.conf" -kn "kernel"'
+        assert command == "python3 run.py -n dates_qi_2.conf -kn kernel"
 
     def test_balance_suffix_adds_bl_flag(self):
         command = queue_loop._build_prepare_only_command({
             "dates_filename": "dates_qi_3.conf", "starter_suffix": "balance",
         })
-        assert command == 'python3 run.py -n "dates_qi_3.conf" -bl "balance"'
+        assert command == "python3 run.py -n dates_qi_3.conf -bl balance"
 
     def test_oom_suffix_adds_oom_flag(self):
         command = queue_loop._build_prepare_only_command({
             "dates_filename": "dates_qi_4.conf", "starter_suffix": "oom",
         })
-        assert command == 'python3 run.py -n "dates_qi_4.conf" -oom "oom"'
+        assert command == "python3 run.py -n dates_qi_4.conf -oom oom"
 
     def test_missing_fields_default_to_empty_string(self):
-        assert queue_loop._build_prepare_only_command({}) == 'python3 run.py -n ""'
+        assert queue_loop._build_prepare_only_command({}) == "python3 run.py -n ''"
+
+    def test_special_characters_in_dates_filename_are_quoted(self):
+        """Регрессия: значение со спецсимволом не должно разваливать команду
+        на несколько слов/подставлять command substitution при копипасте."""
+        command = queue_loop._build_prepare_only_command({
+            "dates_filename": "dates_$(whoami).conf", "starter_suffix": "",
+        })
+        assert command == "python3 run.py -n 'dates_$(whoami).conf'"
 
 
 class TestRunOneItemPrepareOnly:
@@ -864,7 +872,7 @@ class TestRunOneItemPrepareOnly:
         assert writes == [
             ("write", "/home/u/starter.sh", queue_loop._starter_script_content()),
             ("write", "/home/u/testenv_on.conf", "on"),
-            ("write", "/home/u/command.txt", 'python3 run.py -n "dates_qi_prep.conf" -kn "kernel"'),
+            ("write", "/home/u/command.txt", "python3 run.py -n dates_qi_prep.conf -kn kernel"),
         ]
         # Обе доп. записи произошли ДО execute(), execute — ДО отчёта.
         kinds = [call[0] for call in recorded["calls"]]

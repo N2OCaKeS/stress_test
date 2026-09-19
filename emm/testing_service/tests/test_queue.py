@@ -880,7 +880,7 @@ class TestClaim:
         assert payload["queue_item_id"] == item.id
         assert payload["host"] == "10.9.9.9"
         assert payload["test_username"] == "u"
-        assert payload["test_password"] == "s3cr3t"
+        assert "test_password" not in payload
         git_token_filename = f"git_token_{item.id}.conf"
         assert payload["command"] == [
             "sudo", "bash", "/home/u/starter.sh", "", git_token_filename,

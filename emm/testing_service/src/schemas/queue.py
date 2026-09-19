@@ -44,7 +44,6 @@ class QueueClaimItem(BaseModel):
     queue_item_id: str
     host: str = Field(description="IP стенда (см. `server_client.get_connection_info`).")
     test_username: str
-    test_password: str
     test_ssh_private_key: str
     command: list[str] = Field(
         description=(

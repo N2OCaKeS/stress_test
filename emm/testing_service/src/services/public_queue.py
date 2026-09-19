@@ -165,10 +165,12 @@ async def clear_queue(db: AsyncSession, identity: Identity, stand_id: str) -> in
     return await queue.clear_queue(db, stand)
 
 
-async def retry_failed(db: AsyncSession, identity: Identity, stand_id: str) -> tuple[list, int]:
+async def retry_failed(
+    db: AsyncSession, identity: Identity, stand_id: str, *, force: bool = False,
+) -> tuple[list, int]:
     """Повторить разом все упавшие item'ы стенда, ещё не перезапущенные."""
     stand = await authorize(db, identity, stand_id)
-    return await queue.retry_failed(db, identity, stand)
+    return await queue.retry_failed(db, identity, stand, force=force)
 
 
 async def delete(db: AsyncSession, identity: Identity, item_id: str) -> None:
@@ -234,4 +236,5 @@ async def retry(
         client_request_id=body.request_id,
         request_fingerprint=fingerprint,
         stp_test_run_id=stp.id if stp else None,
+        force=body.force,
     )

@@ -168,6 +168,26 @@ class TestRetryFailed:
         assert resp.json()["retried_count"] == 1
         assert resp.json()["items"][0]["prepare_only"] is True
 
+    async def test_force_allows_admin_to_retry_on_busy_stand(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+    ):
+        mock_server_service()
+        await mock_git_token()
+        await _disable_retry()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        item = await _enqueue(test_id, debug_mode=True, stand_id=stand_id)
+        await _drive_to_terminal_failure(client, item)
+        assert (await _get_item(item.id)).state == QueueItemState.FAILED
+
+        mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+        resp = await client.post(
+            f"{STANDS}/{stand_id}/retry-failed", headers=auth_hdr(admin_token), json={"force": True},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["retried_count"] == 1
+
     async def test_no_failed_items_is_a_noop(
         self, client, admin_token, mock_server_service,
     ):

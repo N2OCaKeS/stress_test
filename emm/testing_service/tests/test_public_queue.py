@@ -217,6 +217,45 @@ async def test_retry_preserves_prepare_only_flag(
     assert retry.prepare_only is True
 
 
+async def test_retry_busy_stand_rejected_without_force(
+    client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+):
+    mock_server_service()
+    await mock_git_token()
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    response = await client.post(BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id))
+    item = await _get_item(response.json()["id"])
+    await _drive_to_success(client, item)
+
+    mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+    retry_response = await client.post(
+        f"{BASE}/{item.id}/retry", headers=auth_hdr(admin_token), json={"request_id": uuid.uuid4().hex},
+    )
+    assert retry_response.status_code == 409, retry_response.text
+    assert retry_response.json()["error_code"] == "STAND_BUSY"
+
+
+async def test_retry_force_allows_admin_on_busy_stand(
+    client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+):
+    mock_server_service()
+    await mock_git_token()
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    response = await client.post(BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id))
+    item = await _get_item(response.json()["id"])
+    await _drive_to_success(client, item)
+
+    mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+    retry_response = await client.post(
+        f"{BASE}/{item.id}/retry",
+        headers=auth_hdr(admin_token),
+        json={"request_id": uuid.uuid4().hex, "force": True},
+    )
+    assert retry_response.status_code == 201, retry_response.text
+
+
 async def test_retry_preserves_context_and_rejects_fork(
     client, admin_token, mock_server_service, configure_internal_keys, mock_git_token
 ):

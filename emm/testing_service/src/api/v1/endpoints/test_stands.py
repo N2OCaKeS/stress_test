@@ -10,7 +10,7 @@ NOT NULL, резолвится из server_service при создании), з�
 сервисный бот-токен testing_service не годится (см. `services/server_client.py`).
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dependencies.auth import BearerToken, CurrentUserIdentity
@@ -20,6 +20,7 @@ from src.schemas.public_queue import (
     PublicQueueItem,
     QueueClearResponse,
     QueueRetryFailedResponse,
+    RetryFailedRequest,
 )
 from src.schemas.queue import QueueItemSummaryResponse
 from src.schemas.queue_orchestration_event import QueueOrchestrationEventResponse
@@ -279,9 +280,11 @@ async def retry_failed(
     stand_id: str,
     identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
+    body: RetryFailedRequest | None = Body(default=None),
 ) -> QueueRetryFailedResponse:
     """Bulk-retry упавших item'ов стенда. Доступ: как у постановки в очередь."""
-    items, skipped_count = await public_queue_svc.retry_failed(db, identity, stand_id)
+    force = body.force if body else False
+    items, skipped_count = await public_queue_svc.retry_failed(db, identity, stand_id, force=force)
     logs = await log_availability.for_items(db, items) if items else {}
     return QueueRetryFailedResponse(
         retried_count=len(items),

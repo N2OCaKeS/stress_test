@@ -37,6 +37,14 @@ class QueueLaunchRequest(BaseModel):
 class QueueRetryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_id: str = Field(min_length=8, max_length=128)
+    force: bool = Field(
+        default=False,
+        description=(
+            "Обойти отказ STAND_BUSY, если стенд занят на момент retry. "
+            "Работает только для department_admin/admin отдела стенда — "
+            "у остальных вызывающих `force=True` возвращает отдельную ошибку."
+        ),
+    )
 
 
 class PublicQueueItem(BaseModel):
@@ -69,6 +77,16 @@ class QueueClearResponse(BaseModel):
     """Ответ массовой очистки очереди стенда."""
 
     cleared_count: int
+
+
+class RetryFailedRequest(BaseModel):
+    """Необязательное тело `POST /test-stands/{id}/retry-failed`."""
+
+    model_config = ConfigDict(extra="forbid")
+    force: bool = Field(
+        default=False,
+        description="То же, что force у одиночного retry, но сразу для всех упавших item'ов стенда.",
+    )
 
 
 class QueueRetryFailedResponse(BaseModel):

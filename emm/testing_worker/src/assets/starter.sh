@@ -51,9 +51,11 @@ cleanup_kernel
 dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y
 
 #Клонируем репозиторий, удаляем старый, если есть
+#--depth 1 добавлен поверх легаси-версии — снимает загрузку всей истории
+#ветки на каждый прогон, стенду нужен только текущий снимок кода
 cd /home/u/git
 sudo rm -r /home/u/git/stress_test
-git -c http.extraHeader="Authorization: $2" clone --branch "$1" --single-branch https://git.astralinux.ru/scm/qa/stress_test.git
+git -c http.extraHeader="Authorization: $2" clone --branch "$1" --single-branch --depth 1 https://git.astralinux.ru/scm/qa/stress_test.git
 cd "$git_directory"
 cd $1
 

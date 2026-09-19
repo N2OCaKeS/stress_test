@@ -34,6 +34,21 @@ def _install_transport(monkeypatch, handler):
     monkeypatch.setattr(testing_client, "build_client", _build)
 
 
+_VALID_CLAIM_ITEM = {
+    "queue_item_id": "qi_1",
+    "host": "10.0.0.1",
+    "test_username": "u",
+    "test_ssh_private_key": "keydata",
+    "command": ["sudo", "bash", "/home/u/starter.sh"],
+    "command_masked": ["sudo", "bash", "/home/u/starter.sh"],
+    "dates_content": "-sn 1",
+    "dates_content_masked": "-sn 1",
+    "dates_filename": "dates_qi_1.conf",
+    "debug_mode": False,
+    "is_retry": False,
+}
+
+
 class TestClaim:
     async def test_returns_item_on_success(self, monkeypatch):
         recorded = {}
@@ -42,16 +57,74 @@ class TestClaim:
             recorded["path"] = request.url.path
             recorded["auth"] = request.headers.get("Authorization")
             recorded["identity"] = request.headers.get("X-Service-Identity")
-            return httpx.Response(200, json={"item": {"queue_item_id": "qi_1", "host": "10.0.0.1"}})
+            return httpx.Response(200, json={"item": _VALID_CLAIM_ITEM})
 
         _install_transport(monkeypatch, handler)
 
         item = await testing_client.claim()
 
-        assert item == {"queue_item_id": "qi_1", "host": "10.0.0.1"}
+        assert item is not None
+        assert item["queue_item_id"] == "qi_1"
+        assert item["host"] == "10.0.0.1"
+        assert item["command"] == ["sudo", "bash", "/home/u/starter.sh"]
         assert recorded["path"] == "/internal/queue/claim"
         assert recorded["auth"] == f"Bearer {WORKER_SECRET}"
         assert recorded["identity"] == "testing_worker"
+
+    async def test_unknown_fields_are_dropped_not_fatal(self, monkeypatch):
+        """Лишнее поле в ответе (например, устаревшее `test_password`) не повод падать."""
+        item_with_extra = {**_VALID_CLAIM_ITEM, "test_password": "s3cr3t", "surprise_field": 123}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"item": item_with_extra})
+
+        _install_transport(monkeypatch, handler)
+
+        item = await testing_client.claim()
+
+        assert item is not None
+        assert "test_password" not in item
+        assert "surprise_field" not in item
+
+    async def test_missing_required_field_reports_completed_and_returns_none(self, monkeypatch):
+        """Рассинхрон контракта (нет `test_ssh_private_key`) — явный провал item'а,
+        а не голый `KeyError` где-то посреди `_run_one_item`."""
+        recorded = {"calls": []}
+        broken_item = {k: v for k, v in _VALID_CLAIM_ITEM.items() if k != "test_ssh_private_key"}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/internal/queue/claim":
+                return httpx.Response(200, json={"item": broken_item})
+            recorded["calls"].append((request.url.path, _json.loads(request.content)))
+            return httpx.Response(200, json={"ok": True})
+
+        _install_transport(monkeypatch, handler)
+
+        item = await testing_client.claim()
+
+        assert item is None
+        assert len(recorded["calls"]) == 1
+        path, body = recorded["calls"][0]
+        assert path == "/internal/queue/qi_1/completed"
+        assert body["succeeded"] is False
+        assert "malformed claim response" in body["error"]
+
+    async def test_missing_queue_item_id_cannot_report_but_does_not_crash(self, monkeypatch):
+        """Без `queue_item_id` некому отчитаться — просто честно теряем item,
+        не поднимая исключение наружу."""
+        broken_item = {k: v for k, v in _VALID_CLAIM_ITEM.items() if k != "queue_item_id"}
+        calls = {"completed": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/internal/queue/claim":
+                return httpx.Response(200, json={"item": broken_item})
+            calls["completed"] += 1
+            return httpx.Response(200, json={"ok": True})
+
+        _install_transport(monkeypatch, handler)
+
+        assert await testing_client.claim() is None
+        assert calls["completed"] == 0
 
     async def test_returns_none_when_queue_empty(self, monkeypatch):
         def handler(request: httpx.Request) -> httpx.Response:

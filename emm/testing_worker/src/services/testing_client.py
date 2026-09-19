@@ -40,12 +40,47 @@ import logging
 from datetime import datetime
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from src.core.config import get_settings
 from src.core.constants import SERVICE_NAME
 from src.core.http import bearer_header
 
 logger = logging.getLogger("testing_worker.testing_client")
+
+
+class ClaimedQueueItem(BaseModel):
+    """Форма одного item'а из ответа `claim()` (зеркалит `testing_service`
+    `QueueClaimItem`).
+
+    Раньше `claim()` отдавал сырой `dict`, и рассинхрон контракта (баг в
+    `testing_service`, ручной хотфикс, неполные тестовые данные) валился
+    голым `KeyError` где-то посреди `_run_one_item` — `report_completed`
+    для такого item'а не уходил, и он тихо зависал в `RUNNING` навсегда.
+    Обязательны здесь только поля, к которым код обращается напрямую через
+    `[]` (`queue_item_id`/`host`/`test_username`/`test_ssh_private_key`/
+    `command`) — остальное `_run_one_item` и так читает через `.get()` и
+    переживает отсутствие.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    queue_item_id: str
+    host: str
+    test_username: str
+    test_ssh_private_key: str
+    command: list[str]
+    command_masked: list[str] = Field(default_factory=list)
+    git_token_content: str | None = None
+    git_token_filename: str | None = None
+    dates_content: str | None = None
+    dates_content_masked: str | None = None
+    dates_filename: str | None = None
+    command_timeout_seconds: int | None = None
+    debug_mode: bool = False
+    is_retry: bool = False
+    prepare_only: bool = False
+    starter_suffix: str = ""
 
 _CLAIM_PATH = "/internal/queue/claim"
 _COMPLETED_PATH_TEMPLATE = "/internal/queue/{queue_item_id}/completed"
@@ -83,10 +118,18 @@ def _base_url() -> str | None:
 async def claim() -> dict | None:
     """POST /internal/queue/claim. Возвращает `item`-словарь или `None`.
 
-    `None` означает и «очередь пуста», и «testing_service недоступен» —
-    вызывающий polling-loop в обоих случаях делает одно и то же: спит
-    `queue_poll_interval_seconds` и пробует снова. Различать эти два случая
-    в возврате смысла нет, разница видна только в логах (WARNING на сбое).
+    `None` означает «очередь пуста», «testing_service недоступен» и теперь
+    ещё «ответ пришёл, но не прошёл валидацию формы» — во всех случаях
+    вызывающий polling-loop делает одно и то же: спит
+    `queue_poll_interval_seconds` и пробует снова. Различать их в возврате
+    смысла нет, разница видна только в логах (WARNING/ERROR на сбое).
+
+    Валидация — через `ClaimedQueueItem`: `testing_service` уже перевёл
+    item в `RUNNING` к моменту, когда собрал этот ответ, так что провал
+    формы здесь — не молчаливая потеря item'а, а явный `report_completed`
+    с провалом, если `queue_item_id` вообще удалось прочитать (без него
+    сообщать некому — это предельный случай, дальше уже ловит staleness на
+    стороне `testing_service`).
     """
     base = _base_url()
     headers = _headers()
@@ -116,7 +159,23 @@ async def claim() -> dict | None:
         logger.warning("testing_client.claim: non-JSON response body")
         return None
 
-    return body.get("item")
+    raw_item = body.get("item")
+    if raw_item is None:
+        return None
+
+    try:
+        item = ClaimedQueueItem.model_validate(raw_item)
+    except ValidationError as exc:
+        logger.error("testing_client.claim: malformed item in response: %s", exc)
+        queue_item_id = raw_item.get("queue_item_id") if isinstance(raw_item, dict) else None
+        if queue_item_id:
+            await report_completed(
+                queue_item_id, succeeded=False, exit_code=None,
+                error=f"malformed claim response: {exc}"[:2048],
+            )
+        return None
+
+    return item.model_dump()
 
 
 async def check_interrupt(queue_item_id: str) -> str | None:

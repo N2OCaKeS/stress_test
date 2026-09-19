@@ -24,9 +24,10 @@ from src.db.session import AsyncSessionLocal
 from src.repositories import department_integration_settings as dis_repo
 from src.repositories import department_test_settings as dts_repo
 from src.repositories import queue_item as queue_repo
+from src.repositories import test_stand as stand_repo
 from src.services import queue as queue_svc
 from src.services import secret_client, server_client
-from src.utils.ids import department_integration_settings_id, department_test_settings_id
+from src.utils.ids import department_integration_settings_id, department_test_settings_id, queue_item_id
 from tests.conftest import auth_hdr as _hdr
 
 TESTS_BASE = "/api/testing/v1/test-definitions"
@@ -501,6 +502,61 @@ class TestEnqueue:
             )).scalar_one()
         assert retry.state == QueueItemState.FAILED
         assert any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
+
+
+class TestContinuationReacquireRace:
+    """`_start_or_continue_cycle`, ветка `is_first_ever=False`: `set_service_status`
+    отвечает `SERVER_NOT_BUSY` (бронь предыдущего item'а на самом деле уже не
+    держится), а фолбэк `acquire_for_service` тоже проваливается. В этот момент
+    бронь не наша вообще — `_fail_and_advance` не должен пытаться продвинуть/
+    освободить её (чужую или несуществующую), как если бы она была нашей."""
+
+    async def test_reacquire_failure_does_not_release_foreign_reservation(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        mock_server_service(overrides={
+            "service_status": 409, "service_status_error": "SERVER_NOT_BUSY",
+            "acquire": 409,
+        })
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            await dts_repo.create(db, {
+                "id": department_test_settings_id(),
+                "department_id": "dep_a",
+                "retry_enabled": False,
+                "test_username": "u",
+                "activity_report_auto_generate": False,
+            })
+            await db.commit()
+
+        async with AsyncSessionLocal() as db:
+            stand = await stand_repo.get_by_id(db, stand_id)
+            item = await queue_repo.create(db, {
+                "id": queue_item_id(),
+                "stand_id": stand_id,
+                "test_id": test_id,
+                "launch_context": LAUNCH_CTX,
+                "state": QueueItemState.QUEUED,
+                "position": 0,
+                "is_retry": False,
+                "created_by": "usr_queue_test",
+            })
+            await db.commit()
+            # Симулируем продолжение уже идущей очереди (is_first_ever=False)
+            # без реального первого item'а — только это и важно для сценария.
+            await queue_svc._start_or_continue_cycle(db, stand, item, is_first_ever=False)
+
+        async with AsyncSessionLocal() as db:
+            stored = await queue_repo.get_by_id(db, item.id)
+        assert stored.state == QueueItemState.FAILED
+        methods_paths = [p for _, p in recorded_calls]
+        assert any(p.endswith("/service-status") for p in methods_paths)
+        assert any(p.endswith("/acquire-for-service") for p in methods_paths)
+        # Раньше здесь звался release-for-service-as-done — попытка отпустить
+        # бронь, которую этот цикл ни разу не держал.
+        assert not any(p.endswith("/release-for-service-as-done") for p in methods_paths)
 
 
 class TestBusyPreflight:

@@ -344,6 +344,14 @@ async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, 
     него, на `start_prepare_for_test`, всегда идёт с `is_first_ever=False` —
     к этому моменту бронь уже наша, и её нужно либо продвинуть на следующий
     item, либо отпустить, а не молча оставить висеть.
+
+    Отдельный случай — фолбэк `SERVER_NOT_BUSY` внутри ветки `is_first_ever=
+    False`: `set_service_status` говорит, что брони на самом деле уже нет, и
+    мы пробуем взять её заново через `acquire_for_service`. Если этот повторный
+    захват тоже падает, брони на этот момент нет вообще (не наша и никогда не
+    станет) — `is_first_ever` переставляется в `True` перед тем, как исключение
+    уйдёт в обработчик ниже, иначе `_fail_and_advance` попытался бы продвинуть/
+    освободить бронь, которой мы не держим.
     """
     if await _reject_unready_item(db, stand, item, is_first_ever=is_first_ever):
         return
@@ -365,6 +373,11 @@ async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, 
                 await server_client.set_service_status(stand.server_id, busy_state="acs", busy_note=note)
             except ConflictError as exc:
                 if exc.error_code == "SERVER_NOT_BUSY":
+                    # Бронь предыдущего item'а на самом деле не держится —
+                    # с этого момента мы в том же положении, что и при
+                    # is_first_ever=True, независимо от того, чем этот вызов
+                    # закончится.
+                    is_first_ever = True
                     await server_client.acquire_for_service(
                         stand.server_id, busy_state="acs", busy_note=note,
                         requested_by_department_id=stand.department_id,

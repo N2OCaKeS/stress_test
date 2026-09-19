@@ -133,9 +133,14 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
       )}
       {error && <div role="alert" className="text-xs text-danger">{error}</div>}
       {standBusyInfo && canForce && (
-        <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => attemptLaunch(true)}>
-          {busy ? "Запускаем…" : "Запустить принудительно"}
-        </Button>
+        <div className="grid gap-1">
+          <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => attemptLaunch(true)}>
+            {busy ? "Запускаем…" : "Запустить принудительно"}
+          </Button>
+          <div className="text-xs text-dim">
+            Обходит только эту проверку — если стенд на самом деле всё ещё занят, постановка в очередь всё равно пройдёт, но запуск почти сразу провалится (статус item'а — «failed»).
+          </div>
+        </div>
       )}
       <Button type="submit" variant="primary" disabled={busy || !testId || !resolvedStand || !rc.trim() || !kernel.trim() || !!unavailable}>{busy ? "Постановка в очередь…" : "Запустить тест"}</Button>
     </form>

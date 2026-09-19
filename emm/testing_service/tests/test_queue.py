@@ -66,12 +66,28 @@ def mock_server_service(monkeypatch, recorded_calls):
     проверку не знают, продолжали заводить первый item как раньше. Значение
     либо общее для всех id в запросе (`{"busy_state": "busy", ...}`), либо
     per-id (`{"srv_x": {"busy_state": "busy", ...}}`).
+
+    `acquire-for-service` и `batch_status` — не два независимых рычага:
+    реальный server_service делает CAS `WHERE busy_state='free'`, так что
+    если preflight-снапшот (общая форма `batch_status`) видит стенд занятым
+    и вызывающий явно не передал `overrides["acquire"]`, дефолтный ответ
+    `/acquire-for-service` тоже 409 `SERVER_ALREADY_BUSY` — как у настоящего
+    сервиса. Чтобы смоделировать узкое окно гонки (снапшот устарел, стенд
+    освободился к моменту реального захвата), передайте `overrides["acquire"]`
+    явно — это самый частый случай, который тестам и нужен.
     """
     monkeypatch.setattr(server_client, "get_settings", lambda: _StubSettings())
 
     def _install(*, department_id="dep_a", host="10.0.0.5", overrides=None, acquire_fail_times=0):
         overrides = overrides or {}
         acquire_calls = {"count": 0}
+
+        def _preflight_busy_state() -> str | None:
+            """Заявленное `batch_status` в его общей (не per-id) форме, если задано."""
+            batch_override = overrides.get("batch_status")
+            if isinstance(batch_override, dict) and "busy_state" in batch_override:
+                return batch_override["busy_state"]
+            return None
 
         def handler(request: httpx.Request) -> httpx.Response:
             recorded_calls.append((request.method, request.url.path))
@@ -83,7 +99,13 @@ def mock_server_service(monkeypatch, recorded_calls):
                 })
             if request.method == "POST" and path.endswith("/acquire-for-service"):
                 acquire_calls["count"] += 1
-                status = overrides.get("acquire", 200)
+                if "acquire" in overrides:
+                    status = overrides["acquire"]
+                else:
+                    # Без явного оверрайда акквайр согласован с preflight-снапшотом:
+                    # реально занятый стенд не может внезапно освободиться для CAS.
+                    preflight_busy = _preflight_busy_state()
+                    status = 409 if preflight_busy not in (None, "free") else 200
                 if status == 409 or acquire_calls["count"] <= acquire_fail_times:
                     return httpx.Response(409, json={
                         "error_code": "SERVER_ALREADY_BUSY", "message": "server already busy",
@@ -537,10 +559,19 @@ class TestBusyPreflight:
         assert second.state == QueueItemState.QUEUED
         assert recorded_calls == []
 
-    async def test_force_allows_department_admin(
+    async def test_force_allows_department_admin_when_stand_freed_up_by_acquire_time(
         self, client, admin_token, mock_server_service, recorded_calls,
     ):
-        mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+        """Preflight-снапшот занят, но к моменту настоящего захвата стенд уже
+        освободился (узкое окно гонки) — единственный сценарий, где `force`
+        реально доводит запуск до `PREPARING`. Оверрайд `acquire` здесь явный
+        и намеренно расходится с `batch_status`, иначе мок отвечал бы 409 —
+        см. `test_force_launch_fails_when_stand_still_busy_at_acquire` для
+        случая, когда стенд остаётся занятым по-настоящему."""
+        mock_server_service(overrides={
+            "batch_status": {"busy_state": "busy"},
+            "acquire": 200,
+        })
         stand_id, _ = await _create_stand(client, admin_token)
         test_id = await _create_test_def(client, admin_token, stand_id)
 
@@ -551,6 +582,44 @@ class TestBusyPreflight:
 
         assert item.state == QueueItemState.PREPARING
         assert any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
+
+    async def test_force_launch_fails_when_stand_still_busy_at_acquire(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        """`force` обходит только preflight. Если стенд реально занят и остаётся
+        занятым к моменту настоящего CAS-захвата в server_service, `enqueue()`
+        всё равно заводит item (preflight пропустил admin'а) — но тот сразу же
+        уходит в `FAILED` с понятной причиной, а не зависает и не даёт
+        видимость успеха. Бронь при этом никогда не берётся: ни исходная
+        попытка, ни авто-retry не проходят `acquire-for-service`, поэтому
+        `release-for-service-as-done` не вызывается вовсе — двойной брони и
+        утечки нет."""
+        mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, force=True,
+            )
+
+        assert item.state == QueueItemState.FAILED
+        assert item.error is not None and "SERVER_ALREADY_BUSY" in item.error
+        assert not any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
+
+        async with AsyncSessionLocal() as db:
+            from sqlalchemy import select
+            from src.models import QueueItem
+
+            retry = (await db.execute(
+                select(QueueItem).where(QueueItem.retry_of_id == item.id)
+            )).scalar_one()
+            assert retry.state == QueueItemState.FAILED
+            assert retry.is_retry is True
+            grandchild = (await db.execute(
+                select(QueueItem).where(QueueItem.retry_of_id == retry.id)
+            )).scalar_one_or_none()
+            assert grandchild is None
 
     async def test_force_denied_for_non_admin_same_department(
         self, client, admin_token, mock_server_service, recorded_calls,

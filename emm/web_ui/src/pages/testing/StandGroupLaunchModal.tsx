@@ -123,9 +123,14 @@ export function StandGroupLaunchModal({
             <div className="text-xs text-warn grid gap-2">
               <div>Стенд занят — часть тестов не запущена: {busyErrors[0].message}</div>
               {canForce && (
-                <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => launch(true)}>
-                  {busy ? "Запускаем…" : "Запустить принудительно"}
-                </Button>
+                <>
+                  <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => launch(true)}>
+                    {busy ? "Запускаем…" : "Запустить принудительно"}
+                  </Button>
+                  <div className="text-xs text-dim">
+                    Обходит только эту проверку — если стенд на самом деле всё ещё занят, item'ы всё равно заведутся, но почти сразу провалятся (статус — «failed»).
+                  </div>
+                </>
               )}
             </div>
           )}

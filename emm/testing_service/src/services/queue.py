@@ -126,6 +126,16 @@ async def enqueue(
     testing_service (см. `_ensure_stand_free_for_launch`) — обходит отказ
     STAND_BUSY, но только для department_admin отдела стенда либо носителя
     роли admin в этом отделе, остальным вызывающим `force=True` не помогает.
+
+    Важно: `force` обходит только этот предварительный клиентский снапшот.
+    Настоящий захват стенда — безусловный CAS в `server_service`
+    (`busy_state='free'`), у него нет параметра «форсировать для админа», и
+    обойти его отсюда нельзя. Если стенд на самом деле всё ещё занят (а не
+    просто снапшот устарел на узком окне гонки), `enqueue()` всё равно
+    вернёт вызывающему успешно созданный item, но тот почти сразу уйдёт в
+    `FAILED` с `SERVER_ALREADY_BUSY` — асинхронно, без сигнала в этом
+    возврате. Отобрать бронь у реального держателя этот флаг не пытается —
+    сознательно, чтобы не оборвать чужой активный процесс на стенде.
     """
     test = await test_definition_repo.get_by_id(db, test_id, for_update=True)
     if test is None:
@@ -257,6 +267,12 @@ async def _ensure_stand_free_for_launch(
     Любой другой caller с `force=True` получает отдельный код ошибки, а не
     тихий откат к обычному STAND_BUSY — иначе выглядело бы так, будто force
     сам по себе не сработал по неизвестной причине.
+
+    Обход касается только этой проверки. Если к моменту настоящего захвата
+    (`_start_or_continue_cycle` → `acquire-for-service`) стенд всё ещё занят,
+    CAS в server_service откажет так же, как отказал бы без force — item
+    заведётся и тут же провалится в `FAILED`. Реального отбора брони у
+    текущего держателя здесь нет и не планируется этим флагом.
     """
     statuses = await server_client.get_servers_status_batch([stand.server_id])
     status = statuses.get(stand.server_id)

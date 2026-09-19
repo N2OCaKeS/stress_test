@@ -122,6 +122,22 @@ async def _load_stand_for_enqueue(db: AsyncSession, stand_id: str, *, for_update
     return stand
 
 
+def _check_test_stand_department_match(test, stand) -> None:
+    """Тест из чужого отдела не может уехать в очередь стенда другого отдела.
+
+    Платформенные тесты (`department_id is None`) не привязаны ни к какому
+    отделу — им это правило не писано. Вызывающие (`public_queue.launch/retry`,
+    `retry_failed`) уже держат этот же инвариант на своей стороне, но
+    полагаться только на них рискованно — следующий новый launch-путь может
+    забыть его скопировать. Проверка здесь дублирует их намеренно.
+    """
+    if test.department_id and test.department_id != stand.department_id:
+        raise AuthorizationError(
+            error_code="PERMISSION_DENIED",
+            message="Тест принадлежит другому отделу",
+        )
+
+
 async def enqueue(
     db: AsyncSession,
     identity: Identity,
@@ -214,6 +230,7 @@ async def enqueue(
             )
 
     stand = await _load_stand_for_enqueue(db, resolved_stand_id)
+    _check_test_stand_department_match(test, stand)
 
     ctx = dict(launch_context or {})
     missing = [key for key in _REQUIRED_LAUNCH_CONTEXT_KEYS if not ctx.get(key)]
@@ -235,6 +252,7 @@ async def enqueue(
     # ровно на то время, что нужно для атомарного "было ли пусто" + insert.
     test = await _load_test_for_enqueue(db, test_id, debug_mode=debug_mode, for_update=True)
     stand = await _load_stand_for_enqueue(db, resolved_stand_id, for_update=True)
+    _check_test_stand_department_match(test, stand)
     was_empty = await repo.count_active_for_stand(db, stand.id) == 0
     position = await repo.next_position_for_stand(db, stand.id)
 

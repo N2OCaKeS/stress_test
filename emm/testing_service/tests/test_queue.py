@@ -199,7 +199,7 @@ async def _create_stand(
 async def _create_test_def(
     client, admin_token, pinned_stand_id: str | None, *,
     with_sensitive_arg: bool = False, mode: str = "orel", starter_suffix: str | None = None,
-    timeout_seconds: int | None = None,
+    timeout_seconds: int | None = None, department_id: str | None = None,
 ) -> str:
     payload = {
         "code": f"queue.test.{uuid.uuid4().hex[:8]}",
@@ -213,6 +213,8 @@ async def _create_test_def(
         payload["starter_suffix"] = starter_suffix
     if timeout_seconds is not None:
         payload["timeout_seconds"] = timeout_seconds
+    if department_id is not None:
+        payload["department_id"] = department_id
     resp = await client.post(TESTS_BASE, headers=_hdr(admin_token), json=payload)
     assert resp.status_code == 201, resp.text
     test_id = resp.json()["id"]
@@ -372,6 +374,22 @@ class TestEnqueue:
         async with AsyncSessionLocal() as db:
             with pytest.raises(DomainValidationError):
                 await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+    async def test_cross_department_test_and_stand_rejected_inside_enqueue(
+        self, client, admin_token, mock_server_service,
+    ):
+        """Инвариант «тест и стенд одного отдела» держится и внутри самого
+        `enqueue()`, не только у вызывающих (`public_queue.launch/retry`) —
+        так следующий новый launch-путь не сможет случайно его обойти."""
+        mock_server_service(department_id="dep_b")
+        stand_b_id, _ = await _create_stand(client, admin_token, department_id="dep_b")
+        test_id = await _create_test_def(client, admin_token, stand_b_id, department_id="dep_a")
+
+        async with AsyncSessionLocal() as db:
+            with pytest.raises(AuthorizationError) as excinfo:
+                await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert excinfo.value.error_code == "PERMISSION_DENIED"
 
     async def test_acquire_failure_creates_retry_that_recovers(
         self, client, admin_token, mock_server_service, recorded_calls,

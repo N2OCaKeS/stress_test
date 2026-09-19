@@ -219,6 +219,27 @@ async def _derive_stp_entries(
     return specs, candidate_stands
 
 
+async def _require_stands_own_department(db: AsyncSession, identity: Identity, stand_ids: list[str]) -> None:
+    """Каждый стенд явного пула кампании обязан принадлежать отделу вызывающего.
+
+    Явный `test_run_stands` — данные тела запроса, не выведенные из СТП
+    отдела (тот путь стенды не выбирает вовсе) — их нужно сверить так же, как
+    `public_queue.py::authorize()` сверяет одиночный запуск: ролевой
+    `require_action` на `test_run` в своём отделе ничего не говорит о том,
+    чьи стенды перечислены в теле.
+    """
+    for stand_id in dict.fromkeys(stand_ids):
+        stand = await test_stand_repo.get_by_id(db, stand_id)
+        if stand is None:
+            raise NotFoundError(
+                error_code="TEST_STAND_NOT_FOUND",
+                message=f"Стенд {stand_id} не найден",
+            )
+        await permissions.require_department_action(
+            db, identity, stand.department_id, EntityType.TEST_RUN, Action.CREATE,
+        )
+
+
 def _replay_result(run: TestRun, entries: list[TestRunEntry]) -> tuple[TestRun, list[str], list[TestRunPartialError]]:
     populated_stands = {entry.stand_id for entry in entries}
     stands_without_tests = [stand_id for stand_id in run.test_run_stands if stand_id not in populated_stands]
@@ -300,6 +321,8 @@ async def create_test_run(
             error_code="TEST_RUN_FULL_REQUIRES_STP_DERIVED",
             message="full=True недопустим вместе с явным test_run_stands",
         )
+    if requested_stands:
+        await _require_stands_own_department(db, identity, requested_stands)
 
     fingerprint = None
     if request_id:
@@ -490,6 +513,8 @@ async def preview_test_run(
             error_code="TEST_RUN_FULL_REQUIRES_STP_DERIVED",
             message="full=True недопустим вместе с явным test_run_stands",
         )
+    if requested_stands:
+        await _require_stands_own_department(db, identity, requested_stands)
 
     if requested_stands:
         kernels = await _resolve_kernels(os_version_id, kernel)

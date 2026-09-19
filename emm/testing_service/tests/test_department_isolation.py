@@ -511,6 +511,92 @@ class TestCrossDepartmentTestStandWrite:
         assert deleted.status_code == 200, deleted.text
 
 
+class TestCrossDepartmentTestRunCreate:
+    """Явный `test_run_stands` в теле `POST /test-runs`(`/preview`) обязан
+    принадлежать отделу вызывающего — ролевой `require_action` на `test_run`
+    в своём отделе сам по себе этого не гарантирует."""
+
+    async def test_cannot_create_on_foreign_stand(
+        self, client, admin_token, dept_b_admin, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        resp = await client.post(
+            f"{API}/test-runs", headers=_hdr(dept_b_admin),
+            json={"os_version_id": "osv_1.8.5", "kernel": "6.1.0", "test_run_stands": [stand_id]},
+        )
+        assert resp.status_code == 403, resp.text
+
+    async def test_cannot_create_debug_run_on_foreign_stand(
+        self, client, admin_token, dept_b_admin, mock_server_service,
+    ):
+        # debug=True снимает readiness/СТП-гейт — department-проверка тем важнее.
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        resp = await client.post(
+            f"{API}/test-runs", headers=_hdr(dept_b_admin),
+            json={
+                "os_version_id": "osv_1.8.5", "kernel": "6.1.0",
+                "test_run_stands": [stand_id], "debug": True,
+            },
+        )
+        assert resp.status_code == 403, resp.text
+
+    async def test_cannot_preview_foreign_stand(
+        self, client, admin_token, dept_b_admin, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        resp = await client.post(
+            f"{API}/test-runs/preview", headers=_hdr(dept_b_admin),
+            json={"os_version_id": "osv_1.8.5", "kernel": "6.1.0", "test_run_stands": [stand_id]},
+        )
+        assert resp.status_code == 403, resp.text
+
+    async def test_mixed_own_and_foreign_stands_denied(
+        self, client, admin_token, dept_b_admin, mock_server_service,
+    ):
+        # Один свой + один чужой стенд в одном запросе — отказ на первом же чужом,
+        # не тихий частичный успех.
+        mock_server_service()
+        own_stand_id, _ = await _create_stand(client, dept_b_admin, department_id=DEP_B)
+        foreign_stand_id, _ = await _create_stand(client, admin_token)
+        resp = await client.post(
+            f"{API}/test-runs", headers=_hdr(dept_b_admin),
+            json={
+                "os_version_id": "osv_1.8.5", "kernel": "6.1.0",
+                "test_run_stands": [own_stand_id, foreign_stand_id],
+            },
+        )
+        assert resp.status_code == 403, resp.text
+
+    async def test_own_department_test_run_still_works(
+        self, client, admin_token, mock_server_service, configure_internal_keys,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        resp = await client.post(
+            f"{API}/test-runs", headers=_hdr(admin_token),
+            json={"os_version_id": "osv_1.8.5", "kernel": "6.1.0", "test_run_stands": [stand_id]},
+        )
+        assert resp.status_code == 201, resp.text
+
+
+class TestCrossDepartmentStpGenerate:
+    async def test_cannot_generate_for_foreign_department(
+        self, client, admin_token, dept_b_admin,
+    ):
+        resp = await client.post(
+            f"{API}/stp/generate", headers=_hdr(dept_b_admin),
+            json={
+                "os_version_id": "1.8.5.46", "mode": "orel", "kernel": "6.1.0",
+                "scope": "full", "department_id": "dep_a",
+            },
+        )
+        assert resp.status_code == 403, resp.text
+
+
 # ── Платформенные каталоги: изоляцию НЕ накручивали ──────────────────────────
 
 

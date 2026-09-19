@@ -446,15 +446,22 @@ async def generate_stp_runs(
     вновь созданные, так и уже существующие (реконциленные) прогоны, `errors`
     — список `{"stand_id", "error_code", "message"}` частичных провалов;
     стенды без единого пригодного тест-кейса молча пропускаются.
+
+    RBAC — `require_department_action` на `(stp_test_run, *, create)`, тем же
+    приёмом, что `stp_matrix.py::publish_stp_matrix`: `department_id` тут
+    параметр запроса, а не только `identity.department_id`, cross-department
+    вызов структурно невозможен.
     """
     try:
-        await permissions.require_action(db, identity, EntityType.STP_TEST_RUN, Action.CREATE)
+        await permissions.require_department_action(
+            db, identity, department_id, EntityType.STP_TEST_RUN, Action.CREATE,
+        )
     except AuthorizationError:
         audit_service.emit(
             "stp_test_run.generate",
             target_type="stp_test_run",
             status="denied", allowed=False,
-            details={"reason": "permission_denied"},
+            details={"reason": "permission_denied", "department_id": department_id},
         )
         raise
 

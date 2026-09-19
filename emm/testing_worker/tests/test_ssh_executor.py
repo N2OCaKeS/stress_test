@@ -270,7 +270,7 @@ class TestExecuteRunFailureAfterConnect:
     async def test_run_timeout_after_successful_connect(self, monkeypatch):
         _patch_import_key(monkeypatch)
         process = _FakeProcess(["partial output"], hang_after=True)
-        conn = _FakeConnection(process=process)
+        conn = _FakeRunConnection(process=process)
         _patch_connect(monkeypatch, conn=conn)
 
         result = await ssh_executor.execute(
@@ -283,6 +283,24 @@ class TestExecuteRunFailureAfterConnect:
         assert result.error is not None and "command timed out" in result.error
         # То, что успело прийти до таймаута, не теряется.
         assert result.output == "partial output"
+        # Обрыв SSH-канала сам процесс на стенде не гасит — таймаут обязан
+        # явно его убить, симметрично ручному interrupt-пути.
+        assert conn.ran == [("sudo pkill -f starter.sh", False)]
+
+    async def test_kill_failure_on_timeout_does_not_hide_the_timeout_result(self, monkeypatch):
+        """`kill_remote_process` best-effort — его собственный провал не должен
+        помешать вернуть честный таймаут-исход вызывающему."""
+        _patch_import_key(monkeypatch)
+        process = _FakeProcess(["partial output"], hang_after=True)
+        conn = _FakeRunConnection(process=process, run_exc=asyncssh.ChannelOpenError(1, "no channel"))
+        _patch_connect(monkeypatch, conn=conn)
+
+        result = await ssh_executor.execute(
+            "10.0.0.1", "u", "keydata", ["cmd"], command_timeout=0.05,
+        )
+
+        assert result.succeeded is False
+        assert result.error is not None and "command timed out" in result.error
 
     async def test_wait_error_after_streaming(self, monkeypatch):
         _patch_import_key(monkeypatch)
@@ -392,8 +410,10 @@ class TestExecuteChunkStreaming:
 class _FakeRunConnection(_FakeConnection):
     """`_FakeConnection` + `run()` для `kill_remote_process`."""
 
-    def __init__(self, run_exc: Exception | None = None, exit_status: int = 0) -> None:
-        super().__init__()
+    def __init__(
+        self, run_exc: Exception | None = None, exit_status: int = 0, process: _FakeProcess | None = None,
+    ) -> None:
+        super().__init__(process=process)
         self._run_exc = run_exc
         self._exit_status = exit_status
         self.ran: list[tuple[str, bool]] = []

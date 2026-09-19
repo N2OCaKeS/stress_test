@@ -269,6 +269,11 @@ async def execute(
         except (asyncio.TimeoutError, TimeoutError) as exc:
             logger.warning("ssh_executor: command timed out for host=%s: %s", host, type(exc).__name__)
             run_error = f"SSH command timed out: {type(exc).__name__}"
+            # Обрыв этого SSH-канала сам по себе `sudo bash starter.sh` на
+            # стенде не гасит (см. module docstring про interrupt-путь) —
+            # без явного kill процесс просто продолжит жить после того, как
+            # мы уже отчитались провалом по таймауту.
+            await kill_remote_process(host, test_username, test_ssh_private_key, connect_timeout=connect_timeout)
         except asyncssh.Error as exc:
             logger.warning("ssh_executor: asyncssh error running command on host=%s: %s", host, type(exc).__name__)
             run_error = f"SSH run error: {type(exc).__name__}: {exc}"[:_ERROR_TAIL_MAX_LEN]

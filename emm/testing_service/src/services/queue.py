@@ -84,6 +84,44 @@ logger = logging.getLogger(__name__)
 _REQUIRED_LAUNCH_CONTEXT_KEYS = ("RC", "KERNEL", "MODE")
 
 
+async def _load_test_for_enqueue(
+    db: AsyncSession, test_id: str, *, debug_mode: bool, for_update: bool = False,
+):
+    test = await test_definition_repo.get_by_id(db, test_id, for_update=for_update)
+    if test is None:
+        raise NotFoundError(
+            error_code="TEST_DEFINITION_NOT_FOUND",
+            message="Test definition not found",
+        )
+    if not debug_mode and test.readiness != TestReadiness.READY:
+        raise DomainValidationError(
+            error_code="TEST_REQUIRES_DEBUG",
+            message="Обычный запуск доступен только для теста со статусом «Рабочий». Используйте debug.",
+            details={"test_id": test.id, "readiness": test.readiness},
+        )
+    return test
+
+
+async def _load_stand_for_enqueue(db: AsyncSession, stand_id: str, *, for_update: bool = False):
+    stand = await stand_repo.get_by_id(db, stand_id, for_update=for_update)
+    if stand is None:
+        raise NotFoundError(
+            error_code="TEST_STAND_NOT_FOUND",
+            message="Test stand not found",
+        )
+    if not stand.is_active:
+        raise ConflictError(
+            error_code="TEST_STAND_INACTIVE",
+            message="Test stand is not active",
+        )
+    if not stand.queue_enabled:
+        raise ConflictError(
+            error_code="TEST_STAND_QUEUE_DISABLED",
+            message="Test stand is not enrolled in the queue",
+        )
+    return stand
+
+
 async def enqueue(
     db: AsyncSession,
     identity: Identity,
@@ -136,20 +174,19 @@ async def enqueue(
     `FAILED` с `SERVER_ALREADY_BUSY` — асинхронно, без сигнала в этом
     возврате. Отобрать бронь у реального держателя этот флаг не пытается —
     сознательно, чтобы не оборвать чужой активный процесс на стенде.
-    """
-    test = await test_definition_repo.get_by_id(db, test_id, for_update=True)
-    if test is None:
-        raise NotFoundError(
-            error_code="TEST_DEFINITION_NOT_FOUND",
-            message="Test definition not found",
-        )
 
-    if not debug_mode and test.readiness != TestReadiness.READY:
-        raise DomainValidationError(
-            error_code="TEST_REQUIRES_DEBUG",
-            message="Обычный запуск доступен только для теста со статусом «Рабочий». Используйте debug.",
-            details={"test_id": test.id, "readiness": test.readiness},
-        )
+    Строки `test_definitions`/`test_stands` берутся под `FOR UPDATE` дважды:
+    сперва без лока — чтобы провалидировать вход и (если очередь стенда
+    пуста) сходить в `server_service` за busy-статусом, а лок взять только
+    непосредственно перед вставкой строки в очередь, когда сетевой вызов уже
+    позади. Так деградация/недоступность `server_service` не держит блокировки
+    на этих таблицах дольше, чем нужно. Между первым и вторым чтением что-то
+    могло измениться (тест сняли с готовности, стенд выключили) — вторая
+    валидация это переловит; сам busy-статус второй раз не перепроверяется —
+    это и так лишь дешёвая пред-проверка, не замена CAS-захвата в
+    `_start_or_continue_cycle`.
+    """
+    test = await _load_test_for_enqueue(db, test_id, debug_mode=debug_mode)
 
     entry = await db.get(TestRunEntry, test_run_entry_id) if test_run_entry_id else None
     if test_run_entry_id and (
@@ -176,22 +213,7 @@ async def enqueue(
                 details={"test_id": test_id},
             )
 
-    stand = await stand_repo.get_by_id(db, resolved_stand_id, for_update=True)
-    if stand is None:
-        raise NotFoundError(
-            error_code="TEST_STAND_NOT_FOUND",
-            message="Test stand not found",
-        )
-    if not stand.is_active:
-        raise ConflictError(
-            error_code="TEST_STAND_INACTIVE",
-            message="Test stand is not active",
-        )
-    if not stand.queue_enabled:
-        raise ConflictError(
-            error_code="TEST_STAND_QUEUE_DISABLED",
-            message="Test stand is not enrolled in the queue",
-        )
+    stand = await _load_stand_for_enqueue(db, resolved_stand_id)
 
     ctx = dict(launch_context or {})
     missing = [key for key in _REQUIRED_LAUNCH_CONTEXT_KEYS if not ctx.get(key)]
@@ -202,12 +224,18 @@ async def enqueue(
             details={"missing": missing},
         )
 
-    was_empty = await repo.count_active_for_stand(db, stand.id) == 0
-    if was_empty:
+    if await repo.count_active_for_stand(db, stand.id) == 0:
         # Только здесь очередь стенда реально пуста и мы вот-вот заново
         # возьмём его в цикл — если она уже активна, бронь наша с прошлого
-        # item'а, ничего нового не захватывается, проверять нечего.
+        # item'а, ничего нового не захватывается, проверять нечего. Ни test,
+        # ни stand ещё не залочены — сетевой вызов идёт без удержания строк.
         await _ensure_stand_free_for_launch(db, identity, stand, force=force)
+
+    # С этой точки берём FOR UPDATE непосредственно перед вставкой строки —
+    # ровно на то время, что нужно для атомарного "было ли пусто" + insert.
+    test = await _load_test_for_enqueue(db, test_id, debug_mode=debug_mode, for_update=True)
+    stand = await _load_stand_for_enqueue(db, resolved_stand_id, for_update=True)
+    was_empty = await repo.count_active_for_stand(db, stand.id) == 0
     position = await repo.next_position_for_stand(db, stand.id)
 
     data = {

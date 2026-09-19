@@ -67,7 +67,7 @@ from src.core.exceptions import (
 )
 from src.db.session import AsyncSessionLocal
 from src.dependencies import auth as auth_deps
-from src.services import audit_service, permissions, worker_client
+from src.services import audit_service, permissions, reservation, worker_client
 from src.services import prepare_for_test as pft_svc
 from src.services import server as server_svc
 from src.services import server_account as account_svc
@@ -234,6 +234,28 @@ async def server_console_ws(websocket: WebSocket, server_id: str) -> None:
                     },
                 )
                 await websocket.close(code=_WS_CLOSE_CONFLICT, reason="SERVER_BUSY")
+                return
+
+            # `testing_done` — тест уже закончился, но статус ещё ждёт
+            # подтверждения (`acknowledge_testing_done`); reservation.py
+            # трактует эту стадию как обычную бронь (владелец/админ проходят).
+            # Бронь тут всегда сервисная (`busy_user_id` пуст), поэтому
+            # владельца-человека не бывает — пропускаем только админа.
+            if (
+                server.busy_state == BusyState.TESTING_DONE
+                and server.busy_user_id != identity.user_id
+                and not reservation.is_server_admin(identity, server)
+            ):
+                audit_service.emit(
+                    "ssh_console.session_open", target_id=server_id, target_type="server",
+                    status="denied", allowed=False,
+                    details={
+                        "reason": "server_testing_done",
+                        "department_id": server.department_id,
+                        "account_id": account_id,
+                    },
+                )
+                await websocket.close(code=_WS_CLOSE_CONFLICT, reason="SERVER_TESTING_DONE")
                 return
 
             # Account-гейт консоли: серверный `(server, console)` ИЛИ на учётке

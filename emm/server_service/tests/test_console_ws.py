@@ -11,6 +11,8 @@ prepare НЕ требуется. Покрытие:
   * decommissioned → close 4409 SERVER_DECOMMISSIONED;
   * занят другим пользователем → close 4409 SERVER_BUSY + denied-аудит;
   * занят самим caller'ом / свободен → бронь-гейт пропускает;
+  * `testing_done` (тест закончился, статус не подтверждён) → close 4409
+    SERVER_TESTING_DONE для обычного пользователя, department_admin проходит;
   * managed=False сервер → консоль работает (prepare не нужен);
   * happy-path bridge: креды аккаунта стэшатся в Redis, после `ready` ввод
     клиента публикуется в `console:in:<sid>`, вывод из `console:out:<sid>`
@@ -41,7 +43,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.api.v1.endpoints import console
-from src.core.constants import BusyState, ServerStatus
+from src.core.constants import BusyState, PlatformRole, ServerStatus
 from src.core.exceptions import AuthorizationError, ConflictError, NotFoundError
 from starlette.websockets import WebSocketState
 
@@ -154,13 +156,20 @@ def _make_server(
     )
 
 
-def _identity():
-    return SimpleNamespace(
+def _identity(*, platform_role=None, service_roles=None):
+    """`platform_role`/`service_roles` — только для `reservation.is_server_admin`
+    (гейт `testing_done`); дефолт — обычный не-админ, как и раньше."""
+    roles = service_roles or {}
+    ns = SimpleNamespace(
         user_id="usr_1",
         department_id="dep_a",
         is_banned=False,
         allowed_services=["server_service"],
+        platform_role=platform_role,
+        service_roles=roles,
     )
+    ns.roles_for_service = lambda name: roles.get(name, [])
+    return ns
 
 
 @pytest.fixture(autouse=True)
@@ -403,6 +412,55 @@ async def test_busy_by_self_passes_gate(monkeypatch, _patch_console):
     ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
     await console.server_console_ws(ws, "srv_console1")
     assert ws.closed_reason != "SERVER_BUSY"
+    assert ws.closed_code == console._WS_CLOSE_FORBIDDEN
+
+
+@pytest.mark.asyncio
+async def test_testing_done_closes_conflict_for_stranger(monkeypatch, _patch_console):
+    """`testing_done` — тест уже закончился, но статус ждёт подтверждения.
+
+    Держатель всегда сервисный (`busy_user_id` пуст) — обычный пользователь
+    без прав админа консоль под произвольной учёткой открыть не должен,
+    ровно как для `busy`."""
+    async def load(*a, **k):
+        return _make_server(busy_state=BusyState.TESTING_DONE, busy_user_id=None)
+
+    monkeypatch.setattr(console.server_svc, "load_visible_server", load)
+    ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
+    await console.server_console_ws(ws, "srv_console1")
+    assert ws.closed_code == console._WS_CLOSE_CONFLICT
+    assert ws.closed_reason == "SERVER_TESTING_DONE"
+    assert not ws.accepted
+    assert any(
+        e["action"] == "ssh_console.session_open"
+        and e["status"] == "denied"
+        and e.get("details", {}).get("reason") == "server_testing_done"
+        for e in _patch_console
+    )
+
+
+@pytest.mark.asyncio
+async def test_testing_done_passes_gate_for_admin(monkeypatch, _patch_console):
+    """Department_admin проходит `testing_done`, как и любую обычную бронь."""
+    async def authenticate_as_admin(token):
+        return _identity(platform_role=PlatformRole.DEPARTMENT_ADMIN)
+
+    async def load(*a, **k):
+        return _make_server(busy_state=BusyState.TESTING_DONE, busy_user_id=None)
+
+    async def resolve_denied(*a, **k):
+        raise AuthorizationError(error_code="PERMISSION_DENIED", message="no")
+
+    monkeypatch.setattr(console, "_authenticate", authenticate_as_admin)
+    monkeypatch.setattr(console.server_svc, "load_visible_server", load)
+    monkeypatch.setattr(
+        console.account_svc, "resolve_console_credentials", resolve_denied,
+    )
+    ws = FakeWebSocket(headers={"Authorization": "Bearer tok"})
+    await console.server_console_ws(ws, "srv_console1")
+    # Гейт testing_done пройден — дальше упираемся в резолв кред (замочен
+    # отказом), а не в SERVER_TESTING_DONE.
+    assert ws.closed_reason != "SERVER_TESTING_DONE"
     assert ws.closed_code == console._WS_CLOSE_FORBIDDEN
 
 

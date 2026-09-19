@@ -724,11 +724,14 @@ _STARTER_SCRIPT_PATH = "/home/u/starter.sh"
 
 
 async def _resolve_git_token(db: AsyncSession, department_id: str) -> str:
-    """git-токен для `starter.sh` (клонирует ветку монорепо на стенде под `$2`).
+    """git-токен для `starter.sh` (клонирует ветку монорепо на стенде).
 
-    `starter.sh` подставляет `$2` целиком:
-    `git -c http.extraHeader="Authorization: $2" clone ...` — значит секрет
-    обязан быть готовым значением заголовка, СО СХЕМОЙ (`Bearer <PAT>`).
+    `starter.sh` подставляет содержимое файла `$2` целиком:
+    `git -c http.extraHeader="Authorization: $(cat "/home/u/$2")" clone ...`
+    — значит секрет обязан быть готовым значением заголовка, СО СХЕМОЙ
+    (`Bearer <PAT>`). На стенд он едет отдельным SFTP-файлом (`command`
+    несёт только имя файла, см. `claim_next`), не аргументом командной
+    строки — argv видно в `ps` весь срок теста.
     Bitbucket REST в HR-отчёте (`services/bitbucket_client.py`) использует тот
     же секрет иначе — как пароль basic-auth, где схема в значении недопустима.
     Форматы несовместимы, поэтому у git-заголовка своя ссылка на credential
@@ -853,14 +856,18 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         return None
 
     dates_filename = f"dates_{item.id}.conf"
+    # Токен больше не идёт вторым позиционным аргументом — argv процесса
+    # видно в `ps`/`/proc/<pid>/cmdline` весь срок теста (до 12ч по
+    # дефолту), а SSH-канал живёт ровно столько же. Вместо значения кладём
+    # имя файла, который worker доставит по SFTP до запуска (тот же приём,
+    # что уже применён к `dates_content`); сам токен едет отдельным полем
+    # `git_token_content` ниже.
+    git_token_filename = f"git_token_{item.id}.conf"
     command = [
         "sudo", "bash", _STARTER_SCRIPT_PATH,
-        test.category or "", git_token, dates_filename, ctx.get("RC", ""), test.starter_suffix or "",
+        test.category or "", git_token_filename, dates_filename, ctx.get("RC", ""), test.starter_suffix or "",
     ]
-    command_masked = [
-        "sudo", "bash", _STARTER_SCRIPT_PATH,
-        test.category or "", "***", dates_filename, ctx.get("RC", ""), test.starter_suffix or "",
-    ]
+    command_masked = list(command)
 
     try:
         connection = await server_client.get_connection_info(stand.server_id)
@@ -887,6 +894,8 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         test_ssh_private_key=creds.get("test_ssh_private_key"),
         command=command,
         command_masked=command_masked,
+        git_token_content=git_token,
+        git_token_filename=git_token_filename,
         dates_content=dates_content,
         dates_content_masked=dates_content_masked,
         dates_filename=dates_filename,

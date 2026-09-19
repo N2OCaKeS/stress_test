@@ -881,14 +881,15 @@ class TestClaim:
         assert payload["host"] == "10.9.9.9"
         assert payload["test_username"] == "u"
         assert payload["test_password"] == "s3cr3t"
+        git_token_filename = f"git_token_{item.id}.conf"
         assert payload["command"] == [
-            "sudo", "bash", "/home/u/starter.sh", "", "git-token-value",
+            "sudo", "bash", "/home/u/starter.sh", "", git_token_filename,
             f"dates_{item.id}.conf", "1.8.5", "",
         ]
-        assert payload["command_masked"] == [
-            "sudo", "bash", "/home/u/starter.sh", "", "***",
-            f"dates_{item.id}.conf", "1.8.5", "",
-        ]
+        # Секрета в argv больше нет — command_masked с ним совпадает.
+        assert payload["command_masked"] == payload["command"]
+        assert payload["git_token_content"] == "git-token-value"
+        assert payload["git_token_filename"] == git_token_filename
         assert payload["dates_content"] == "--run s3cr3t"
         assert payload["dates_content_masked"] == "--run ***"
         assert payload["dates_filename"] == f"dates_{item.id}.conf"
@@ -1071,8 +1072,10 @@ class TestGitCredentialResolution:
         )
         # Заголовок берётся из своей записи, а не из bitbucket-пары.
         assert seen == ["cred_git_header"]
-        assert payload["command"][4] == "Bearer PAT123"
-        assert payload["command_masked"][4] == "***"
+        # В argv токена больше нет — только имя файла, куда его положат по SFTP.
+        assert payload["command"][4] == payload["git_token_filename"]
+        assert payload["command_masked"][4] == payload["git_token_filename"]
+        assert payload["git_token_content"] == "Bearer PAT123"
 
     async def test_falls_back_to_bitbucket_credential(
         self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token, monkeypatch,
@@ -1091,7 +1094,8 @@ class TestGitCredentialResolution:
             git_credential_id=None, bitbucket_credential_id="cred_bitbucket_basic",
         )
         assert seen == ["cred_bitbucket_basic"]
-        assert payload["command"][4] == "legacy-token"
+        assert payload["command"][4] == payload["git_token_filename"]
+        assert payload["git_token_content"] == "legacy-token"
 
     async def test_neither_configured_fails_item(
         self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,

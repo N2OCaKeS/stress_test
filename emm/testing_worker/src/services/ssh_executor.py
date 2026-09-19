@@ -64,6 +64,24 @@ def _tail(text: str, max_len: int) -> str:
     return text[-max_len:]
 
 
+def _redact(text: str, secrets: list[str] | None) -> str:
+    """Вырезать из `text` известные секреты перед тем, как класть его в `error`.
+
+    Не трогает сам `output` (тот идёт в `log-chunk`/`log-segment` как есть —
+    это отдельный, уже принятый риск), только сводку, которая уезжает в
+    `queue_item.error` и оттуда в аудит-событие. Если тест падает сразу
+    после клонирования, хвост вывода ещё несёт трассировку `set -x` с
+    токеном в открытом виде — этот путь не должен его туда протаскивать
+    второй раз.
+    """
+    if not secrets:
+        return text
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "***")
+    return text
+
+
 @dataclass
 class ExecutionResult:
     """Итог одной попытки исполнения — от коннекта до завершения процесса.
@@ -166,6 +184,7 @@ async def execute(
     on_output_chunk: OnOutputChunk | None = None,
     chunk_max_bytes: int = DEFAULT_CHUNK_MAX_BYTES,
     chunk_interval_seconds: float = DEFAULT_CHUNK_INTERVAL_SECONDS,
+    redact_secrets: list[str] | None = None,
 ) -> ExecutionResult:
     """Подключиться к `host` по ключу и потоково исполнить `command`.
 
@@ -173,6 +192,10 @@ async def execute(
     `testing_service` ключ приходит заполненным всегда, а протокольный
     провал ключа фиксируется как обычный провал, не повод менять способ
     аутентификации на лету.
+
+    `redact_secrets` — значения, которые не должны попасть в `error` (то,
+    что уходит в `queue_item.error` и дальше в аудит). Сам `output` не
+    трогаем — им пользуется живой лог, это отдельная история.
     """
     try:
         client_key = asyncssh.import_private_key(test_ssh_private_key)
@@ -269,7 +292,8 @@ async def execute(
             output=output, started_at=started_at, finished_at=finished_at,
         )
 
-    error = _tail(output.strip(), _ERROR_TAIL_MAX_LEN) or f"command exited with status {exit_status}"
+    error = _redact(_tail(output.strip(), _ERROR_TAIL_MAX_LEN), redact_secrets)
+    error = error or f"command exited with status {exit_status}"
     return ExecutionResult(
         connected=True, succeeded=False, exit_code=exit_status, error=error,
         output=output, started_at=started_at, finished_at=finished_at,

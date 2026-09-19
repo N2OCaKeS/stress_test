@@ -49,17 +49,31 @@ class QueueClaimItem(BaseModel):
     command: list[str] = Field(
         description=(
             "Единственный SSH-вызов: `sudo bash /home/u/starter.sh <category> "
-            "<git_token> <dates_filename> <RC> <starter_suffix>`. `starter.sh` "
-            "сам клонирует ветку и гоняет `run.py`/конечный скрипт — вне "
-            "периметра testing_service."
+            "<git_token_filename> <dates_filename> <RC> <starter_suffix>`. "
+            "Второй слот — имя файла на стенде с git-токеном (см. "
+            "`git_token_content`), не сам токен: argv процесса виден в "
+            "`ps`/`/proc/<pid>/cmdline` весь срок исполнения, секрет доставляется "
+            "по SFTP отдельным файлом, тем же приёмом, что и `dates_content`. "
+            "`starter.sh` сам клонирует ветку и гоняет `run.py`/конечный "
+            "скрипт — вне периметра testing_service."
         ),
     )
     command_masked: list[str] = Field(
         description=(
-            "Та же команда, но `git_token` заменён на `***`. Единственная "
-            "версия, которую воркеру можно класть в лог — сырых кредов в "
-            "командной строке лога быть не должно."
+            "Та же команда — в argv больше нет секретов (см. `command`), поле "
+            "оставлено ради текущих потребителей command_text_masked в логе/UI."
         ),
+    )
+    git_token_content: str = Field(
+        description=(
+            "Готовое значение заголовка `Authorization` для git-клонирования. "
+            "Воркер кладёт его по SFTP на стенд (`/home/u/<git_token_filename>`) "
+            "ДО вызова `command` — сюда, а не в argv, чтобы токен не был виден "
+            "в `ps` весь срок теста."
+        ),
+    )
+    git_token_filename: str = Field(
+        description="Имя файла на стенде с git-токеном (`git_token_<queue_item_id>.conf`).",
     )
     dates_content: str = Field(
         description=(

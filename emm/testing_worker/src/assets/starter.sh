@@ -53,9 +53,12 @@ dpkg -s sysstat &> /dev/null || sudo apt-get install sysstat -y
 #Клонируем репозиторий, удаляем старый, если есть
 #--depth 1 добавлен поверх легаси-версии — снимает загрузку всей истории
 #ветки на каждый прогон, стенду нужен только текущий снимок кода
+#$2 — не сам токен, а имя файла в /home/u с его содержимым, чтобы токен не
+#торчал в argv процесса (ps/proc) на весь срок теста
 cd /home/u/git
 sudo rm -r /home/u/git/stress_test
-git -c http.extraHeader="Authorization: $2" clone --branch "$1" --single-branch --depth 1 https://git.astralinux.ru/scm/qa/stress_test.git
+git -c http.extraHeader="Authorization: $(cat "/home/u/$2")" clone --branch "$1" --single-branch --depth 1 https://git.astralinux.ru/scm/qa/stress_test.git
+rm -f "/home/u/$2"
 cd "$git_directory"
 cd $1
 

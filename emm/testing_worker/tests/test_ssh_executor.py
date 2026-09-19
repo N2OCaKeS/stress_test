@@ -164,6 +164,44 @@ class TestExecuteCommandFailure:
         assert result.output == long_output
 
 
+class TestExecuteRedactsSecrets:
+    """`redact_secrets` — секрет не должен уйти в `error` (а значит, в
+    `queue_item.error`/аудит), даже если он засветился в выводе команды."""
+
+    async def test_secret_is_redacted_from_error_but_not_from_output(self, monkeypatch):
+        _patch_import_key(monkeypatch)
+        leaked = (
+            '+ git -c http.extraHeader="Authorization: Bearer super-secret-token" clone ...\n'
+            "boom: clone failed"
+        )
+        process = _FakeProcess([leaked], exit_status=1)
+        conn = _FakeConnection(process=process)
+        _patch_connect(monkeypatch, conn=conn)
+
+        result = await ssh_executor.execute(
+            "10.0.0.1", "u", "keydata", ["do-thing"],
+            redact_secrets=["Bearer super-secret-token"],
+        )
+
+        assert result.succeeded is False
+        assert "Bearer super-secret-token" not in result.error
+        assert "***" in result.error
+        # `output` — отдельный, уже принятый канал (живой лог), не трогаем его.
+        assert "Bearer super-secret-token" in result.output
+
+    async def test_no_secrets_leaves_error_untouched(self, monkeypatch):
+        _patch_import_key(monkeypatch)
+        process = _FakeProcess(["boom: something broke"], exit_status=1)
+        conn = _FakeConnection(process=process)
+        _patch_connect(monkeypatch, conn=conn)
+
+        result = await ssh_executor.execute(
+            "10.0.0.1", "u", "keydata", ["cmd"], redact_secrets=None,
+        )
+
+        assert result.error == "boom: something broke"
+
+
 class TestExecuteConnectFailure:
     async def test_invalid_private_key(self, monkeypatch):
         _patch_import_key(monkeypatch, import_exc=asyncssh.KeyImportError("bad key"))

@@ -161,6 +161,43 @@ async def _write_starter_script(item: dict, settings) -> str | None:
     return None
 
 
+async def _write_git_token_file(item: dict, settings) -> str | None:
+    """SFTP-запись git-токена на стенд отдельным файлом — не argv.
+
+    Раньше токен ехал вторым позиционным аргументом `starter.sh` и оставался
+    виден в `ps`/`/proc/<pid>/cmdline` весь срок теста (до
+    `command_timeout_seconds`, 12 часов по дефолту). Тот же приём, что уже
+    есть у `dates.conf`: файл на стенде, а `starter.sh` подставляет его
+    содержимое в заголовок `Authorization` через `cat` и сам стирает файл
+    сразу после клонирования.
+
+    Контракт возврата — как у `_write_dates_file`. Отсутствие обоих полей
+    (старый/тестовый `item` без них) — не провал, просто нечего писать.
+    """
+    git_token_filename = item.get("git_token_filename")
+    git_token_content = item.get("git_token_content")
+    if not git_token_filename or git_token_content is None:
+        return None
+
+    remote_path = f"/home/u/{git_token_filename}"
+    try:
+        await ssh_executor.write_remote_file(
+            item["host"],
+            item["test_username"],
+            item["test_ssh_private_key"],
+            remote_path,
+            git_token_content,
+            connect_timeout=settings.ssh_connect_timeout_seconds,
+        )
+    except _WRITE_ERRORS as exc:
+        logger.warning(
+            "queue item %s: failed to write %s over SFTP: %s",
+            item.get("queue_item_id"), remote_path, type(exc).__name__,
+        )
+        return f"SFTP write of {git_token_filename} failed: {type(exc).__name__}"
+    return None
+
+
 async def _write_dates_file(item: dict, settings) -> str | None:
     """SFTP-запись `dates.conf` на стенд перед запуском `starter.sh`.
 
@@ -312,6 +349,7 @@ async def _execute_with_interrupt_watch(item: dict, settings, on_output_chunk):
     `None`, либо `None` и действие, по которому исполнение было оборвано.
     """
     queue_item_id = item["queue_item_id"]
+    git_token_content = item.get("git_token_content")
     execute_task = asyncio.ensure_future(ssh_executor.execute(
         item["host"],
         item["test_username"],
@@ -320,6 +358,7 @@ async def _execute_with_interrupt_watch(item: dict, settings, on_output_chunk):
         connect_timeout=settings.ssh_connect_timeout_seconds,
         command_timeout=item.get("command_timeout_seconds") or settings.ssh_command_timeout_seconds,
         on_output_chunk=on_output_chunk,
+        redact_secrets=[git_token_content] if git_token_content else None,
     ))
     stop_watch = asyncio.Event()
     watch_task = asyncio.ensure_future(_watch_for_interrupt(
@@ -426,6 +465,8 @@ async def _run_one_item(item: dict) -> None:
     # него ветка в starter.sh недостижима) и command.txt (иначе после
     # прогона на стенде не остаётся вообще никакого следа от него).
     write_error = await _write_starter_script(item, settings)
+    if write_error is None:
+        write_error = await _write_git_token_file(item, settings)
     if write_error is None:
         write_error = await _write_dates_file(item, settings)
     if write_error is None and item.get("prepare_only"):

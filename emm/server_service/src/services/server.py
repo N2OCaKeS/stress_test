@@ -1046,12 +1046,35 @@ async def release_server(
             ),
             details={"busy_note": locked.busy_note},
         )
+    if locked.busy_state == BusyState.TESTING:
+        # Тест реально выполняется — снять бронь может только держащий сервис
+        # своим internal-каналом (`release-for-service*`), это human-facing
+        # DELETE его не заменяет. Никакого admin-обхода, симметрично тому, как
+        # `is_reserved_for_other` трактует `testing` для деструктивных операций.
+        audit_service.emit(
+            "server.release",
+            target_id=server_id, target_type="server",
+            status="denied", allowed=False,
+            details={"reason": "testing_in_progress", "department_id": locked.department_id},
+        )
+        raise ConflictError(
+            error_code="SERVER_TESTING_IN_PROGRESS",
+            message=(
+                "Server is running a test; only the holding service can "
+                "release it, through its internal channel"
+            ),
+            details={"busy_note": locked.busy_note},
+        )
+    if locked.busy_state == BusyState.ACS:
+        # Тот же гейт, что и для остальных операций над сервером под
+        # ACS-снимком/восстановлением — снять бронь может только админ.
+        reservation.ensure_not_acs_locked(identity, locked)
     obj = locked
     previous_user_id = obj.busy_user_id
-    # Атомарный release из любого non-free состояния (busy / testing). Свежий
-    # SELECT мог увидеть state='busy', но к моменту UPDATE параллельный
-    # release уже мог его снять — rowcount==0 в этом случае значит «кто-то
-    # успел раньше», тоже ошибка (409 SERVER_NOT_BUSY).
+    # Атомарный release из любого non-free состояния (busy / acs — testing уже
+    # отбит выше). Свежий SELECT мог увидеть state='busy', но к моменту UPDATE
+    # параллельный release уже мог его снять — rowcount==0 в этом случае
+    # значит «кто-то успел раньше», тоже ошибка (409 SERVER_NOT_BUSY).
     result = await db.execute(
         sa_update(Server)
         .where(Server.id == server_id, Server.busy_state != BusyState.FREE)

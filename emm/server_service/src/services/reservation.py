@@ -16,9 +16,12 @@ internal-каналом (`release-for-service`/`service-status`), не чере�
 гейт. `acs` в гейт не входит: у него отдельный, более строгий
 `ensure_not_acs_locked` — там даже владелец прежней брони не проходит.
 
-Read-операции (view/list/get, чтение пакетов, console-read, inventory) и сам
-release брони гейт не трогает — владелец/админ должны мочь освободить занятый
-сервер.
+Read-операции (view/list/get, чтение пакетов, console-read, inventory) и
+release обычной `busy`-брони гейт не трогает — владелец/админ должны мочь
+освободить занятый сервер. Исключение — `testing`/`acs`: `server.release_server`
+(`DELETE /servers/{id}/busy`) явно отбивает обе стадии сам, не полагаясь на
+этот модуль, теми же правилами («testing» не снять никому из людей, «acs» —
+только админу через `ensure_not_acs_locked`).
 
 «Админ» определяется так же, как для recreate_login
 (`server_account._is_account_recreate_admin`): platform `department_admin`
@@ -76,9 +79,13 @@ def is_reserved_for_other(identity: IdentityContext, server: Server) -> bool:
     операцию или нет, без эмита аудита (например, при выборе ветки fan-out'а).
 
     Сервисная бронь (`busy_actor_type='service'`) сюда попадает наравне с
-    человеческой: `busy_user_id` у неё пуст (CHECK `ck_servers_busy_actor`),
-    поэтому владельцем не окажется никто и пройдёт только админ — кроме
-    `testing`, см. ниже.
+    человеческой: у неё нет владельца-человека, поэтому «это я, владелец»
+    не должно срабатывать вообще, независимо от значения `busy_user_id` —
+    проверяем `busy_actor_type` явно, а не полагаемся на то, что
+    `busy_user_id` у сервисной брони всегда пуст (это гарантирует CHECK
+    `ck_servers_busy_actor`, но сама функция от чужой БД-инварианты не
+    зависит). Для сервисной брони проходит только админ — кроме `testing`,
+    см. ниже.
 
     `testing` — исключение из общего правила «владелец или админ проходят»:
     пока идёт исполнение теста, админский обход не действует вообще, здесь
@@ -89,7 +96,10 @@ def is_reserved_for_other(identity: IdentityContext, server: Server) -> bool:
     """
     if server.busy_state not in _RESERVED_STATES:
         return False
-    if server.busy_user_id == identity.user_id:
+    if (
+        server.busy_actor_type != BusyActorType.SERVICE
+        and server.busy_user_id == identity.user_id
+    ):
         return False
     if server.busy_state == BusyState.TESTING:
         return True

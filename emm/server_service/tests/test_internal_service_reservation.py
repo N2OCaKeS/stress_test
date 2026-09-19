@@ -469,10 +469,17 @@ class TestServiceReservationBlocksUserOperations:
         assert resp.status_code == 409, resp.text
         assert resp.json()["error_code"] == "SERVER_ALREADY_BUSY"
 
-    async def test_human_release_can_unstick_service_reservation(
+    async def test_human_cannot_unstick_service_reservation(
         self, client, make_server, db, configure_service_keys, operator_token_a,
     ):
-        """Аварийный выход: носитель `busy_release` снимает зависшую бронь сервиса."""
+        """Никакой аварийный выход для людей: зависшую `testing`-бронь снимает
+        только сам держащий сервис через internal-канал (`release-for-service*`).
+
+        Раньше носитель `busy_release` мог форсировать `DELETE .../busy` и
+        стереть чужую сервисную бронь — это расходилось с докстрингом
+        `reservation.py` («прервать тест может только сам держащий сервис») и
+        оставляло `testing_service` с элементом очереди, который считает тест
+        всё ещё идущим, хотя сервер уже «free» для остальных."""
         srv = await make_server(department_id="dep_a")
         await db.flush()
         held = await client.post(
@@ -485,12 +492,12 @@ class TestServiceReservationBlocksUserOperations:
             f"/api/server/v1/servers/{srv.id}/busy",
             headers=_user_hdr(operator_token_a),
         )
-        assert resp.status_code == 200, resp.text
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error_code"] == "SERVER_TESTING_IN_PROGRESS"
 
         row = await _row(db, srv.id)
-        assert row.busy_state == BusyState.FREE
-        assert row.busy_actor_type == "user"
-        assert row.busy_service_name is None
+        assert row.busy_state == BusyState.TESTING
+        assert row.busy_actor_type == "service"
 
 
 class TestConnectionInfo:

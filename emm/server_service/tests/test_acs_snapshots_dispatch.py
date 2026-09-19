@@ -33,7 +33,7 @@ from ipaddress import IPv4Address
 import pytest
 from sqlalchemy import select
 
-from src.core.constants import BusyState, PlatformRole
+from src.core.constants import BusyActorType, BusyState, PlatformRole
 from src.core.exceptions import ConflictError, ServiceUnavailableError
 from src.models import Server
 from src.schemas.identity import IdentityContext
@@ -678,3 +678,45 @@ class TestEnsureNotAcsLockedUnit:
         )
         with pytest.raises(ConflictError):
             reservation.ensure_not_acs_locked(identity, srv)
+
+
+class TestIsReservedForOtherActorTypeUnit:
+    """`is_reserved_for_other` должен смотреть на `busy_actor_type` явно, а не
+    полагаться на то, что сервисная бронь всегда несёт пустой `busy_user_id`.
+
+    В реальной БД это гарантирует CHECK `ck_servers_busy_actor`, но сама
+    функция получает обычный ORM-объект и не должна тихо открывать «это я,
+    владелец» для человека, если совпадение `busy_user_id` возникло бы по
+    любой другой причине."""
+
+    def test_human_owner_of_busy_is_not_reserved_for_self(self):
+        """Регрессия: обычная человеческая бронь по-прежнему пропускает владельца."""
+        identity = _identity(user_id="usr_caller")
+        srv = _local_server(
+            busy_state=BusyState.BUSY,
+            busy_user_id="usr_caller",
+            busy_actor_type=BusyActorType.USER,
+        )
+        assert reservation.is_reserved_for_other(identity, srv) is False
+
+    def test_service_actor_with_coincidentally_matching_user_id_still_reserved(self):
+        """Сервисная бронь с `busy_user_id`, случайно совпавшим с caller'ом (в
+        обход обычного CHECK-инварианта), не должна трактоваться как «это я»."""
+        identity = _identity(user_id="usr_caller")
+        srv = _local_server(
+            busy_state=BusyState.BUSY,
+            busy_user_id="usr_caller",
+            busy_actor_type=BusyActorType.SERVICE,
+            busy_service_name="acs",
+        )
+        assert reservation.is_reserved_for_other(identity, srv) is True
+
+    def test_service_actor_testing_still_reserved_regardless_of_user_id(self):
+        identity = _identity(user_id="usr_caller")
+        srv = _local_server(
+            busy_state=BusyState.TESTING,
+            busy_user_id="usr_caller",
+            busy_actor_type=BusyActorType.SERVICE,
+            busy_service_name="testing_service",
+        )
+        assert reservation.is_reserved_for_other(identity, srv) is True

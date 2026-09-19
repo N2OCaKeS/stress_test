@@ -222,9 +222,9 @@ Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_ALREADY_BUS
 
 ### `DELETE /servers/{server_id}/busy`
 
-Auth: Bearer + `(server, *, busy_release)`.
+Auth: Bearer + `(server, *, busy_release)`. `testing` не снимается этим путём вообще — только держащий сервис через internal-канал (`release-for-service*`); `acs` снимает только админ (`reservation.ensure_not_acs_locked`).
 
-Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_NOT_BUSY` (409).
+Errors: `PERMISSION_DENIED` (403), `SERVER_NOT_FOUND` (404), `SERVER_NOT_BUSY` / `SERVER_UPDATING` / `SERVER_TESTING_IN_PROGRESS` / `SERVER_ACS_BUSY` (409).
 
 ### `POST /servers/{server_id}/acknowledge-testing-done`
 

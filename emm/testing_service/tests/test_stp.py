@@ -452,28 +452,28 @@ class TestDepartmentIntegrationSettings:
     async def test_guest_cannot_write(self, client, guest_token, dept_a):
         resp = await client.put(
             f"{DIS_BASE}/{dept_a}", headers=_hdr(guest_token),
-            json={"jira_base_url": "http://jira.example"},
+            json={"jira_base_url": "https://jira.example"},
         )
         assert resp.status_code == 403
 
     async def test_admin_upsert_roundtrip(self, client, admin_token, dept_a):
         put_resp = await client.put(
             f"{DIS_BASE}/{dept_a}", headers=_hdr(admin_token),
-            json={"credential_id": "cred_x", "jira_base_url": "http://jira.example"},
+            json={"credential_id": "cred_x", "jira_base_url": "https://jira.example"},
         )
         assert put_resp.status_code == 200, put_resp.text
         assert put_resp.json()["credential_id"] == "cred_x"
 
         get_resp = await client.get(f"{DIS_BASE}/{dept_a}", headers=_hdr(admin_token))
-        assert get_resp.json()["jira_base_url"] == "http://jira.example"
+        assert get_resp.json()["jira_base_url"] == "https://jira.example"
 
         patch_resp = await client.put(
             f"{DIS_BASE}/{dept_a}", headers=_hdr(admin_token),
-            json={"confluence_base_url": "http://confluence.example"},
+            json={"confluence_base_url": "https://confluence.example"},
         )
         assert patch_resp.status_code == 200
         assert patch_resp.json()["credential_id"] == "cred_x"
-        assert patch_resp.json()["confluence_base_url"] == "http://confluence.example"
+        assert patch_resp.json()["confluence_base_url"] == "https://confluence.example"
 
     async def test_confluence_credential_id_roundtrip(self, client, admin_token, dept_a):
         resp = await client.put(
@@ -508,6 +508,39 @@ class TestDepartmentIntegrationSettings:
         )
         assert resp.status_code == 404, resp.text
         assert resp.json()["error_code"] == "CREDENTIAL_NOT_FOUND"
+
+    @pytest.mark.parametrize("field", ["jira_base_url", "confluence_base_url", "bitbucket_base_url"])
+    @pytest.mark.parametrize(
+        "bad_url",
+        [
+            "http://jira.example",  # схема без https
+            "https://localhost/rest",
+            "https://127.0.0.1/rest",
+            "https://10.1.2.3/rest",
+            "https://internal.local/rest",
+            "https://svc.cluster.internal/rest",
+            "not-a-url",
+        ],
+    )
+    async def test_base_url_rejects_ssrf_prone_values(
+        self, client, admin_token, dept_a, field, bad_url,
+    ):
+        """Секрет отдела уходит вместе с запросом на этот хост — опечатка или
+        подмена на internal-адрес не должна тихо проходить."""
+        resp = await client.put(
+            f"{DIS_BASE}/{dept_a}", headers=_hdr(admin_token),
+            json={field: bad_url},
+        )
+        assert resp.status_code == 422, resp.text
+
+    @pytest.mark.parametrize("field", ["jira_base_url", "confluence_base_url", "bitbucket_base_url"])
+    async def test_base_url_accepts_https_public_host(self, client, admin_token, dept_a, field):
+        resp = await client.put(
+            f"{DIS_BASE}/{dept_a}", headers=_hdr(admin_token),
+            json={field: "https://tracker.example.org/rest"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()[field] == "https://tracker.example.org/rest"
 
 
 # ── /stp/generate ────────────────────────────────────────────────────────────

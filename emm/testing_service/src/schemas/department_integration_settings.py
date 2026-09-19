@@ -1,8 +1,43 @@
 """Pydantic-схемы для /department-integration-settings (§2.4, §3.5 плана миграции)."""
 
+import ipaddress
 from datetime import datetime
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# Секрет отдела (Bearer PAT / basic-auth) уходит вместе с каждым запросом на
+# эти base URL — опечатка или намеренная подмена на внутренний адрес не
+# просто SSRF, а SSRF с приложенным живым токеном. Проверка нарочно грубая
+# (схема + запрет на приватные/loopback/link-local диапазоны и localhost/
+# .local), не полноценный allow-list — этого достаточно, чтобы отсечь
+# случайную/злонамеренную опечатку на internal-хост, включая другие сервисы
+# этого же кластера.
+_LOCAL_HOST_SUFFIXES = (".local", ".internal")
+
+
+def _validate_integration_base_url(value: str | None) -> str | None:
+    if value is None:
+        return value
+    parsed = urlparse(value)
+    if parsed.scheme != "https":
+        raise ValueError("base URL must start with https://")
+    host = parsed.hostname
+    if not host:
+        raise ValueError("base URL must include a host")
+    host = host.lower()
+    if host == "localhost" or any(host.endswith(suffix) for suffix in _LOCAL_HOST_SUFFIXES):
+        raise ValueError("base URL must not point to a local/internal host")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip is not None and (
+        ip.is_private or ip.is_loopback or ip.is_link_local
+        or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+    ):
+        raise ValueError("base URL must not point to a private/internal address")
+    return value
 
 
 class DepartmentIntegrationSettingsUpdate(BaseModel):
@@ -69,6 +104,11 @@ class DepartmentIntegrationSettingsUpdate(BaseModel):
         default=None, max_length=256,
         description="Заголовок корневой (grandparent) страницы иерархии СТП-матрицы.",
     )
+
+    @field_validator("jira_base_url", "confluence_base_url", "bitbucket_base_url")
+    @classmethod
+    def _check_base_url(cls, value: str | None) -> str | None:
+        return _validate_integration_base_url(value)
 
 
 class DepartmentIntegrationSettingsResponse(BaseModel):

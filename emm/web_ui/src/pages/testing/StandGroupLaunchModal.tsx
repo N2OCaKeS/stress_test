@@ -11,8 +11,7 @@ import { addTestToStp } from "@/api/testing/stp";
 import type { ActiveQueueMode, TestRunCreateResponse, TestRunPreviewEntry } from "@/api/testing/types";
 import { usePersona } from "@/contexts/PersonaContext";
 import { canForceStandLaunch } from "@/lib/rbac";
-import { QueueActivePrompt, StandBusyPrompt } from "./StandLaunchConflict";
-import { describeHolder } from "./standConflict";
+import { QueueActivePrompt, StandBusyNotice, StandBusyPrompt } from "./StandLaunchConflict";
 
 const SKIP_LABELS: Record<string, string> = {
   skip_debug_required: "Требуется debug",
@@ -132,7 +131,7 @@ export function StandGroupLaunchModal({
           <div className="text-sm">Кампания <span className="mono">{result.id}</span> создана.</div>
           {busyErrors.length > 0 && (
             <div className="text-xs text-warn grid gap-2">
-              <div>Стенд занят ({describeHolder(busyErrors[0].details)}) — тесты не запущены.</div>
+              <div><StandBusyNotice details={busyErrors[0].details} suffix="тесты не запущены." /></div>
               <StandBusyPrompt details={busyErrors[0].details} canTakeover={canForce} busy={busy} onTakeover={() => launch({ force: true })} />
             </div>
           )}

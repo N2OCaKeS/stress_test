@@ -13,8 +13,7 @@ import { addTestToStp } from "@/api/testing/stp";
 import { usePersona } from "@/contexts/PersonaContext";
 import { canForceStandLaunch } from "@/lib/rbac";
 import type { ActiveQueueMode } from "@/api/testing/types";
-import { QueueActivePrompt, StandBusyPrompt } from "./StandLaunchConflict";
-import { describeHolder } from "./standConflict";
+import { QueueActivePrompt, StandBusyNotice, StandBusyPrompt } from "./StandLaunchConflict";
 
 /**
  * Подсказка §E2 при отказе `TEST_NOT_IN_STP`/`STP_RUN_NOT_FOUND`: различает
@@ -80,7 +79,6 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
       } else if (err instanceof ApiError && err.errorCode === "STP_RUN_NOT_FOUND") {
         setStpPrompt({ kind: "not_generated" });
       } else if (err instanceof ApiError && err.errorCode === "STAND_BUSY") {
-        setError(`Стенд занят (${describeHolder(err.details)}) — запуск отклонён.`);
         setStandBusyDetails(err.details ?? {});
       } else if (err instanceof ApiError && err.errorCode === "STAND_QUEUE_ACTIVE") {
         setQueueActiveDetails(err.details ?? {});
@@ -142,6 +140,9 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
         </div>
       )}
       {error && <div role="alert" className="text-xs text-danger">{error}</div>}
+      {standBusyDetails && (
+        <div role="alert" className="text-xs text-danger"><StandBusyNotice details={standBusyDetails} suffix="запуск отклонён." /></div>
+      )}
       {standBusyDetails && (
         <StandBusyPrompt details={standBusyDetails} canTakeover={canForce} busy={busy} onTakeover={() => attemptLaunch({ force: true })} />
       )}

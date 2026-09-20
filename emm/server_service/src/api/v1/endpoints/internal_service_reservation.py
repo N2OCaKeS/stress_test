@@ -247,14 +247,21 @@ async def batch_status(
     не меняет и не раскрывает чувствительных данных.
     """
     found = await server_svc.get_batch_status_for_service(db, server_ids=body.server_ids)
-    return ServerBatchStatusResponse(servers=[
-        ServerStatusItem(
+    items: list[ServerStatusItem] = []
+    for server_id in body.server_ids:
+        server = found.get(server_id)
+        if server is None:
+            items.append(ServerStatusItem(server_id=server_id, found=False))
+            continue
+        items.append(ServerStatusItem(
             server_id=server_id,
-            found=server_id in found,
-            busy_state=found[server_id].busy_state if server_id in found else None,
-            busy_service_name=found[server_id].busy_service_name if server_id in found else None,
-            ping_reachable=found[server_id].ping_reachable if server_id in found else None,
-            ping_checked_at=found[server_id].ping_checked_at if server_id in found else None,
-        )
-        for server_id in body.server_ids
-    ])
+            found=True,
+            busy_state=server.busy_state,
+            busy_service_name=server.busy_service_name,
+            busy_user_id=server.busy_user_id,
+            busy_actor_type=server.busy_actor_type,
+            busy_note=server.busy_note,
+            ping_reachable=server.ping_reachable,
+            ping_checked_at=server.ping_checked_at,
+        ))
+    return ServerBatchStatusResponse(servers=items)

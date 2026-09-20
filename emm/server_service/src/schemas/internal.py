@@ -779,6 +779,9 @@ class ServerStatusItem(BaseModel):
     found: bool = Field(description="False — сервера с этим id не существует (не 404 на весь батч).")
     busy_state: str | None = Field(default=None, description="`Server.busy_state`. None, если сервер не найден.")
     busy_service_name: str | None = Field(default=None, description="Имя сервиса-держателя брони, если есть.")
+    busy_user_id: str | None = Field(default=None, description="user_id держателя брони, если бронь пользовательская.")
+    busy_actor_type: str | None = Field(default=None, description="Кто держит бронь: `user` или `service`. None, если сервер не найден.")
+    busy_note: str | None = Field(default=None, description="Метка о причине занятости, если есть.")
     ping_reachable: bool | None = Field(default=None, description="Последний живой сигнал ping. None — проб ещё не было.")
     ping_checked_at: datetime | None = Field(default=None, description="Момент последнего ping-замера (UTC).")
 

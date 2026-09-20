@@ -16,6 +16,11 @@ vi.mock("@/api/testing/testRuns", () => ({
   previewTestRun: (...args: unknown[]) => previewTestRunMock(...args),
 }));
 vi.mock("@/api/testing/stp", () => ({ addTestToStp: vi.fn() }));
+vi.mock("@/lib/labels", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/labels")>();
+  const names: Record<string, string> = { usr_holder1: "Иван Петров" };
+  return { ...actual, useUserLabel: (id: string | null | undefined) => (id ? names[id] ?? id : "—") };
+});
 
 import { StandGroupLaunchModal } from "@/pages/testing/StandGroupLaunchModal";
 
@@ -69,6 +74,26 @@ async function launchGroup(standDepartmentId: string | null = "core") {
 }
 
 describe("StandGroupLaunchModal — занятый стенд и активная очередь", () => {
+  it("держатель-пользователь: вместо usr_ id в подписи имя из auth", async () => {
+    const byId: TestRunPartialError = {
+      ...busy, details: { busy_state: "busy", busy_user_id: "usr_holder1", busy_actor_type: "user", takeover_possible: true },
+    };
+    createTestRunMock.mockResolvedValueOnce(result([byId]));
+    await launchGroup();
+    await screen.findByText(/Стенд занят \(Иван Петров\)/);
+    expect(screen.getByRole("button", { name: "Забрать стенд у Иван Петров и запустить" })).toBeInTheDocument();
+    expect(screen.queryByText(/usr_holder1/)).not.toBeInTheDocument();
+  });
+
+  it("держатель-сервис без пользователя: подпись по имени сервиса", async () => {
+    const bySvc: TestRunPartialError = {
+      ...busy, details: { busy_state: "testing_done", busy_service_name: "testing_service", busy_actor_type: "service", takeover_possible: true },
+    };
+    createTestRunMock.mockResolvedValueOnce(result([bySvc]));
+    await launchGroup();
+    await screen.findByRole("button", { name: "Забрать стенд у testing_service и запустить" });
+  });
+
   it("занятый стенд: админ забирает его, повтор уходит с force=true", async () => {
     createTestRunMock.mockResolvedValueOnce(result([busy])).mockResolvedValueOnce(result([]));
     await launchGroup();

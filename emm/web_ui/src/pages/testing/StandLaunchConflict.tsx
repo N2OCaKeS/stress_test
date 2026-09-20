@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/Button";
 import type { ActiveQueueMode } from "@/api/testing/types";
-import { CURRENT_STATE_LABELS, describeHolder, isTakeoverPossible, text, type Details } from "./standConflict";
+import { CURRENT_STATE_LABELS, isTakeoverPossible, text, useHolderLabel, type Details } from "./standConflict";
 
 interface QueueActiveInfo {
   queuedCount: number;
@@ -76,6 +76,7 @@ export function StandBusyPrompt({
   busy: boolean;
   onTakeover: () => void;
 }) {
+  const holder = useHolderLabel(details);
   if (!canTakeover) return null;
   if (!isTakeoverPossible(details)) {
     return <div className="text-xs text-dim">Стенд забрать нельзя: идёт обновление ОС или восстановление образа — дождитесь завершения.</div>;
@@ -83,8 +84,14 @@ export function StandBusyPrompt({
   return (
     <div className="grid gap-1">
       <Button type="button" size="sm" variant="primary" disabled={busy} onClick={onTakeover}>
-        {busy ? "Запускаем…" : `Забрать стенд у ${describeHolder(details)} и запустить`}
+        {busy ? "Запускаем…" : `Забрать стенд у ${holder} и запустить`}
       </Button>
     </div>
   );
+}
+
+/** Строка «Стенд занят (<кто>) — …» для отказа запуска на занятом стенде. */
+export function StandBusyNotice({ details, suffix }: { details: Details; suffix: string }) {
+  const holder = useHolderLabel(details);
+  return <>Стенд занят ({holder}) — {suffix}</>;
 }

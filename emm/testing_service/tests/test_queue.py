@@ -852,6 +852,40 @@ class TestForceTakeover:
         assert details["busy_note"] == "отладка"
         assert details["takeover_possible"] is True
 
+    async def test_batch_status_rows_keep_holder_fields(self, mock_server_service):
+        mock_server_service(overrides={
+            "batch_status": {
+                "busy_state": "busy", "busy_actor_type": "user",
+                "busy_user_id": "usr_petrov", "busy_note": "отладка",
+            },
+        })
+        rows = await server_client.get_servers_status_batch(["srv_a"])
+        assert rows["srv_a"]["busy_user_id"] == "usr_petrov"
+        assert rows["srv_a"]["busy_actor_type"] == "user"
+        assert rows["srv_a"]["busy_note"] == "отладка"
+
+    async def test_service_holder_details_reach_stand_busy(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service(overrides={
+            "batch_status": {
+                "busy_state": "testing_done", "busy_actor_type": "service",
+                "busy_service_name": "testing_service", "busy_note": "ACS|revert",
+            },
+        })
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        with pytest.raises(ConflictError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        details = excinfo.value.details
+        assert details["busy_actor_type"] == "service"
+        assert details["busy_service_name"] == "testing_service"
+        assert details["busy_user_id"] is None
+        assert details["busy_note"] == "ACS|revert"
+
     @pytest.mark.parametrize("busy_state", ["updating", "acs", "testing"])
     async def test_force_does_not_take_over_updating_or_foreign_acs(
         self, client, admin_token, mock_server_service, recorded_calls, busy_state,

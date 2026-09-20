@@ -781,6 +781,50 @@ class TestBatchStatus:
         assert by_id[srv_b.id]["ping_reachable"] is False
         assert by_id[srv_b.id]["busy_state"] == BusyState.ACS
 
+    async def test_returns_user_holder_details(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv = await make_server()
+        srv.busy_state = BusyState.BUSY
+        srv.busy_actor_type = "user"
+        srv.busy_user_id = "usr_holder1"
+        srv.busy_note = "ручная отладка"
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/batch-status",
+            headers=_hdr(TESTING_SECRET),
+            json={"server_ids": [srv.id]},
+        )
+        assert resp.status_code == 200, resp.text
+        row = resp.json()["servers"][0]
+        assert row["busy_user_id"] == "usr_holder1"
+        assert row["busy_actor_type"] == "user"
+        assert row["busy_note"] == "ручная отладка"
+        assert row["busy_service_name"] is None
+
+    async def test_returns_service_holder_details(
+        self, client, make_server, configure_service_keys,
+    ):
+        srv = await make_server()
+        acquire = await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(TESTING_SECRET),
+            json={"busy_state": "testing", "busy_note": "queue-item"},
+        )
+        assert acquire.status_code == 200, acquire.text
+
+        resp = await client.post(
+            f"{BASE}/batch-status",
+            headers=_hdr(TESTING_SECRET),
+            json={"server_ids": [srv.id]},
+        )
+        row = resp.json()["servers"][0]
+        assert row["busy_actor_type"] == "service"
+        assert row["busy_service_name"] == "testing_service"
+        assert row["busy_user_id"] is None
+        assert row["busy_note"] == "queue-item"
+
     async def test_unknown_server_id_marked_not_found_not_500(
         self, client, configure_service_keys,
     ):
@@ -794,6 +838,7 @@ class TestBatchStatus:
         assert row == {
             "server_id": "srv_does_not_exist", "found": False,
             "busy_state": None, "busy_service_name": None,
+            "busy_user_id": None, "busy_actor_type": None, "busy_note": None,
             "ping_reachable": None, "ping_checked_at": None,
         }
 

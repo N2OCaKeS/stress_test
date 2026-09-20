@@ -982,6 +982,12 @@ Auth: shared-secret + `X-Service-Identity: testing_service|acs`. Тело: `busy
 
 Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403), `SERVER_NOT_FOUND` (404), `SERVER_ALREADY_BUSY` / `SERVER_DECOMMISSIONED` (409).
 
+### `POST /internal/servers/batch-status`
+
+Auth: shared-secret + `X-Service-Identity: testing_service|acs`. Тело: `server_ids` (1..500). Один элемент на каждый запрошенный id: `server_id`, `found` (отсутствующий сервер — `found=false`, не 404 на весь батч), `busy_state`, `busy_service_name`, `busy_user_id`, `busy_actor_type` (`user`/`service`), `busy_note`, `ping_reachable`, `ping_checked_at`. Поля держателя брони нужны `testing_service` для 409 `STAND_BUSY` («кто держит стенд»). Чистое чтение, audit не эмитится.
+
+Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403), 422 на пустой/слишком длинный список.
+
 ### `POST /internal/servers/{id}/release-for-service`
 
 Auth: та же. Снимает бронь и возвращает сервер в `free`, только если её держит именно этот caller (`busy_service_name == identity`); чужая бронь — 409 `SERVER_RESERVED_BY_OTHER`. Чистит `busy_user_id`/`busy_service_name`/`busy_actor_type`/`busy_note`/`busy_since`. INFO audit `server.released_for_service`.

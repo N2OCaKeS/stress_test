@@ -23,6 +23,12 @@ vi.mock("@/api/testing/testStands", () => ({
 }));
 vi.mock("@/api/server/osVersions", () => ({ listOsVersions: async () => ({ items: [{ id: "osv_1", name: "1.8.5", kernels: ["6.1"] }] }) }));
 
+vi.mock("@/lib/labels", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/labels")>();
+  const names: Record<string, string> = { usr_holder1: "Иван Петров" };
+  return { ...actual, useUserLabel: (id: string | null | undefined) => (id ? names[id] ?? id : "—") };
+});
+
 const triggerStatisticsRecalcMock = vi.fn();
 const getStatisticsStatusMock = vi.fn();
 const getStatisticsCategoriesMock = vi.fn();
@@ -224,6 +230,14 @@ describe("AdhocMiddlePanel — реальные одиночные запуск�
     expect(launchQueueItemMock.mock.calls[1][0]).toEqual(expect.objectContaining({ force: true, stand_id: "s1" }));
     expect(launchQueueItemMock.mock.calls[1][0].on_active_queue).toBeUndefined();
     expect(screen.queryByText(/провалится|Обходит только/)).not.toBeInTheDocument();
+  });
+
+  it("занятый стенд: вместо usr_ id в сообщении и на кнопке — имя держателя", async () => {
+    launchQueueItemMock.mockRejectedValueOnce(busyError({ busy_state: "busy", busy_user_id: "usr_holder1", busy_actor_type: "user", takeover_possible: true }));
+    await openLaunchModalAndSubmit();
+    await screen.findByText(/Стенд занят \(Иван Петров\)/);
+    expect(screen.getByRole("button", { name: "Забрать стенд у Иван Петров и запустить" })).toBeInTheDocument();
+    expect(screen.queryByText(/usr_holder1/)).not.toBeInTheDocument();
   });
 
   it("занятый стенд, который отобрать нельзя (обновление/восстановление): кнопки нет, есть пояснение", async () => {

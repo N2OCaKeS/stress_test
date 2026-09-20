@@ -456,6 +456,12 @@ HKDF_SALT_HEX="${HKDF_SALT_HEX:-$(rand_hex "$RAND_HKDF_SALT_BYTES")}"
 REDIS_STASH_ENCRYPTION_KEY="${REDIS_STASH_ENCRYPTION_KEY:-$(rand_b64 "$RAND_MASTER_KEY_BYTES")}"
 REDIS_STASH_ENCRYPTION_KEY_VERSION=1
 
+# Redis-стэш кред тестового пользователя у testing_service (пароль и SSH-ключ
+# между callback'ом prepare-for-test и claim'ом воркера). Отдельный ключ:
+# читает и пишет его только testing_service.
+CREDS_STASH_ENCRYPTION_KEY="${CREDS_STASH_ENCRYPTION_KEY:-$(rand_b64 "$RAND_MASTER_KEY_BYTES")}"
+CREDS_STASH_ENCRYPTION_KEY_VERSION=1
+
 # Legacy SERVICE_API_KEY (один общий секрет для всех caller'ов; в коде
 # используется как fallback если per-service SERVICE_API_KEYS не задан).
 SERVICE_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
@@ -667,6 +673,9 @@ cat <<EOF
   # server_service → testing_service, §5.1 плана миграции)
   TESTING_INTROSPECT_SERVICE_API_KEY: ${TESTING_INTROSPECT_SERVICE_API_KEY}
   TESTING_INBOUND_SERVICE_API_KEYS: '${TESTING_INBOUND_SERVICE_API_KEYS_JSON}'
+  # testing_service: шифрование Redis-стэша кред тестового пользователя
+  CREDS_STASH_ENCRYPTION_KEY: ${CREDS_STASH_ENCRYPTION_KEY}
+  CREDS_STASH_ENCRYPTION_KEY_VERSION: "${CREDS_STASH_ENCRYPTION_KEY_VERSION}"
   # Бот testing_service (auth_service заводит на старте, роль
   # guest@server_service) — choices_source dynamic-резолверам нужен доступ к
   # каталогу OS-версий server_service. Тот же секрет монтируется и в
@@ -774,6 +783,8 @@ MASTER ENCRYPTION KEY (server_service)
   HKDF_SALT_HEX:                     ${HKDF_SALT_HEX}
   REDIS_STASH_ENCRYPTION_KEY:        ${REDIS_STASH_ENCRYPTION_KEY}
   REDIS_STASH_ENCRYPTION_KEY_VERSION:${REDIS_STASH_ENCRYPTION_KEY_VERSION}
+  CREDS_STASH_ENCRYPTION_KEY:        ${CREDS_STASH_ENCRYPTION_KEY}
+  CREDS_STASH_ENCRYPTION_KEY_VERSION:${CREDS_STASH_ENCRYPTION_KEY_VERSION}
 
 ============================================================
 MASTER ENCRYPTION KEY (secret_service)

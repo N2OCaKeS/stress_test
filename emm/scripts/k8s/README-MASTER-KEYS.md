@@ -11,6 +11,7 @@ Backup и восстановление мастер-ключей шифрова�
 | `SERVER_ENCRYPTION_KEY` (+ `_VERSION`, + `SERVER_ENCRYPTION_KEY__v<N>` legacy) | Envelope encryption в `server_service` (server_account credentials, IPMI). | Все `server_account.encrypted_*` и IPMI-секреты. |
 | `SECRET_ENCRYPTION_KEY` (+ `_VERSION`, + legacy `__v<N>`) | Envelope encryption в `secret_service` (bot tokens, s2s API keys). | Хранилище секретов целиком. |
 | `REDIS_STASH_ENCRYPTION_KEY` (+ `_VERSION`, + legacy `__v<N>`) | Шифрование Redis-стэшей (provision creds и т.п.) — если включено. | Содержимое stash'ей; обычно ephemeral, но при инциденте полезно иметь. |
+| `CREDS_STASH_ENCRYPTION_KEY` (+ `_VERSION`, + legacy `__v<N>`) | Шифрование Redis-стэша кред тестового пользователя в `testing_service` (пароль, SSH-ключ между prepare-for-test и claim'ом). В production без него сервис не стартует. | Записи живут ≤10 минут; потеря ключа = элементы в подготовке уйдут в retry. Ротации-скрипта нет: сменить значение + версию, прежний ключ в `CREDS_STASH_ENCRYPTION_KEY__v<N-1>`. |
 | `HKDF_SALT_HEX` | Salt для HKDF-SHA256 KDF, общий для server/secret/stash. | Без него KDF-материал не воспроизводится → не расшифруешь даже с master-key. |
 | `AUTH_SECRET_KEY` | Подпись JWT в `auth_service`. | Все выданные access/refresh-токены превратятся в тыкву, юзеры перелогинятся. |
 | `DOCKER_RSA_PRIVATE_KEY` (опц.) | Token-flow для Docker registry. | Сломается push/pull в private registry, пока не сгенеришь новый и не обновишь registry config. |

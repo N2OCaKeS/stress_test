@@ -242,6 +242,10 @@ services:
       DATABASE_URL: postgresql+psycopg://${TESTING_DB_USER}:${TESTING_DB_PASSWORD}@testing-postgres:5432/testing_db
       AUTH_SERVICE_URL: http://auth_service:8000
       LOGGING_SERVICE_URL: http://logging_service:8001
+      # Шифрование Redis-стэша кред тестового пользователя; в production
+      # без ключа testing_service не стартует.
+      CREDS_STASH_ENCRYPTION_KEY: ${CREDS_STASH_ENCRYPTION_KEY}
+      CREDS_STASH_ENCRYPTION_KEY_VERSION: ${CREDS_STASH_ENCRYPTION_KEY_VERSION:-1}
       SERVICE_API_KEY: ${SERVICE_API_KEY}
       SERVICE_API_KEYS: ${TESTING_INBOUND_SERVICE_API_KEYS}
       LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_TESTING}
@@ -487,6 +491,10 @@ services:
       SECRET_SERVICE_API_KEY: ${TESTING_SERVICE_BOT_TOKEN}
       DATABASE_URL: postgresql+psycopg://${TESTING_DB_USER}:${TESTING_DB_PASSWORD}@testing-postgres:5432/testing_db
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/3
+      # Шифрование Redis-стэша кред тестового пользователя; в production
+      # без ключа testing_service не стартует.
+      CREDS_STASH_ENCRYPTION_KEY: ${CREDS_STASH_ENCRYPTION_KEY}
+      CREDS_STASH_ENCRYPTION_KEY_VERSION: ${CREDS_STASH_ENCRYPTION_KEY_VERSION:-1}
       SERVICE_API_KEY: ${SERVICE_API_KEY}
       SERVICE_API_KEYS: ${TESTING_INBOUND_SERVICE_API_KEYS}
       LOGGING_SERVICE_API_KEY: ${LOGGING_SERVICE_API_KEY_TESTING}

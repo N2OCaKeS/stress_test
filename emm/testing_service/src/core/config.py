@@ -331,10 +331,34 @@ class Settings(BaseSettings):
             "и тем моментом, когда testing_worker заберёт их через "
             "`POST /internal/queue/claim`. Очередь по стенду сериализована, "
             "поэтому воркер должен успеть забрать готовый элемент быстро — "
-            "10 минут щедрый запас. Не шифруется отдельным конвертом (в "
-            "отличие от `REDIS_STASH_ENCRYPTION_KEY` у server_service): это "
-            "уже эфемерные креды с коротким временем жизни и одноразовым "
-            "ключом, чего для этой волны достаточно."
+            "10 минут щедрый запас. Значение в Redis шифруется AES-256-GCM "
+            "ключом `CREDS_STASH_ENCRYPTION_KEY` (см. `services/creds_stash.py`)."
+        ),
+    )
+    creds_stash_encryption_key: str = Field(
+        default="",
+        alias="CREDS_STASH_ENCRYPTION_KEY",
+        description=(
+            "Master-ключ шифрования Redis-записей с кредами тестового "
+            "пользователя (пароль и SSH-приватный ключ). Отдельный от "
+            "`REDIS_STASH_ENCRYPTION_KEY` server_service/server_worker: "
+            "этот стэш читает только testing_service, общий ключ с другим "
+            "контуром не нужен. min 32 символа, сгенерировать: "
+            "`openssl rand -base64 32`. В production/staging обязателен "
+            "(сервис не стартует без него); в dev/test пустое значение "
+            "заменяется фиксированным dev-ключом с предупреждением в логе."
+        ),
+    )
+    creds_stash_encryption_key_version: int = Field(
+        default=1,
+        ge=1,
+        alias="CREDS_STASH_ENCRYPTION_KEY_VERSION",
+        description=(
+            "Активная версия `CREDS_STASH_ENCRYPTION_KEY`, попадает в префикс "
+            "новых записей (`v<N>$...`). Ротация: поднять версию, новый ключ "
+            "положить в `CREDS_STASH_ENCRYPTION_KEY`, прежний — в env "
+            "`CREDS_STASH_ENCRYPTION_KEY__v<N-1>`, чтобы дочитать записи, "
+            "живущие не дольше `CREDS_STASH_TTL_SECONDS`."
         ),
     )
 
@@ -602,6 +626,19 @@ class Settings(BaseSettings):
             f"AUTH_SERVICE_URL in {self.app_env} (host={host!r}); MITM-risk "
             "on cluster network"
         )
+
+    @model_validator(mode="after")
+    def _require_creds_stash_key_in_prod(self) -> "Settings":
+        if self.app_env.lower() not in {"production", "staging"}:
+            return self
+        if len(self.creds_stash_encryption_key) < 32:
+            raise ValueError(
+                f"CREDS_STASH_ENCRYPTION_KEY must be set (min 32 chars) in "
+                f"{self.app_env}: без него креды тестового пользователя "
+                "пришлось бы хранить в Redis открытым текстом. "
+                "Generate: openssl rand -base64 32"
+            )
+        return self
 
     @model_validator(mode="after")
     def _require_redis_auth_in_prod(self) -> "Settings":

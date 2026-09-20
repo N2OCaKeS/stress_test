@@ -90,6 +90,14 @@ spec:
             # rate-limit, /2=secret rate-limit, /3=testing_service broker.
             - name: REDIS_URL
               value: "redis://:$(REDIS_PASSWORD)@redis:6379/3"
+            # Шифрование Redis-стэша кред тестового пользователя. Без ключа
+            # в production сервис не стартует.
+            - name: CREDS_STASH_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: CREDS_STASH_ENCRYPTION_KEY }
+            - name: CREDS_STASH_ENCRYPTION_KEY_VERSION
+              valueFrom:
+                secretKeyRef: { name: dbos-secrets, key: CREDS_STASH_ENCRYPTION_KEY_VERSION }
             - name: SERVICE_API_KEY
               valueFrom:
                 secretKeyRef: { name: dbos-secrets, key: SERVICE_API_KEY }

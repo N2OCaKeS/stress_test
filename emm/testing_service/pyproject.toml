@@ -17,6 +17,7 @@ pydantic-settings = "2.8.1"
 alembic = "1.15.2"
 httpx = "0.28.1"
 slowapi = "0.1.9"
+cryptography = "44.0.3"
 # testing_worker (отдельный top-level пакет, ../testing_worker) держит
 # taskiq/taskiq-redis для брокера. Здесь redis-клиент используется напрямую
 # для best-effort PING в /ready и как опциональный backend slowapi

@@ -39,6 +39,10 @@
 
 БД обязательна для зелёного `status=ok`; иначе `status=degraded` (HTTP всё равно 200). Redis (taskiq-брокер testing_worker'а) — best-effort, фейл не валит ready.
 
+### Redis-стэш кред тестового пользователя
+
+Пароль и SSH-приватный ключ, пришедшие от server_service в callback prepare-for-test, лежат в Redis (`REDIS_URL`) до claim'а воркера не дольше `CREDS_STASH_TTL_SECONDS` (10 минут) и читаются ровно один раз. Значение шифруется AES-256-GCM (HKDF-SHA256 от `CREDS_STASH_ENCRYPTION_KEY`, свой nonce на запись, AAD привязан к Redis-ключу записи). В production/staging ключ обязателен (min 32 символа, `openssl rand -base64 32`) — без него сервис не стартует; в dev/test пустое значение заменяется встроенным dev-ключом с предупреждением в логе. Ротация: поднять `CREDS_STASH_ENCRYPTION_KEY_VERSION`, прежний ключ положить в `CREDS_STASH_ENCRYPTION_KEY__v<N-1>`. Запись в старом (нешифрованном) формате, чужой ключ или повреждение читаются как «нет записи»: `claim` переводит элемент в failed («creds stash missing or expired»), дальше обычный retry.
+
 ```json
 {
   "status": "ok",

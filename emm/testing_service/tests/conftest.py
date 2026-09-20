@@ -29,6 +29,10 @@ os.environ.setdefault(
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/1")
 os.environ.setdefault("AUTH_SERVICE_URL", "http://auth-not-used-in-tests")
 os.environ.setdefault("APP_ENV", "test")
+os.environ.setdefault(
+    "CREDS_STASH_ENCRYPTION_KEY",
+    "test-creds-stash-encryption-key-do-not-use-anywhere-else",
+)
 
 TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 

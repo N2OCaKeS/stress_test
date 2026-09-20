@@ -36,7 +36,10 @@ polling-loop воркера. Для `claim()`/`report_completed()` это уже
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import datetime
 
 import httpx
@@ -95,8 +98,45 @@ _REQUEST_TIMEOUT_SECONDS = 10.0
 
 
 def build_client(timeout: float) -> httpx.AsyncClient:
-    """Клиент под один вызов. Отдельная функция — точка подмены в тестах."""
+    """Фабрика клиента. Отдельная функция — точка подмены в тестах."""
     return httpx.AsyncClient(timeout=timeout)
+
+
+# Один клиент на процесс: item'ов параллельно столько же, сколько активных
+# стендов, и у каждого свой опрос interrupt-check и поток log-chunk — новый
+# клиент на каждый вызов означал бы новое соединение на каждый.
+_shared: tuple[asyncio.AbstractEventLoop, httpx.AsyncClient] | None = None
+
+
+def _client() -> httpx.AsyncClient:
+    global _shared
+    loop = asyncio.get_running_loop()
+    if _shared is not None and _shared[0] is loop and not _shared[1].is_closed:
+        return _shared[1]
+    _shared = (loop, build_client(_REQUEST_TIMEOUT_SECONDS))
+    return _shared[1]
+
+
+@asynccontextmanager
+async def _client_ctx() -> AsyncIterator[httpx.AsyncClient]:
+    yield _client()
+
+
+async def aclose() -> None:
+    """Закрыть общий клиент при остановке воркера."""
+    global _shared
+    if _shared is None:
+        return
+    _, client = _shared
+    _shared = None
+    if not client.is_closed:
+        await client.aclose()
+
+
+def reset_client() -> None:
+    """Сбросить общий клиент без закрытия — для тестов, подменяющих `build_client`."""
+    global _shared
+    _shared = None
 
 
 def _headers() -> dict[str, str] | None:
@@ -141,7 +181,7 @@ async def claim() -> dict | None:
         return None
 
     try:
-        async with build_client(_REQUEST_TIMEOUT_SECONDS) as client:
+        async with _client_ctx() as client:
             response = await client.post(f"{base}{_CLAIM_PATH}", headers=headers)
     except httpx.HTTPError as exc:
         logger.warning("testing_client.claim: unreachable (%s)", type(exc).__name__)
@@ -194,7 +234,7 @@ async def check_interrupt(queue_item_id: str) -> str | None:
 
     path = _INTERRUPT_CHECK_PATH_TEMPLATE.format(queue_item_id=queue_item_id)
     try:
-        async with build_client(_REQUEST_TIMEOUT_SECONDS) as client:
+        async with _client_ctx() as client:
             response = await client.get(f"{base}{path}", headers=headers)
     except httpx.HTTPError as exc:
         logger.warning(
@@ -261,7 +301,7 @@ async def report_completed(
     }
 
     try:
-        async with build_client(_REQUEST_TIMEOUT_SECONDS) as client:
+        async with _client_ctx() as client:
             response = await client.post(f"{base}{path}", headers=headers, json=body)
     except httpx.HTTPError as exc:
         logger.warning(
@@ -300,7 +340,7 @@ async def log_chunk(queue_item_id: str, text: str) -> None:
 
     path = _LOG_CHUNK_PATH_TEMPLATE.format(queue_item_id=queue_item_id)
     try:
-        async with build_client(_REQUEST_TIMEOUT_SECONDS) as client:
+        async with _client_ctx() as client:
             response = await client.post(f"{base}{path}", headers=headers, json={"text": text})
     except httpx.HTTPError as exc:
         logger.warning(
@@ -354,7 +394,7 @@ async def log_segment(
     }
 
     try:
-        async with build_client(_REQUEST_TIMEOUT_SECONDS) as client:
+        async with _client_ctx() as client:
             response = await client.post(f"{base}{path}", headers=headers, json=body)
     except httpx.HTTPError as exc:
         logger.warning(

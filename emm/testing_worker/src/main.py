@@ -27,7 +27,7 @@ from taskiq import TaskiqEvents, TaskiqState
 from src.core.config import get_settings
 from src.core.broker import broker
 from src.core.logging import configure_logging
-from src.services import queue_loop
+from src.services import queue_loop, testing_client
 
 _settings = get_settings()
 
@@ -91,6 +91,7 @@ async def _stop_queue_polling_loop(state: TaskiqState) -> None:
             del state[_QUEUE_LOOP_TASK_KEY]
         except KeyError:
             pass
+        await testing_client.aclose()
     logger.info("queue polling loop stopped on worker shutdown")
 
 

@@ -32,6 +32,7 @@ def _install_transport(monkeypatch, handler):
         return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
     monkeypatch.setattr(testing_client, "build_client", _build)
+    testing_client.reset_client()
 
 
 _VALID_CLAIM_ITEM = {
@@ -394,3 +395,41 @@ class TestLogSegment:
             command_text_masked=None, output="", host="10.0.0.1",
             started_at=self._STARTED, finished_at=self._FINISHED,
         )
+
+
+class TestSharedClient:
+    async def test_one_client_serves_consecutive_calls(self, monkeypatch):
+        built = []
+
+        def _build(timeout: float) -> httpx.AsyncClient:
+            client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"item": None})))
+            built.append(client)
+            return client
+
+        monkeypatch.setattr(testing_client, "build_client", _build)
+        testing_client.reset_client()
+
+        await testing_client.claim()
+        await testing_client.claim()
+
+        assert len(built) == 1
+        await testing_client.aclose()
+        assert built[0].is_closed
+
+    async def test_client_is_rebuilt_after_close(self, monkeypatch):
+        built = []
+
+        def _build(timeout: float) -> httpx.AsyncClient:
+            client = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"item": None})))
+            built.append(client)
+            return client
+
+        monkeypatch.setattr(testing_client, "build_client", _build)
+        testing_client.reset_client()
+
+        await testing_client.claim()
+        await testing_client.aclose()
+        await testing_client.claim()
+
+        assert len(built) == 2
+        await testing_client.aclose()

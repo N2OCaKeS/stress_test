@@ -4,6 +4,8 @@
 (`test_definitions.mode`), запускающий не выбирает его."""
 
 from datetime import datetime
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -29,7 +31,19 @@ class QueueLaunchRequest(BaseModel):
             "Запустить даже на занятом стенде. Сервер сам перепроверяет право "
             "(department_admin отдела стенда либо роль admin testing_service "
             "в этом отделе) — у остальных вызывающих запрос отклоняется, а не "
-            "тихо выполняется без force."
+            "тихо выполняется без force. На занятом человеком стенде (`busy`/"
+            "`testing_done`) реально отбирает бронь; `updating` и чужой `acs` "
+            "не отбираются никогда."
+        ),
+    )
+    on_active_queue: Literal["append", "replace"] | None = Field(
+        default=None,
+        description=(
+            "Что делать, если очередь testing_service на стенде уже активна. "
+            "Не задано — не-админ молча встаёт в конец очереди, админ получает "
+            "409 STAND_QUEUE_ACTIVE. `append` — в конец очереди. `replace` — "
+            "очистить остальные queued, прервать текущий тест (skip) и начать "
+            "новый сразу; только для админа отдела стенда."
         ),
     )
 

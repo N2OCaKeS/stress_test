@@ -82,6 +82,7 @@ async def create_test_run(
         os_version_id=body.os_version_id, kernel=body.kernel,
         test_run_stands=body.test_run_stands, final=body.final,
         debug=body.debug, full=body.full, force=body.force,
+        on_active_queue=body.on_active_queue,
         request_id=body.request_id,
     )
     response = TestRunCreateResponse.model_validate(run)

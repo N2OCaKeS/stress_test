@@ -290,6 +290,105 @@ class TestCreateTestRun:
         assert body["enqueue_errors"] == []
         assert any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
 
+    async def test_busy_stand_force_takes_over_once_for_the_whole_group(
+        self, client, admin_token, mock_server_service,
+    ):
+        server = mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+        await _create_test_def(client, admin_token, stand_id)
+
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True, force=True),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["enqueue_errors"] == []
+        assert [call.get("takeover") for call in server.acquire_bodies] == [True]
+
+    async def test_busy_updating_stand_is_a_partial_error_even_with_force(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service(overrides={"batch_status": {"busy_state": "updating"}})
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True, force=True),
+        )
+        assert resp.status_code == 201, resp.text
+        assert [err["error_code"] for err in resp.json()["enqueue_errors"]] == ["STAND_TAKEOVER_NOT_ALLOWED"]
+
+    async def test_active_queue_is_a_partial_error_for_admin_without_mode(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+        first = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True))
+        assert first.status_code == 201 and first.json()["enqueue_errors"] == []
+
+        resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True))
+        assert resp.status_code == 201, resp.text
+        assert [err["error_code"] for err in resp.json()["enqueue_errors"]] == ["STAND_QUEUE_ACTIVE"]
+
+    async def test_active_queue_append_puts_the_whole_group_behind(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+        await _create_test_def(client, admin_token, stand_id)
+        await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True, on_active_queue="append"))
+
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True, on_active_queue="append"),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["enqueue_errors"] == []
+        async with AsyncSessionLocal() as db:
+            assert await queue_repo.count_active_for_stand(db, stand_id) == 4
+
+    async def test_active_queue_replace_keeps_the_whole_new_group(
+        self, client, admin_token, mock_server_service,
+    ):
+        """`replace` действует на первый тест стенда; остальные тесты кампании
+        встают за ним и не стираются как «старая» очередь."""
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+        await _create_test_def(client, admin_token, stand_id)
+        old = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True, on_active_queue="append"))
+        old_ids = {row["queue_item_id"] for row in (await client.get(f"{BASE}/{old.json()['id']}", headers=_hdr(admin_token))).json()["queue_items"]}
+
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True, on_active_queue="replace"),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["enqueue_errors"] == []
+        new_ids = {row["queue_item_id"] for row in (await client.get(f"{BASE}/{resp.json()['id']}", headers=_hdr(admin_token))).json()["queue_items"]}
+        assert len(new_ids) == 2
+        states = {}
+        for item_id in old_ids:
+            item = await _get_item(item_id)
+            states[item_id] = item.state if item else None
+        # Из старой кампании остался только прерванный текущий item, очередь за ним стёрта.
+        assert sorted(str(v) for v in states.values()) == ["None", str(QueueItemState.SKIPPED)]
+        new_states = [(await _get_item(i)).state for i in new_ids]
+        assert sorted(new_states) == sorted([QueueItemState.PREPARING, QueueItemState.QUEUED])
+
+    async def test_on_active_queue_is_part_of_the_campaign_fingerprint(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        await _create_test_def(client, admin_token, stand_id)
+        payload = _payload([stand_id], debug=True, request_id="req-fingerprint-1", on_active_queue="append")
+        first = await client.post(BASE, headers=_hdr(admin_token), json=payload)
+        assert first.status_code == 201, first.text
+        other = await client.post(BASE, headers=_hdr(admin_token), json={**payload, "on_active_queue": "replace"})
+        assert other.status_code == 409, other.text
+        assert other.json()["error_code"] == "REQUEST_ID_CONFLICT"
+
     async def test_final_flag_persisted(self, client, admin_token, mock_server_service):
         mock_server_service()
         stand_id, _ = await _create_stand(client, admin_token)

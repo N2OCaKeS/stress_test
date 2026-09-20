@@ -39,6 +39,9 @@ STANDS = "/api/testing/v1/test-stands"
 
 
 async def _enqueue(test_id: str, **kwargs):
+    # Тесты этого файла ставят несколько item'ов подряд от лица админа;
+    # без явного режима админ на активной очереди получил бы STAND_QUEUE_ACTIVE.
+    kwargs.setdefault("on_active_queue", "append")
     async with AsyncSessionLocal() as db:
         return await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX, **kwargs)
 
@@ -587,3 +590,56 @@ async def test_skip_of_a_campaign_item_recomputes_the_campaign_status(
         # Единственный элемент кампании пропущен — провалов нет, значит и
         # кампания не провалена.
         assert (await db.get(TestRun, run_id)).status == RunStatus.SUCCEEDED
+
+
+class TestReplaceOnRunningQueue:
+    """`on_active_queue="replace"` поверх идущего теста: заявка воркеру, очередь чистится."""
+
+    async def test_running_head_gets_skip_request_and_new_item_takes_over_after_it(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+        recorded_calls,
+    ):
+        mock_server_service()
+        await mock_git_token()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        head = await _enqueue(test_id)
+        old_queued = await _enqueue(test_id)
+        await _make_running(client, head)
+        recorded_calls.clear()
+
+        new = await _enqueue(test_id, on_active_queue="replace")
+
+        assert new.state == QueueItemState.QUEUED
+        assert await _get_item(old_queued.id) is None
+        running = await _get_item(head.id)
+        assert running.state == QueueItemState.RUNNING
+        assert running.interrupt_action == "skip"
+        # Стенд остаётся за нами, пока воркер не оборвёт сессию.
+        assert not any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
+
+        resp = await client.post(
+            f"{QUEUE_BASE}/{head.id}/completed",
+            headers=_server_hdr("testing_worker", WORKER_SECRET),
+            json={"succeeded": False, "exit_code": None, "error": None, "interrupted": "skip"},
+        )
+        assert resp.status_code == 200, resp.text
+        assert (await _get_item(head.id)).state == QueueItemState.SKIPPED
+        assert (await _get_item(new.id)).state == QueueItemState.PREPARING
+        assert not any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
+
+    async def test_replace_skips_a_paused_head(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        head = await _enqueue(test_id)
+        paused = await client.post(f"{BASE}/{head.id}/pause", headers=auth_hdr(admin_token))
+        assert paused.status_code == 200, paused.text
+        assert (await _get_item(head.id)).state == QueueItemState.PAUSED
+
+        new = await _enqueue(test_id, on_active_queue="replace")
+
+        assert (await _get_item(head.id)).state == QueueItemState.SKIPPED
+        assert new.state == QueueItemState.PREPARING

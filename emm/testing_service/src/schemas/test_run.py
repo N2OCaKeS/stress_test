@@ -37,6 +37,7 @@ smolensk-тесты, каждый готовится под своим режи�
 """
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -83,7 +84,17 @@ class TestRunCreate(BaseModel):
         description=(
             "Запустить даже на занятых стендах кампании. Сервер сам перепроверяет право "
             "(department_admin отдела стенда либо роль admin testing_service в этом отделе) — "
-            "у остальных вызывающих запрос на конкретный стенд отклоняется, а не тихо выполняется."
+            "у остальных вызывающих запрос на конкретный стенд отклоняется, а не тихо выполняется. "
+            "На занятом человеком стенде реально отбирает бронь; `updating`/чужой `acs` не отбираются."
+        ),
+    )
+    on_active_queue: Literal["append", "replace"] | None = Field(
+        default=None,
+        description=(
+            "Режим для стендов, где очередь testing_service уже активна (одинаков для всех стендов "
+            "кампании). Не задано — не-админ встаёт в конец очереди, у админа стенд попадает в "
+            "enqueue_errors с STAND_QUEUE_ACTIVE. `append` — в конец очереди; `replace` — очистить "
+            "остальные queued, прервать текущий тест и начать новые сразу (только админ отдела стенда)."
         ),
     )
     request_id: str | None = Field(

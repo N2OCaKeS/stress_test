@@ -337,9 +337,17 @@ async def acquire_for_service(
     busy_state: str,
     busy_note: str | None = None,
     requested_by_department_id: str | None = None,
+    takeover: bool = False,
 ) -> dict:
-    """POST /internal/servers/{id}/acquire-for-service — взять свободный стенд под цикл."""
+    """POST /internal/servers/{id}/acquire-for-service — взять стенд под цикл.
+
+    `takeover=True` переписывает бронь занятого (`busy`/`testing_done`) стенда
+    на testing_service; в ответе приходит `previous_holder`. Поле уходит в тело
+    только когда оно включено — обычный захват остаётся прежним запросом.
+    """
     body: dict = {"busy_state": busy_state}
+    if takeover:
+        body["takeover"] = True
     if busy_note is not None:
         body["busy_note"] = busy_note
     if requested_by_department_id is not None:

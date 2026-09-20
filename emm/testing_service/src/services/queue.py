@@ -154,6 +154,7 @@ async def enqueue(
     request_fingerprint: str | None = None,
     stp_test_run_id: str | None = None,
     force: bool = False,
+    on_active_queue: str | None = None,
 ) -> QueueItem:
     """Поставить тест в очередь стенда.
 
@@ -176,20 +177,20 @@ async def enqueue(
     Итоговый статус такого item'а — `QueueItemState.PREPARED`, не
     `succeeded`/`failed` (см. `complete_item`).
 
-    `force` имеет смысл только когда стенд ещё свободен от очереди
-    testing_service (см. `_ensure_stand_free_for_launch`) — обходит отказ
-    STAND_BUSY, но только для department_admin отдела стенда либо носителя
-    роли admin в этом отделе, остальным вызывающим `force=True` не помогает.
+    `force` работает, когда очередь testing_service на стенде пуста, а сам
+    стенд занят не нами (`busy`/`testing_done`): department_admin отдела стенда
+    либо носитель роли admin в этом отделе реально отбирает бронь —
+    `acquire-for-service` уходит с `takeover=true`, server_service переписывает
+    бронь на testing_service. `updating` и `acs` (не наша очередь) не
+    отбираются никогда — `STAND_TAKEOVER_NOT_ALLOWED`. Остальным вызывающим
+    `force=True` на занятом стенде отвечает `FORCE_LAUNCH_DENIED`.
 
-    Важно: `force` обходит только этот предварительный клиентский снапшот.
-    Настоящий захват стенда — безусловный CAS в `server_service`
-    (`busy_state='free'`), у него нет параметра «форсировать для админа», и
-    обойти его отсюда нельзя. Если стенд на самом деле всё ещё занят (а не
-    просто снапшот устарел на узком окне гонки), `enqueue()` всё равно
-    вернёт вызывающему успешно созданный item, но тот почти сразу уйдёт в
-    `FAILED` с `SERVER_ALREADY_BUSY` — асинхронно, без сигнала в этом
-    возврате. Отобрать бронь у реального держателя этот флаг не пытается —
-    сознательно, чтобы не оборвать чужой активный процесс на стенде.
+    `on_active_queue` — что делать, если очередь стенда уже активна. Не-админ
+    молча встаёт в конец. Админ без явного режима получает 409
+    `STAND_QUEUE_ACTIVE`; `append` кладёт в конец, `replace` (только админ)
+    заводит новый item, убирает остальные `queued`, прерывает текущий тест
+    через skip — так очередь продолжает именно новый item и стенд не уходит в
+    `testing_done` между шагами.
 
     Строки `test_definitions`/`test_stands` берутся под `FOR UPDATE` дважды:
     сперва без лока — чтобы провалидировать вход и (если очередь стенда
@@ -241,12 +242,20 @@ async def enqueue(
             details={"missing": missing},
         )
 
+    is_admin = _is_stand_admin(identity, stand)
+    if on_active_queue == "replace" and not is_admin:
+        _deny_force(stand, reason="replace_requires_admin")
+
+    takeover = False
+    replace = False
     if await repo.count_active_for_stand(db, stand.id) == 0:
-        # Только здесь очередь стенда реально пуста и мы вот-вот заново
-        # возьмём его в цикл — если она уже активна, бронь наша с прошлого
-        # item'а, ничего нового не захватывается, проверять нечего. Ни test,
+        # Очередь стенда пуста и мы вот-вот заново возьмём его в цикл. Ни test,
         # ни stand ещё не залочены — сетевой вызов идёт без удержания строк.
-        await _ensure_stand_free_for_launch(db, identity, stand, force=force)
+        takeover = await _ensure_stand_free_for_launch(db, identity, stand, force=force)
+    else:
+        # Очередь активна — бронь наша с прошлого item'а, ничего нового не
+        # захватывается; вопрос только в том, как встать в неё.
+        replace = await _resolve_active_queue_mode(db, stand, is_admin, on_active_queue)
 
     # С этой точки берём FOR UPDATE непосредственно перед вставкой строки —
     # ровно на то время, что нужно для атомарного "было ли пусто" + insert.
@@ -288,71 +297,185 @@ async def enqueue(
         await test_run_status.recompute(db, test_run_id)
         await db.commit()
     if was_empty:
-        await _start_or_continue_cycle(db, stand, item, is_first_ever=True)
+        await _start_or_continue_cycle(db, stand, item, is_first_ever=True, takeover=takeover)
+        await db.refresh(item)
+    elif replace:
+        await _replace_active_queue(db, stand, item)
         await db.refresh(item)
     return item
 
 
 _FREE_BUSY_STATE = "free"
+# Состояния, в которых бронь можно переписать на testing_service. `updating`
+# (astra_update) и `acs` (ручное восстановление образа) отбирать нельзя —
+# принудительный захват посреди них ломает бокс.
+_TAKEOVER_BUSY_STATES = frozenset({"busy", "testing_done"})
+
+
+def _is_stand_admin(identity: Identity, stand) -> bool:
+    return identity.department_id == stand.department_id and (
+        identity.platform_role == PlatformRole.DEPARTMENT_ADMIN
+        or ServiceRole.ADMIN in identity.roles_for(SERVICE_NAME)
+    )
+
+
+def _deny_force(stand, *, reason: str) -> None:
+    audit_service.emit(
+        "queue.force_takeover",
+        target_id=stand.id, target_type="test_stand",
+        status="denied", allowed=False,
+        details={"stand_id": stand.id, "reason": reason},
+    )
+    raise AuthorizationError(
+        error_code="FORCE_LAUNCH_DENIED",
+        message="Принудительный запуск и замена очереди доступны только администратору отдела стенда",
+    )
+
+
+def _holder_details(status: dict | None) -> dict:
+    status = status or {}
+    return {
+        "busy_state": status.get("busy_state"),
+        "busy_actor_type": status.get("busy_actor_type"),
+        "busy_service_name": status.get("busy_service_name"),
+        "busy_user_id": status.get("busy_user_id"),
+        "busy_user_name": status.get("busy_user_name"),
+        "busy_note": status.get("busy_note"),
+    }
 
 
 async def _ensure_stand_free_for_launch(
     db: AsyncSession, identity: Identity, stand, *, force: bool,
-) -> None:
-    """Отказать в постановке, если стенд занят кем-то посторонним.
+) -> bool:
+    """Проверить занятость стенда перед постановкой в пустую очередь.
 
-    Дешёвая проверка через тот же internal-канал, что и обзор пула
-    (`server_client.get_servers_status_batch`) — до всякого commit'а. Не
-    подменяет настоящий CAS-захват `_start_or_continue_cycle` (гонка между
-    этой проверкой и им самим возможна и остаётся его заботой, включая уже
-    существующую retry-логику на STAND_BUSY_BLOCKED) — она лишь отсекает
-    заведомо занятый стенд раньше, чем в БД попадёт хоть что-то.
+    Возвращает `True`, если бронь нужно отобрать (`takeover` при захвате), и
+    `False`, когда стенд свободен. Дешёвая проверка через тот же internal-канал,
+    что и обзор пула (`server_client.get_servers_status_batch`) — до всякого
+    commit'а. Настоящий захват делает `_start_or_continue_cycle`
+    (`acquire-for-service`); гонка между проверкой и им остаётся его заботой,
+    включая retry-логику на STAND_BUSY_BLOCKED.
 
-    `force=True` обходит отказ, только если caller — department_admin отдела
-    стенда либо носитель роли `admin` testing_service в этом же отделе.
-    Любой другой caller с `force=True` получает отдельный код ошибки, а не
-    тихий откат к обычному STAND_BUSY — иначе выглядело бы так, будто force
-    сам по себе не сработал по неизвестной причине.
+    Без `force` занятый стенд — 409 `STAND_BUSY` с данными держателя
+    (пользователь/сервис/метка) и признаком `takeover_possible`. С `force=True`:
 
-    Обход касается только этой проверки. Если к моменту настоящего захвата
-    (`_start_or_continue_cycle` → `acquire-for-service`) стенд всё ещё занят,
-    CAS в server_service откажет так же, как отказал бы без force — item
-    заведётся и тут же провалится в `FAILED`. Реального отбора брони у
-    текущего держателя здесь нет и не планируется этим флагом.
+    * caller не админ отдела стенда — `FORCE_LAUNCH_DENIED`;
+    * `busy`/`testing_done` — `True`, бронь будет переписана;
+    * `updating`, чужой `acs` и прочее — 409 `STAND_TAKEOVER_NOT_ALLOWED`,
+      force не помогает.
     """
     statuses = await server_client.get_servers_status_batch([stand.server_id])
     status = statuses.get(stand.server_id)
     busy_state = status.get("busy_state") if status else None
     if busy_state == _FREE_BUSY_STATE:
-        return
+        return False
+
+    holder = _holder_details(status)
+    takeable = busy_state in _TAKEOVER_BUSY_STATES
 
     if force:
-        is_stand_admin = identity.department_id == stand.department_id and (
-            identity.platform_role == PlatformRole.DEPARTMENT_ADMIN
-            or ServiceRole.ADMIN in identity.roles_for(SERVICE_NAME)
+        if not _is_stand_admin(identity, stand):
+            _deny_force(stand, reason="force_requires_admin")
+        if takeable:
+            return True
+        audit_service.emit(
+            "queue.force_takeover",
+            target_id=stand.id, target_type="test_stand",
+            status="failure", allowed=True,
+            details={"stand_id": stand.id, "reason": "state_not_takeable", **holder},
         )
-        if is_stand_admin:
-            return
-        raise AuthorizationError(
-            error_code="FORCE_LAUNCH_DENIED",
-            message="Принудительный запуск на занятом стенде доступен только администратору отдела стенда",
+        raise ConflictError(
+            error_code="STAND_TAKEOVER_NOT_ALLOWED",
+            message=(
+                "Стенд нельзя забрать: сейчас идёт обновление ОС или восстановление образа — "
+                "дождитесь завершения"
+            ),
+            details=holder,
         )
 
     raise ConflictError(
         error_code="STAND_BUSY",
         message="Стенд сейчас занят — запуск недоступен",
-        details={
-            "busy_state": busy_state,
-            "busy_service_name": status.get("busy_service_name") if status else None,
-        },
+        details={**holder, "takeover_possible": takeable},
     )
 
 
-async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, is_first_ever: bool) -> None:
+async def _resolve_active_queue_mode(
+    db: AsyncSession, stand, is_admin: bool, on_active_queue: str | None,
+) -> bool:
+    """Как встать в уже активную очередь стенда. `True` — заменить её (`replace`).
+
+    Право на `replace` проверено раньше. Не-админу вопрос не задаётся — он
+    встаёт в конец. Админ без явного режима получает 409 `STAND_QUEUE_ACTIVE`
+    с описанием очереди, чтобы UI мог спросить.
+    """
+    if on_active_queue == "replace":
+        return True
+    if on_active_queue == "append" or not is_admin:
+        return False
+
+    items = await repo.list_active_for_stand(db, stand.id)
+    queued_count = sum(1 for item in items if item.state == QueueItemState.QUEUED)
+    current = next((item for item in items if item.state != QueueItemState.QUEUED), None)
+    current_info = None
+    if current is not None:
+        current_test = await test_definition_repo.get_by_id(db, current.test_id)
+        current_info = {
+            "queue_item_id": current.id,
+            "state": current.state,
+            "test_id": current.test_id,
+            "test_code": current_test.code if current_test else None,
+            "test_name": current_test.full_name if current_test else None,
+            "started_at": current.started_at.isoformat() if current.started_at else None,
+            "test_run_id": current.test_run_id,
+        }
+    raise ConflictError(
+        error_code="STAND_QUEUE_ACTIVE",
+        message="На стенде уже идёт очередь тестов — выберите: добавить в конец или заменить",
+        details={"stand_id": stand.id, "queued_count": queued_count, "current": current_info},
+    )
+
+
+async def _replace_active_queue(db: AsyncSession, stand, new_item: QueueItem) -> None:
+    """Заменить очередь стенда одним `new_item`: убрать остальные `queued`,
+    прервать текущий item через skip.
+
+    Порядок важен: новый item уже стоит в очереди, поэтому skip текущего
+    продвигает именно его, а не уводит стенд в `testing_done`. У идущего
+    (`running`) item'а skip лишь ставит заявку воркеру — продолжение очереди
+    произойдёт, когда тот отчитается об обрыве.
+    """
+    cleared = await clear_queue(db, stand, keep_ids=frozenset({new_item.id}))
+    active = await repo.list_active_for_stand(db, stand.id)
+    current = [item for item in active if item.state != QueueItemState.QUEUED and item.id != new_item.id]
+    audit_service.emit(
+        "queue.replace",
+        target_id=stand.id, target_type="test_stand",
+        status="success", allowed=True,
+        details={
+            "stand_id": stand.id,
+            "new_queue_item_id": new_item.id,
+            "cleared_queued_count": cleared,
+            "interrupted": [{"queue_item_id": item.id, "state": item.state} for item in current],
+        },
+    )
+    for old in current:
+        locked = await repo.get_by_id_for_update(db, old.id)
+        if locked is None or locked.state not in ACTIVE_QUEUE_STATES:
+            continue
+        await request_interrupt(db, locked, stand, QueueInterruptAction.SKIP)
+    if not current and not await repo.has_in_flight_for_stand(db, stand.id):
+        await _advance_stand_queue(db, stand)
+
+
+async def _start_or_continue_cycle(
+    db: AsyncSession, stand, item: QueueItem, *, is_first_ever: bool, takeover: bool = False,
+) -> None:
     """Взять/продолжить бронь стенда и запросить `prepare-for-test` для `item`.
 
     `is_first_ever=True` — стенд был свободен, бронь берётся впервые
-    (`acquire-for-service`). Иначе бронь уже держится с предыдущего item'а
+    (`acquire-for-service`); `takeover=True` — стенд занят не нами, и бронь
+    переписывается (только первый захват, фолбэк ниже обычный). Иначе бронь уже держится с предыдущего item'а
     этой же очереди — пробуем просто сменить стадию (`service-status`), и
     только если server_service отвечает `SERVER_NOT_BUSY` (бронь почему-то не
     держится), падаем обратно на `acquire-for-service`.
@@ -382,10 +505,22 @@ async def _start_or_continue_cycle(db: AsyncSession, stand, item: QueueItem, *, 
 
     try:
         if is_first_ever:
-            await server_client.acquire_for_service(
+            acquired = await server_client.acquire_for_service(
                 stand.server_id, busy_state="acs", busy_note=note,
                 requested_by_department_id=stand.department_id,
+                takeover=takeover,
             )
+            if takeover:
+                audit_service.emit(
+                    "queue.force_takeover",
+                    target_id=stand.id, target_type="test_stand",
+                    status="success", allowed=True,
+                    details={
+                        "stand_id": stand.id, "server_id": stand.server_id,
+                        "queue_item_id": item.id,
+                        "previous_holder": (acquired or {}).get("previous_holder"),
+                    },
+                )
         else:
             try:
                 await server_client.set_service_status(stand.server_id, busy_state="acs", busy_note=note)
@@ -1112,7 +1247,7 @@ async def resume_stand_queue(db: AsyncSession, stand) -> QueueItem:
     return item
 
 
-async def clear_queue(db: AsyncSession, stand) -> int:
+async def clear_queue(db: AsyncSession, stand, *, keep_ids: frozenset[str] = frozenset()) -> int:
     """Убрать из очереди стенда всё, что ещё ни разу не бралось в работу.
 
     Трогает только `queued` — по определению это item, до которого цикл
@@ -1121,9 +1256,10 @@ async def clear_queue(db: AsyncSession, stand) -> int:
     исполняющийся item эта операция не задевает — за ним бронь стенда, снять
     его можно только по одному через skip/pause/delete. Строки удаляются
     насовсем, не переводятся в терминал — это и есть отличие «очистить» от
-    массового skip.
+    массового skip. `keep_ids` — item'ы, которые трогать нельзя (только что
+    заведённые новые при замене очереди).
     """
-    items = await repo.list_queued_for_stand(db, stand.id)
+    items = [item for item in await repo.list_queued_for_stand(db, stand.id) if item.id not in keep_ids]
     if not items:
         return 0
     affected_runs = {item.test_run_id for item in items if item.test_run_id}
@@ -1156,7 +1292,8 @@ async def retry_failed(
 
     `force` прокидывается в каждый `enqueue()` как есть — право на него
     (department_admin/admin отдела стенда) перепроверяет сам `enqueue()`,
-    здесь дублировать проверку незачем.
+    здесь дублировать проверку незачем. На активной очереди retry всегда
+    встаёт в конец (`on_active_queue="append"`), вопроса админу нет.
     """
     candidates = await repo.list_failed_for_stand(db, stand.id)
     retried: list[QueueItem] = []
@@ -1196,6 +1333,7 @@ async def retry_failed(
             test_run_entry_id=source.test_run_entry_id,
             retry_source=source,
             force=force,
+            on_active_queue="append",
             stp_test_run_id=stp.id if stp else None,
         )
         retried.append(item)

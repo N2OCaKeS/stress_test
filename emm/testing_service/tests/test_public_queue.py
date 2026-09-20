@@ -119,6 +119,95 @@ async def test_launch_force_allows_department_admin(
     assert any(path.endswith("/acquire-for-service") for _, path in recorded_calls)
 
 
+async def test_launch_force_takes_over_the_reservation(
+    client, admin_token, mock_server_service, recorded_calls,
+):
+    server = mock_server_service(overrides={
+        "batch_status": {"busy_state": "busy", "busy_user_id": "usr_petrov"},
+    })
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    response = await client.post(
+        BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id, force=True),
+    )
+    assert response.status_code == 201, response.text
+    assert response.json()["state"] == "preparing"
+    assert [call["takeover"] for call in server.acquire_bodies] == [True]
+
+
+async def test_launch_force_refused_on_updating_stand(
+    client, admin_token, mock_server_service, recorded_calls,
+):
+    mock_server_service(overrides={"batch_status": {"busy_state": "updating"}})
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    response = await client.post(
+        BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id, force=True),
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error_code"] == "STAND_TAKEOVER_NOT_ALLOWED"
+    assert not any(path.endswith("/acquire-for-service") for _, path in recorded_calls)
+
+
+async def test_launch_on_active_queue_asks_admin_then_honours_the_choice(
+    client, admin_token, mock_server_service, recorded_calls,
+):
+    mock_server_service()
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    head = await client.post(BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id))
+    assert head.status_code == 201, head.text
+
+    asked = await client.post(BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id))
+    assert asked.status_code == 409, asked.text
+    payload = asked.json()
+    assert payload["error_code"] == "STAND_QUEUE_ACTIVE"
+    assert payload["details"]["queued_count"] == 0
+    assert payload["details"]["current"]["queue_item_id"] == head.json()["id"]
+
+    appended = await client.post(
+        BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id, on_active_queue="append"),
+    )
+    assert appended.status_code == 201, appended.text
+    assert appended.json()["state"] == "queued"
+
+    replaced = await client.post(
+        BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id, on_active_queue="replace"),
+    )
+    assert replaced.status_code == 201, replaced.text
+    assert replaced.json()["state"] == "preparing"
+    assert (await _get_item(head.json()["id"])).state == "skipped"
+    assert await _get_item(appended.json()["id"]) is None
+
+
+async def test_on_active_queue_is_part_of_the_idempotency_fingerprint(
+    client, admin_token, mock_server_service,
+):
+    mock_server_service()
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    payload = body(test_id, stand_id, on_active_queue="append")
+    first = await client.post(BASE, headers=auth_hdr(admin_token), json=payload)
+    assert first.status_code == 201, first.text
+    same = await client.post(BASE, headers=auth_hdr(admin_token), json=payload)
+    assert same.status_code == 201 and same.json()["id"] == first.json()["id"]
+    other = await client.post(
+        BASE, headers=auth_hdr(admin_token), json={**payload, "on_active_queue": "replace"},
+    )
+    assert other.status_code == 409, other.text
+    assert other.json()["error_code"] == "REQUEST_ID_CONFLICT"
+
+
+async def test_on_active_queue_rejects_unknown_mode(client, admin_token, mock_server_service):
+    mock_server_service()
+    stand_id, _ = await _create_stand(client, admin_token)
+    test_id = await _create_test_def(client, admin_token, stand_id)
+    response = await client.post(
+        BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id, on_active_queue="drop"),
+    )
+    assert response.status_code == 422, response.text
+
+
 async def test_launch_force_denied_across_departments(
     client, admin_token, make_token, mock_server_service, recorded_calls,
 ):
@@ -375,9 +464,13 @@ async def test_list_separates_campaigns_and_departments(
     stand_id, _ = await _create_stand(client, admin_token)
     test_id = await _create_test_def(client, admin_token, stand_id)
     await client.post(BASE, headers=auth_hdr(admin_token), json=body(test_id, stand_id))
-    from tests.test_campaign_attempts import create_run
+    from tests.test_test_runs import BASE as RUNS_BASE, _payload
 
-    await create_run(client, admin_token, [stand_id])
+    campaign = await client.post(
+        RUNS_BASE, headers=auth_hdr(admin_token),
+        json=_payload([stand_id], debug=True, on_active_queue="append"),
+    )
+    assert campaign.status_code == 201, campaign.text
     for kind in ("standalone", "campaign"):
         response = await client.get(
             BASE, headers=auth_hdr(admin_token), params={"kind": kind}

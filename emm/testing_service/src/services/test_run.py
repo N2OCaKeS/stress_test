@@ -265,6 +265,7 @@ async def create_test_run(
     debug: bool = False,
     full: bool = False,
     force: bool = False,
+    on_active_queue: str | None = None,
     request_id: str | None = None,
 ) -> tuple[TestRun, list[str], list[TestRunPartialError], list[dict]]:
     """Завести кампанию + поставить в очередь её состав.
@@ -289,7 +290,14 @@ async def create_test_run(
     рушит кампанию целиком, его записи просто уходят в `enqueue_errors` с
     `error_code=STAND_BUSY` (или `FORCE_LAUNCH_DENIED`, если `force=True`
     запросил не department_admin/`admin`-роль отдела стенда), остальные
-    стенды кампании стартуют как обычно.
+    стенды кампании стартуют как обычно. Реальный захват стенда у человека
+    (`busy`/`testing_done`) делает `force`; `updating`/чужой `acs` дают
+    `STAND_TAKEOVER_NOT_ALLOWED`.
+
+    `on_active_queue` — режим для стендов с уже активной очередью, одинаков для
+    всех стендов кампании. Ему подчиняется только первый тест каждого стенда:
+    после его постановки очередь стенда «наша», остальные тесты кампании на
+    этом стенде идут в конец (иначе `replace` стирал бы уже заведённое).
     """
     try:
         await permissions.require_action(db, identity, EntityType.TEST_RUN, Action.CREATE)
@@ -330,6 +338,7 @@ async def create_test_run(
             "os_version_id": os_version_id, "kernel": kernel,
             "test_run_stands": sorted(requested_stands), "final": final,
             "debug": debug, "full": full, "force": force,
+            "on_active_queue": on_active_queue,
         }
         fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
         await repo.lock_request(db, identity.user_id, request_id)
@@ -405,6 +414,7 @@ async def create_test_run(
     populated_stands = {entry.stand_id for entry in entries}
     stands_without_tests = [stand_id for stand_id in test_run_stands if stand_id not in populated_stands]
     enqueue_errors: list[TestRunPartialError] = []
+    stand_queue_mode: dict[str, str | None] = {}
     for entry, spec in zip(entries, entry_specs):
         try:
             ctx = {"RC": os_version_id, "KERNEL": entry.kernel, "MODE": entry.mode}
@@ -419,7 +429,9 @@ async def create_test_run(
                 test_run_id=run.id, test_run_entry_id=entry.id,
                 stp_test_run_id=stp.id if stp else None,
                 force=force,
+                on_active_queue=stand_queue_mode.get(entry.stand_id, on_active_queue),
             )
+            stand_queue_mode[entry.stand_id] = "append"
         except AppException as exc:
             logger.warning("test_run %s: enqueue failed for stand=%s test=%s: %s", run.id, entry.stand_id, entry.test_id, exc.message)
             entry.enqueue_error_code = exc.error_code
@@ -451,6 +463,7 @@ async def create_test_run(
             "debug": debug,
             "full": full,
             "force": force,
+            "on_active_queue": on_active_queue,
             "composition_source": composition_source,
             "stp_composition_id": stp_composition_id,
             "stp_sync_error_count": len(stp_sync_errors),

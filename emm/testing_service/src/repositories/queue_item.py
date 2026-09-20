@@ -69,6 +69,16 @@ async def get_active_for_stand(db: AsyncSession, stand_id: str) -> QueueItem | N
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def list_active_for_stand(db: AsyncSession, stand_id: str) -> list[QueueItem]:
+    """Все не терминальные item'ы стенда в порядке очереди (без блокировок)."""
+    stmt = (
+        select(QueueItem)
+        .where(QueueItem.stand_id == stand_id, QueueItem.state.in_(ACTIVE_QUEUE_STATES))
+        .order_by(QueueItem.position.asc(), QueueItem.created_at.asc())
+    )
+    return list((await db.execute(stmt)).scalars())
+
+
 async def get_next_queued_for_stand(db: AsyncSession, stand_id: str) -> QueueItem | None:
     """Следующий `queued`-item этого стенда (наименьший `position`) — для продолжения очереди."""
     stmt = (

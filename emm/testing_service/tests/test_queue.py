@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -76,12 +77,19 @@ def mock_server_service(monkeypatch, recorded_calls):
     сервиса. Чтобы смоделировать узкое окно гонки (снапшот устарел, стенд
     освободился к моменту реального захвата), передайте `overrides["acquire"]`
     явно — это самый частый случай, который тестам и нужен.
+
+    Контракт `takeover`: `acquire-for-service` с `takeover=true` на стенде,
+    занятом как `busy`/`testing_done`, отвечает 200 и кладёт в ответ
+    `previous_holder`; на `updating`/`acs` — 409, как у настоящего сервиса.
+    Тела всех acquire-запросов складываются в `.acquire_bodies` возвращаемого
+    хэндла `_install()`.
     """
     monkeypatch.setattr(server_client, "get_settings", lambda: _StubSettings())
 
     def _install(*, department_id="dep_a", host="10.0.0.5", overrides=None, acquire_fail_times=0):
         overrides = overrides or {}
         acquire_calls = {"count": 0}
+        handle = SimpleNamespace(acquire_bodies=[])
 
         def _preflight_busy_state() -> str | None:
             """Заявленное `batch_status` в его общей (не per-id) форме, если задано."""
@@ -100,13 +108,22 @@ def mock_server_service(monkeypatch, recorded_calls):
                 })
             if request.method == "POST" and path.endswith("/acquire-for-service"):
                 acquire_calls["count"] += 1
+                acquire_body = json.loads(request.content or b"{}")
+                handle.acquire_bodies.append(acquire_body)
+                preflight_busy = _preflight_busy_state()
+                previous_holder = None
                 if "acquire" in overrides:
                     status = overrides["acquire"]
+                elif preflight_busy in (None, "free"):
+                    status = 200
+                elif acquire_body.get("takeover") and preflight_busy in ("busy", "testing_done"):
+                    # Без явного оверрайда акквайр согласован с preflight-снапшотом;
+                    # takeover отбирает только `busy`/`testing_done`.
+                    status = 200
+                    previous_holder = {"busy_state": preflight_busy, **overrides["batch_status"]}
                 else:
-                    # Без явного оверрайда акквайр согласован с preflight-снапшотом:
-                    # реально занятый стенд не может внезапно освободиться для CAS.
-                    preflight_busy = _preflight_busy_state()
-                    status = 409 if preflight_busy not in (None, "free") else 200
+                    # Реально занятый стенд не может внезапно освободиться для CAS.
+                    status = 409
                 if status == 409 or acquire_calls["count"] <= acquire_fail_times:
                     return httpx.Response(409, json={
                         "error_code": "SERVER_ALREADY_BUSY", "message": "server already busy",
@@ -114,6 +131,7 @@ def mock_server_service(monkeypatch, recorded_calls):
                 return httpx.Response(status, json={
                     "server_id": "srv_x", "busy_state": "acs", "busy_actor_type": "service",
                     "busy_service_name": "testing_service", "busy_note": None, "busy_since": None,
+                    "previous_holder": previous_holder,
                 })
             if request.method == "POST" and path.endswith("/service-status"):
                 status = overrides.get("service_status", 200)
@@ -153,6 +171,9 @@ def mock_server_service(monkeypatch, recorded_calls):
                         "found": True,
                         "busy_state": entry.get("busy_state", "free"),
                         "busy_service_name": entry.get("busy_service_name"),
+                        "busy_actor_type": entry.get("busy_actor_type"),
+                        "busy_user_id": entry.get("busy_user_id"),
+                        "busy_note": entry.get("busy_note"),
                         "ping_reachable": None,
                         "ping_checked_at": None,
                     })
@@ -163,6 +184,7 @@ def mock_server_service(monkeypatch, recorded_calls):
             return httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
         monkeypatch.setattr(server_client, "build_client", _build)
+        return handle
 
     return _install
 
@@ -314,7 +336,9 @@ class TestEnqueue:
             first = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
         recorded_calls.clear()
         async with AsyncSessionLocal() as db:
-            second = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+            second = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, on_active_queue="append",
+            )
 
         assert second.state == QueueItemState.QUEUED
         assert second.position == 1
@@ -628,7 +652,9 @@ class TestBusyPreflight:
         # раз очередь уже не пуста — batch-status вообще не запрашивается.
         mock_server_service(overrides={"batch_status": {"busy_state": "acs"}})
         async with AsyncSessionLocal() as db:
-            second = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+            second = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, on_active_queue="append",
+            )
 
         assert second.state == QueueItemState.QUEUED
         assert recorded_calls == []
@@ -660,15 +686,14 @@ class TestBusyPreflight:
     async def test_force_launch_fails_when_stand_still_busy_at_acquire(
         self, client, admin_token, mock_server_service, recorded_calls,
     ):
-        """`force` обходит только preflight. Если стенд реально занят и остаётся
-        занятым к моменту настоящего CAS-захвата в server_service, `enqueue()`
-        всё равно заводит item (preflight пропустил admin'а) — но тот сразу же
-        уходит в `FAILED` с понятной причиной, а не зависает и не даёт
-        видимость успеха. Бронь при этом никогда не берётся: ни исходная
-        попытка, ни авто-retry не проходят `acquire-for-service`, поэтому
-        `release-for-service-as-done` не вызывается вовсе — двойной брони и
-        утечки нет."""
-        mock_server_service(overrides={"batch_status": {"busy_state": "busy"}})
+        """Takeover проиграл гонку: server_service отказал в захвате даже с
+        `takeover=true` (стенд успел уйти в `updating`). `enqueue()` уже завёл
+        item, тот сразу уходит в `FAILED` с понятной причиной, а не зависает и
+        не даёт видимость успеха. Бронь при этом никогда не берётся: ни
+        исходная попытка, ни авто-retry не проходят `acquire-for-service`,
+        поэтому `release-for-service-as-done` не вызывается вовсе — двойной
+        брони и утечки нет."""
+        mock_server_service(overrides={"batch_status": {"busy_state": "busy"}, "acquire": 409})
         stand_id, _ = await _create_stand(client, admin_token)
         test_id = await _create_test_def(client, admin_token, stand_id)
 
@@ -736,6 +761,272 @@ class TestBusyPreflight:
 
         assert excinfo.value.error_code == "FORCE_LAUNCH_DENIED"
         assert not any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
+
+
+def _guest_identity() -> Identity:
+    return Identity(
+        user_id="usr_guest", username="guest", actor_type="user",
+        department_id="dep_a", allowed_services=["testing_service"],
+        service_roles={"testing_service": ["guest"]}, is_banned=False, platform_role=None,
+    )
+
+
+class TestForceTakeover:
+    """Force реально отнимает стенд: `busy`/`testing_done` — да, `updating`/чужой `acs` — нет."""
+
+    @pytest.mark.parametrize("busy_state", ["busy", "testing_done"])
+    async def test_force_takes_over_human_or_parked_stand(
+        self, client, admin_token, mock_server_service, recorded_calls, busy_state,
+    ):
+        server = mock_server_service(overrides={
+            "batch_status": {"busy_state": busy_state, "busy_user_id": "usr_petrov", "busy_note": "ручной прогон"},
+        })
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, force=True,
+            )
+
+        assert item.state == QueueItemState.PREPARING
+        assert server.acquire_bodies == [{
+            "busy_state": "acs", "busy_note": "ACS|revert|1.8.5|6.1.0",
+            "requested_by_department_id": "dep_a", "takeover": True,
+        }]
+
+    async def test_takeover_emits_audit_with_previous_holder(
+        self, client, admin_token, mock_server_service, monkeypatch,
+    ):
+        mock_server_service(overrides={
+            "batch_status": {"busy_state": "busy", "busy_user_id": "usr_petrov"},
+        })
+        events: list[tuple[str, dict]] = []
+        from src.services import audit_service
+        monkeypatch.setattr(
+            audit_service, "emit",
+            lambda action, *args, **kwargs: events.append((action, kwargs.get("details") or {})),
+        )
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX, force=True)
+
+        takeovers = [details for action, details in events if action == "queue.force_takeover"]
+        assert len(takeovers) == 1
+        assert takeovers[0]["previous_holder"]["busy_user_id"] == "usr_petrov"
+        assert takeovers[0]["stand_id"] == stand_id
+
+    async def test_no_takeover_flag_without_force_on_free_stand(
+        self, client, admin_token, mock_server_service,
+    ):
+        server = mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX, force=True)
+
+        assert "takeover" not in server.acquire_bodies[0]
+
+    async def test_busy_conflict_carries_holder_and_takeover_hint(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service(overrides={
+            "batch_status": {
+                "busy_state": "busy", "busy_actor_type": "user",
+                "busy_user_id": "usr_petrov", "busy_note": "отладка",
+            },
+        })
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        with pytest.raises(ConflictError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        details = excinfo.value.details
+        assert excinfo.value.error_code == "STAND_BUSY"
+        assert details["busy_user_id"] == "usr_petrov"
+        assert details["busy_note"] == "отладка"
+        assert details["takeover_possible"] is True
+
+    @pytest.mark.parametrize("busy_state", ["updating", "acs", "testing"])
+    async def test_force_does_not_take_over_updating_or_foreign_acs(
+        self, client, admin_token, mock_server_service, recorded_calls, busy_state,
+    ):
+        mock_server_service(overrides={"batch_status": {"busy_state": busy_state}})
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        with pytest.raises(ConflictError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX, force=True)
+
+        assert excinfo.value.error_code == "STAND_TAKEOVER_NOT_ALLOWED"
+        assert excinfo.value.details["busy_state"] == busy_state
+        assert not any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
+        async with AsyncSessionLocal() as db:
+            assert await queue_repo.count_active_for_stand(db, stand_id) == 0
+
+    @pytest.mark.parametrize("busy_state", ["updating", "acs"])
+    async def test_busy_conflict_marks_takeover_impossible(
+        self, client, admin_token, mock_server_service, busy_state,
+    ):
+        mock_server_service(overrides={"batch_status": {"busy_state": busy_state}})
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        with pytest.raises(ConflictError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert excinfo.value.error_code == "STAND_BUSY"
+        assert excinfo.value.details["takeover_possible"] is False
+
+    async def test_replace_denied_for_non_admin(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        recorded_calls.clear()
+
+        with pytest.raises(AuthorizationError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(
+                    db, _guest_identity(), test_id, launch_context=LAUNCH_CTX, on_active_queue="replace",
+                )
+
+        assert excinfo.value.error_code == "FORCE_LAUNCH_DENIED"
+        assert recorded_calls == []
+
+
+class TestActiveQueueModes:
+    """Очередь testing_service на стенде уже активна: не-админ — в конец, админ выбирает."""
+
+    async def _stand_with_head(self, client, admin_token, mock_server_service):
+        server = mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        async with AsyncSessionLocal() as db:
+            head = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+        return server, stand_id, test_id, head
+
+    async def test_non_admin_is_appended_silently(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        _, _, test_id, head = await self._stand_with_head(client, admin_token, mock_server_service)
+        recorded_calls.clear()
+
+        async with AsyncSessionLocal() as db:
+            second = await queue_svc.enqueue(db, _guest_identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert second.state == QueueItemState.QUEUED
+        assert second.position == head.position + 1
+        assert recorded_calls == []
+
+    async def test_admin_without_mode_gets_queue_active_conflict(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        _, stand_id, test_id, head = await self._stand_with_head(client, admin_token, mock_server_service)
+        async with AsyncSessionLocal() as db:
+            await queue_svc.enqueue(db, _guest_identity(), test_id, launch_context=LAUNCH_CTX)
+        recorded_calls.clear()
+
+        with pytest.raises(ConflictError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert excinfo.value.error_code == "STAND_QUEUE_ACTIVE"
+        details = excinfo.value.details
+        assert details["queued_count"] == 1
+        assert details["current"]["queue_item_id"] == head.id
+        assert details["current"]["state"] == QueueItemState.PREPARING
+        assert details["current"]["test_id"] == test_id
+        assert recorded_calls == []
+        async with AsyncSessionLocal() as db:
+            assert await queue_repo.count_active_for_stand(db, stand_id) == 2
+
+    async def test_admin_append_goes_to_the_end(
+        self, client, admin_token, mock_server_service,
+    ):
+        _, _, test_id, head = await self._stand_with_head(client, admin_token, mock_server_service)
+
+        async with AsyncSessionLocal() as db:
+            second = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, on_active_queue="append",
+            )
+
+        assert second.state == QueueItemState.QUEUED
+        assert second.position == head.position + 1
+        assert (await _get_item(head.id)).state == QueueItemState.PREPARING
+
+    async def test_admin_replace_clears_queue_skips_current_and_starts_new(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        _, stand_id, test_id, head = await self._stand_with_head(client, admin_token, mock_server_service)
+        async with AsyncSessionLocal() as db:
+            old_queued = await queue_svc.enqueue(db, _guest_identity(), test_id, launch_context=LAUNCH_CTX)
+        recorded_calls.clear()
+
+        async with AsyncSessionLocal() as db:
+            new = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, on_active_queue="replace",
+            )
+
+        assert new.state == QueueItemState.PREPARING
+        assert (await _get_item(head.id)).state == QueueItemState.SKIPPED
+        assert await _get_item(old_queued.id) is None
+        paths = [p for _, p in recorded_calls]
+        # Стенд не уходит в testing_done между «прервали» и «начали»: цикл
+        # переключается на новый item через service-status.
+        assert not any(p.endswith("/release-for-service-as-done") for p in paths)
+        assert any(p.endswith("/prepare-for-test") for p in paths)
+        async with AsyncSessionLocal() as db:
+            assert await queue_repo.count_active_for_stand(db, stand_id) == 1
+
+    async def test_replace_emits_audit(
+        self, client, admin_token, mock_server_service, monkeypatch,
+    ):
+        _, stand_id, test_id, head = await self._stand_with_head(client, admin_token, mock_server_service)
+        events: list[tuple[str, dict]] = []
+        from src.services import audit_service
+        monkeypatch.setattr(
+            audit_service, "emit",
+            lambda action, *args, **kwargs: events.append((action, kwargs.get("details") or {})),
+        )
+
+        async with AsyncSessionLocal() as db:
+            new = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, on_active_queue="replace",
+            )
+
+        replaced = [details for action, details in events if action == "queue.replace"]
+        assert len(replaced) == 1
+        assert replaced[0]["new_queue_item_id"] == new.id
+        assert replaced[0]["interrupted"] == [{"queue_item_id": head.id, "state": QueueItemState.PREPARING}]
+
+    async def test_retry_failed_appends_for_admin_on_active_queue(
+        self, client, admin_token, mock_server_service,
+    ):
+        """Массовый retry у админа не спрашивает про очередь — встаёт в конец."""
+        _, stand_id, test_id, head = await self._stand_with_head(client, admin_token, mock_server_service)
+        async with AsyncSessionLocal() as db:
+            failed = await queue_repo.create(db, {
+                "id": queue_item_id(), "stand_id": stand_id, "test_id": test_id,
+                "launch_context": LAUNCH_CTX, "state": QueueItemState.FAILED, "position": 5,
+                "is_retry": False, "debug_mode": True, "created_by": "usr_queue_test",
+            })
+            await db.commit()
+        async with AsyncSessionLocal() as db:
+            stand = await stand_repo.get_by_id(db, stand_id)
+            retried, skipped = await queue_svc.retry_failed(db, _identity(), stand)
+
+        assert len(retried) == 1 and skipped == 0
+        assert retried[0].state == QueueItemState.QUEUED
+        assert retried[0].retry_of_id == failed.id
 
 
 class TestPrepareCallback:

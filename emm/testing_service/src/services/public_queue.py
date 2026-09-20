@@ -117,6 +117,7 @@ async def launch(db: AsyncSession, identity: Identity, body: QueueLaunchRequest)
         request_fingerprint=fingerprint,
         stp_test_run_id=stp.id if stp else None,
         force=body.force,
+        on_active_queue=body.on_active_queue,
     )
 
 
@@ -237,4 +238,5 @@ async def retry(
         request_fingerprint=fingerprint,
         stp_test_run_id=stp.id if stp else None,
         force=body.force,
+        on_active_queue="append",
     )

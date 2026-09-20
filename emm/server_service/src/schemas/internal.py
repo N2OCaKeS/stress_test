@@ -692,6 +692,16 @@ class ServiceAcquireRequest(BaseModel):
             "`X-Target-Department-Id` у worker-callback'ов)."
         ),
     )
+    takeover: bool = Field(
+        default=False,
+        description=(
+            "Отнять бронь у текущего держателя, если сервер в `busy` или "
+            "`testing_done`: бронь переписывается на вызывающий сервис, прежний "
+            "держатель возвращается в `previous_holder`. `updating` / `acs` / "
+            "`testing` не отнимаются — 409 SERVER_ALREADY_BUSY. Вызывающий "
+            "сервис сам отвечает за проверку прав админа."
+        ),
+    )
 
 
 class ServiceBusyStatusRequest(BaseModel):
@@ -705,6 +715,15 @@ class ServiceBusyStatusRequest(BaseModel):
         max_length=512,
         description="Новая метка. None оставляет прежнюю — заметка не сбрасывается вместе со сменой стадии.",
     )
+
+
+class PreviousHolder(BaseModel):
+    """Бронь, перебитая takeover'ом."""
+
+    busy_state: str = Field(description="Состояние занятости до takeover (`busy` / `testing_done`).")
+    busy_user_id: str | None = Field(default=None, description="Пользователь-держатель, если бронь была человеческой.")
+    busy_service_name: str | None = Field(default=None, description="Сервис-держатель (например `testing_service` при `testing_done`).")
+    busy_note: str | None = Field(default=None, description="Метка брони до takeover.")
 
 
 class ServiceReservationResponse(BaseModel):
@@ -721,6 +740,10 @@ class ServiceReservationResponse(BaseModel):
     busy_since: datetime | None = Field(
         default=None,
         description="С какого момента держится бронь (UTC). Смена стадии его не двигает.",
+    )
+    previous_holder: PreviousHolder | None = Field(
+        default=None,
+        description="Заполнено только когда acquire отнял бронь (`takeover=true`); иначе null.",
     )
 
 

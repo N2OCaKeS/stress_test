@@ -978,7 +978,7 @@ Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_ID
 
 ### `POST /internal/servers/{id}/acquire-for-service`
 
-Auth: shared-secret + `X-Service-Identity: testing_service|acs`. Тело: `busy_state` (`busy`/`testing`/`acs`, default `acs`), `busy_note` (опционально, ≤512). Атомарный CAS по `busy_state='free'` — сервер, занятый кем угодно (человеком или другим сервисом), отдаёт 409. INFO audit `server.acquired_for_service`.
+Auth: shared-secret + `X-Service-Identity: testing_service|acs`. Тело: `busy_state` (`busy`/`testing`/`acs`, default `acs`), `busy_note` (опционально, ≤512), `takeover` (bool, default `false`). Атомарный CAS по `busy_state='free'` — сервер, занятый кем угодно (человеком или другим сервисом), отдаёт 409. При `takeover=true` и `busy_state` ∈ {`busy`, `testing_done`} бронь атомарно (row-lock) переписывается на вызывающий сервис (`busy_actor_type=service`, `busy_user_id` обнуляется), ответ дополнительно содержит `previous_holder` (`busy_state`, `busy_user_id`, `busy_service_name`, `busy_note`); без takeover поле `null`. `updating` / `acs` / `testing` не отнимаются — 409 даже с `takeover=true`. Проверку прав админа делает вызывающий сервис. INFO audit `server.acquired_for_service`; при takeover — WARNING `server.reservation_taken_over`.
 
 Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403), `SERVER_NOT_FOUND` (404), `SERVER_ALREADY_BUSY` / `SERVER_DECOMMISSIONED` (409).
 

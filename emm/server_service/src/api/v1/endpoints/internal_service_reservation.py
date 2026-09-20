@@ -36,6 +36,7 @@ from src.schemas.internal import (
     ServerStatusItem,
     ServiceAcquireRequest,
     ServiceBusyStatusRequest,
+    PreviousHolder,
     ServiceReservationResponse,
 )
 from src.services import server as server_svc
@@ -54,7 +55,7 @@ _COMMON_RESPONSES = {
 }
 
 
-def _to_response(server) -> ServiceReservationResponse:
+def _to_response(server, previous_holder: dict | None = None) -> ServiceReservationResponse:
     return ServiceReservationResponse(
         server_id=server.id,
         busy_state=server.busy_state,
@@ -62,6 +63,7 @@ def _to_response(server) -> ServiceReservationResponse:
         busy_service_name=server.busy_service_name,
         busy_note=server.busy_note,
         busy_since=server.busy_since,
+        previous_holder=PreviousHolder(**previous_holder) if previous_holder else None,
     )
 
 
@@ -85,20 +87,25 @@ async def acquire_for_service(
     разберут один стенд. Занятый кем угодно — человеком или другим сервисом —
     отдаёт 409 `SERVER_ALREADY_BUSY`.
 
+    `takeover=true` отнимает бронь в `busy` / `testing_done` (ответ несёт
+    `previous_holder`); `updating` / `acs` / `testing` по-прежнему 409.
+
     Необязательный `requested_by_department_id` сверяется с отделом сервера;
     несовпадение маскируется под 404, как у worker-callback'ов.
 
-    Audit: `server.acquired_for_service`.
+    Audit: `server.acquired_for_service`; при takeover —
+    `server.reservation_taken_over` (WARNING).
     """
-    server = await server_svc.acquire_server_for_service(
+    server, previous_holder = await server_svc.acquire_server_for_service(
         db,
         server_id=server_id,
         service_name=caller,
         busy_state=body.busy_state,
         busy_note=body.busy_note,
         requested_by_department_id=body.requested_by_department_id,
+        takeover=body.takeover,
     )
-    return _to_response(server)
+    return _to_response(server, previous_holder)
 
 
 @router.post(

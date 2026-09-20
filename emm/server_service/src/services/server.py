@@ -1171,7 +1171,8 @@ async def acquire_server_for_service(
     busy_state: str,
     busy_note: str | None,
     requested_by_department_id: str | None = None,
-) -> Server:
+    takeover: bool = False,
+) -> tuple[Server, dict | None]:
     """Захват сервера от имени сервиса — аналог `acquire_server` без человека.
 
     Держатель — `busy_service_name`, `busy_user_id` остаётся пустым (иначе
@@ -1185,6 +1186,12 @@ async def acquire_server_for_service(
     прислал — сверяем с отделом сервера. Несовпадение маскируем под 404, как
     `_check_target_department_for_server` у worker-callback'ов: разница
     403/404 работала бы enumeration-oracle'ом по чужим отделам.
+
+    `takeover=True` дополнительно позволяет отнять бронь в `busy` (человек)
+    или `testing_done`: строка блокируется, прежний держатель снимается в
+    снимок, бронь переписывается на вызывающий сервис. Возвращает
+    `(server, previous_holder)`; `previous_holder` — None при обычном захвате.
+    `updating` / `acs` / `testing` не отнимаются никогда — 409, как без takeover.
     """
     obj = await repo.get_by_id(db, server_id)
     if obj is None:
@@ -1278,6 +1285,31 @@ async def acquire_server_for_service(
                 error_code="SERVER_DECOMMISSIONED",
                 message="Server is decommissioned and cannot be acquired",
             )
+        if takeover and current.busy_state in _TAKEOVER_STATES:
+            taken = await _takeover_service_reservation(
+                db,
+                current,
+                server_id=server_id,
+                service_name=service_name,
+                busy_state=busy_state,
+                busy_note=busy_note,
+            )
+            if taken is not None:
+                return taken
+            db.expire(current)
+            current = await repo.get_by_id(db, server_id)
+            if current is None or current.busy_state == BusyState.FREE:
+                # Бронь успели снять между проверкой и локом — повторяем
+                # обычный захват, а не отдаём 409 на свободный сервер.
+                return await acquire_server_for_service(
+                    db,
+                    server_id=server_id,
+                    service_name=service_name,
+                    busy_state=busy_state,
+                    busy_note=busy_note,
+                    requested_by_department_id=requested_by_department_id,
+                    takeover=takeover,
+                )
         audit_service.emit(
             "server.acquired_for_service",
             target_id=server_id, target_type="server",
@@ -1289,6 +1321,7 @@ async def acquire_server_for_service(
                 "current_state": current.busy_state,
                 "busy_actor_type": current.busy_actor_type,
                 "busy_service_name": current.busy_service_name,
+                "takeover": takeover,
             },
         )
         raise ConflictError(
@@ -1309,7 +1342,77 @@ async def acquire_server_for_service(
             "busy_note": busy_note,
         },
     )
-    return obj
+    return obj, None
+
+
+# Состояния, которые takeover вправе перебить: бронь человека и «отстоявшийся»
+# после теста стенд. updating/acs — чужая операция над боксом, testing — бронь
+# самого testing_service (решается режимами очереди), их не отнимаем.
+_TAKEOVER_STATES = (BusyState.BUSY, BusyState.TESTING_DONE)
+
+
+async def _takeover_service_reservation(
+    db: AsyncSession,
+    current: Server,
+    *,
+    server_id: str,
+    service_name: str,
+    busy_state: str,
+    busy_note: str | None,
+) -> tuple[Server, dict] | None:
+    """Переписать бронь `busy` / `testing_done` на вызывающий сервис.
+
+    Под `FOR UPDATE`, чтобы снимок прежнего держателя и перезапись были
+    одной атомарной операцией; UPDATE дополнительно сверяет состояние. None —
+    бронь за это время сменилась на не-takeover-able (или освободилась), решает
+    вызывающий.
+    """
+    db.expire(current)
+    locked = await repo.get_for_update(db, server_id)
+    if (
+        locked is None
+        or locked.status == ServerStatus.DECOMMISSIONED
+        or locked.busy_state not in _TAKEOVER_STATES
+    ):
+        return None
+    previous = {
+        "busy_state": locked.busy_state,
+        "busy_user_id": locked.busy_user_id,
+        "busy_service_name": locked.busy_service_name,
+        "busy_note": locked.busy_note,
+    }
+    result = await db.execute(
+        sa_update(Server)
+        .where(Server.id == server_id, Server.busy_state == previous["busy_state"])
+        .values(
+            busy_state=busy_state,
+            busy_user_id=None,
+            busy_actor_type=BusyActorType.SERVICE,
+            busy_service_name=service_name,
+            busy_since=datetime.now(timezone.utc),
+            busy_note=busy_note,
+        )
+    )
+    if result.rowcount == 0:
+        return None
+    await db.commit()
+    await db.refresh(locked)
+    audit_service.emit(
+        "server.reservation_taken_over",
+        target_id=server_id, target_type="server",
+        status="success", allowed=True,
+        details={
+            "service_name": service_name,
+            "department_id": locked.department_id,
+            "busy_state": locked.busy_state,
+            "busy_note": busy_note,
+            "previous_busy_state": previous["busy_state"],
+            "previous_busy_user_id": previous["busy_user_id"],
+            "previous_busy_service_name": previous["busy_service_name"],
+            "previous_busy_note": previous["busy_note"],
+        },
+    )
+    return locked, previous
 
 
 async def release_server_for_service(

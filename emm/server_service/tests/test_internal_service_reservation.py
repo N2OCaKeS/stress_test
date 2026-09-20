@@ -14,7 +14,10 @@ worker-internal `/internal/servers/{id}/...`: вызывающий сервис
 * release/смена стадии работают только для собственной брони;
 * необязательный `requested_by_department_id` сверяется с отделом сервера;
 * сервисная бронь гейтит деструктивные операции чужого пользователя;
-* смена стадии не двигает `busy_since`.
+* смена стадии не двигает `busy_since`;
+* `takeover=true` отнимает `busy` / `testing_done`, отдаёт `previous_holder`
+  и эмитит `server.reservation_taken_over`; `updating` / `acs` / `testing`
+  не отнимаются.
 
 Реальный PostgreSQL через сервисный docker-compose.test.yml (см. conftest).
 """
@@ -31,6 +34,13 @@ from tests._helpers import auth_hdr as _user_hdr
 BASE = "/api/server/v1/internal/servers"
 TESTING_SECRET = "test-testing-service-secret-do-not-use-in-prod"
 ACS_SECRET = "test-acs-secret-do-not-use-in-prod"
+
+
+@pytest.fixture
+def captured_emits(monkeypatch):
+    from tests._helpers import make_emit_capture
+
+    return make_emit_capture(monkeypatch, "src.services.server.audit_service.emit")
 
 
 @pytest.fixture
@@ -229,6 +239,205 @@ class TestServiceAcquire:
         )
         assert resp.status_code == 404, resp.text
         assert resp.json()["error_code"] == "SERVER_NOT_FOUND"
+
+
+class TestServiceAcquireTakeover:
+    async def test_takeover_busy_user_reservation(
+        self, client, make_server, db, configure_service_keys, captured_emits,
+    ):
+        srv = await make_server()
+        srv.busy_state = BusyState.BUSY
+        srv.busy_user_id = "usr_owner"
+        srv.busy_note = "ручной прогон"
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(TESTING_SECRET),
+            json={"busy_state": "acs", "busy_note": "run-1", "takeover": True},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["busy_state"] == "acs"
+        assert body["busy_actor_type"] == "service"
+        assert body["busy_service_name"] == "testing_service"
+        assert body["busy_note"] == "run-1"
+        assert body["previous_holder"] == {
+            "busy_state": "busy",
+            "busy_user_id": "usr_owner",
+            "busy_service_name": None,
+            "busy_note": "ручной прогон",
+        }
+
+        row = await _row(db, srv.id)
+        assert row.busy_state == BusyState.ACS
+        assert row.busy_user_id is None
+        assert row.busy_actor_type == "service"
+        assert row.busy_service_name == "testing_service"
+        assert row.busy_since is not None
+
+        taken = [e for e in captured_emits if e["action"] == "server.reservation_taken_over"]
+        assert len(taken) == 1
+        assert taken[0]["status"] == "success"
+        assert taken[0]["target_id"] == srv.id
+        details = taken[0]["details"]
+        assert details["service_name"] == "testing_service"
+        assert details["previous_busy_state"] == "busy"
+        assert details["previous_busy_user_id"] == "usr_owner"
+        assert details["previous_busy_note"] == "ручной прогон"
+        assert not [e for e in captured_emits if e["action"] == "server.acquired_for_service"]
+
+    async def test_takeover_testing_done(
+        self, client, make_server, db, configure_service_keys, captured_emits,
+    ):
+        srv = await make_server()
+        await db.flush()
+        await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(ACS_SECRET, identity="acs"), json={"busy_note": "old"},
+        )
+        await client.post(
+            f"{BASE}/{srv.id}/release-for-service-as-done", headers=_hdr(ACS_SECRET, identity="acs"),
+        )
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(TESTING_SECRET),
+            json={"takeover": True},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["busy_service_name"] == "testing_service"
+        assert body["previous_holder"]["busy_state"] == "testing_done"
+        assert body["previous_holder"]["busy_service_name"] == "acs"
+        assert body["previous_holder"]["busy_note"] == "old"
+
+        row = await _row(db, srv.id)
+        assert row.busy_state == BusyState.ACS
+        assert row.busy_service_name == "testing_service"
+        assert [e for e in captured_emits if e["action"] == "server.reservation_taken_over"]
+
+    @pytest.mark.parametrize("state", [BusyState.UPDATING, BusyState.ACS, BusyState.TESTING])
+    async def test_takeover_refused_for_untakeable_states(
+        self, client, make_server, db, configure_service_keys, captured_emits, state,
+    ):
+        srv = await make_server()
+        srv.busy_state = state
+        srv.busy_actor_type = "service"
+        srv.busy_service_name = "acs"
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(TESTING_SECRET),
+            json={"takeover": True},
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error_code"] == "SERVER_ALREADY_BUSY"
+
+        row = await _row(db, srv.id)
+        assert row.busy_state == state
+        assert row.busy_service_name == "acs"
+        assert not [e for e in captured_emits if e["action"] == "server.reservation_taken_over"]
+
+    async def test_no_takeover_flag_keeps_conflict_on_busy(
+        self, client, make_server, db, configure_service_keys, captured_emits,
+    ):
+        srv = await make_server()
+        srv.busy_state = BusyState.BUSY
+        srv.busy_user_id = "usr_owner"
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(TESTING_SECRET),
+            json={"takeover": False},
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error_code"] == "SERVER_ALREADY_BUSY"
+        assert (await _row(db, srv.id)).busy_user_id == "usr_owner"
+        assert not [e for e in captured_emits if e["action"] == "server.reservation_taken_over"]
+
+    async def test_takeover_on_free_is_plain_acquire(
+        self, client, make_server, db, configure_service_keys, captured_emits,
+    ):
+        srv = await make_server()
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(TESTING_SECRET),
+            json={"takeover": True},
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["busy_service_name"] == "testing_service"
+        assert body["previous_holder"] is None
+        assert not [e for e in captured_emits if e["action"] == "server.reservation_taken_over"]
+        assert [e for e in captured_emits if e["action"] == "server.acquired_for_service"]
+
+    async def test_plain_acquire_response_has_null_previous_holder(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv = await make_server()
+        await db.flush()
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(TESTING_SECRET), json={},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["previous_holder"] is None
+
+    async def test_takeover_decommissioned_is_conflict(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv = await make_server()
+        srv.status = "decommissioned"
+        srv.busy_state = BusyState.BUSY
+        srv.busy_user_id = "usr_owner"
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(TESTING_SECRET), json={"takeover": True},
+        )
+        assert resp.status_code == 409, resp.text
+        assert resp.json()["error_code"] == "SERVER_DECOMMISSIONED"
+        assert (await _row(db, srv.id)).busy_user_id == "usr_owner"
+
+    async def test_takeover_rejected_for_non_whitelisted_identity(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv = await make_server()
+        srv.busy_state = BusyState.BUSY
+        srv.busy_user_id = "usr_owner"
+        await db.flush()
+
+        resp = await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(TESTING_SECRET, identity="rogue_service"),
+            json={"takeover": True},
+        )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["error_code"] == "SERVICE_IDENTITY_NOT_ALLOWED"
+        assert (await _row(db, srv.id)).busy_user_id == "usr_owner"
+
+    async def test_release_after_takeover_frees_server(
+        self, client, make_server, db, configure_service_keys,
+    ):
+        srv = await make_server()
+        srv.busy_state = BusyState.BUSY
+        srv.busy_user_id = "usr_owner"
+        await db.flush()
+        await client.post(
+            f"{BASE}/{srv.id}/acquire-for-service",
+            headers=_hdr(TESTING_SECRET), json={"takeover": True},
+        )
+        resp = await client.post(
+            f"{BASE}/{srv.id}/release-for-service", headers=_hdr(TESTING_SECRET),
+        )
+        assert resp.status_code == 200, resp.text
+        assert (await _row(db, srv.id)).busy_state == BusyState.FREE
 
 
 class TestServiceRelease:

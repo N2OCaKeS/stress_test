@@ -18,6 +18,7 @@ import { useNavigate } from "react-router-dom";
 import { formatMskShort } from "@/lib/datetime";
 import type { TaskStatus } from "@/api/server/types";
 import { Badge, type BadgeKind } from "@/components/ui/Badge";
+import { rowKey, rowTime } from "@/components/notifications/rows";
 import type { AppNotification } from "@/components/notifications/types";
 
 const PANEL_WIDTH = 360;
@@ -50,16 +51,6 @@ function statusBadgeKind(status: TaskStatus): BadgeKind {
 
 function queueStateBadgeKind(state: string): BadgeKind {
   return QUEUE_STATE_BADGE[state] ?? "neutral";
-}
-
-function rowKey(n: AppNotification): string {
-  return n.kind === "worker_task" ? `worker_task:${n.task.id}` : `test_run:${n.item.id}`;
-}
-
-function rowTime(n: AppNotification): string {
-  return n.kind === "worker_task"
-    ? (n.task.finished_at ?? n.task.created_at)
-    : (n.item.finished_at ?? n.item.created_at);
 }
 
 function rowTitle(n: AppNotification): string {

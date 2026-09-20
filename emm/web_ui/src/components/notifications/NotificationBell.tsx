@@ -9,13 +9,8 @@ import { Bell } from "lucide-react";
 import { useMyTaskNotifications } from "@/api/server/useMyTaskNotifications";
 import { useDepartmentRunNotifications } from "@/api/testing/useDepartmentRunNotifications";
 import { NotificationCenter } from "@/components/notifications/NotificationCenter";
+import { rowTime } from "@/components/notifications/rows";
 import type { AppNotification } from "@/components/notifications/types";
-
-function rowTime(n: AppNotification): string {
-  return n.kind === "worker_task"
-    ? (n.task.finished_at ?? n.task.created_at)
-    : (n.item.finished_at ?? n.item.created_at);
-}
 
 export function NotificationBell() {
   const workerTasks = useMyTaskNotifications();

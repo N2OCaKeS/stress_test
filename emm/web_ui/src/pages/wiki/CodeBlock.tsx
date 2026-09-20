@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useToast } from "@/contexts/ToastContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Button } from "@/components/ui/Button";
+import { sanitizeShikiHtml } from "./shikiHtml";
 
 export type CodeBlockLang = "bash" | "python" | "json";
 
@@ -68,7 +69,8 @@ export function CodeBlock({ code, lang = "bash" }: CodeBlockProps) {
     getHighlighter()
       .then((hl) => {
         if (!alive) return;
-        setHtml(hl.codeToHtml(code, { lang, theme: shikiTheme }));
+        // Не проходит проверку — null, остаёмся на plain <pre> fallback.
+        setHtml(sanitizeShikiHtml(hl.codeToHtml(code, { lang, theme: shikiTheme })));
       })
       .catch(() => {
         // движок не поднялся — остаёмся на plain <pre> fallback

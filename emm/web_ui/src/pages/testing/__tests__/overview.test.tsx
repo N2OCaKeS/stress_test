@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog";
 import type { RunsState } from "@/pages/testing/runs";
+import type { PoolOverviewResponse } from "@/api/testing/types";
 
 const listTestStandsMock = vi.fn();
 const getTestStandMock = vi.fn();
@@ -33,9 +34,9 @@ vi.mock("@/api/server/servers", () => ({
   listServers: (...a: unknown[]) => listServersMock(...a),
 }));
 
-const getPoolOverviewMock = vi.fn();
+const getPoolOverviewMock = vi.fn<(query?: unknown) => Promise<PoolOverviewResponse>>();
 vi.mock("@/api/testing/poolOverview", () => ({
-  getPoolOverview: (...a: unknown[]) => getPoolOverviewMock(...a),
+  getPoolOverview: (query?: unknown) => getPoolOverviewMock(query),
 }));
 
 const listQueueItemsMock = vi.fn();
@@ -93,7 +94,7 @@ function emptyPoolOverview() {
     succeeded: 0,
     failed: 0,
     stands: [],
-    stand_status_counts: { recovering: 0, unreachable: 0, testing: 0, ready: 0, no_data: 0 },
+    stand_status_counts: { recovering: 0, unreachable: 0, testing: 0, testing_done: 0, ready: 0, no_data: 0 },
     generated_at: "2026-09-15T12:00:00Z",
   };
 }
@@ -300,7 +301,7 @@ describe("TestingOverview — live mode (testing_service)", () => {
           ping_reachable: false, ping_checked_at: "2026-09-15T12:00:00Z",
         },
       ],
-      stand_status_counts: { recovering: 1, unreachable: 0, testing: 0, ready: 0, no_data: 0 },
+      stand_status_counts: { recovering: 1, unreachable: 0, testing: 0, testing_done: 0, ready: 0, no_data: 0 },
       generated_at: "2026-09-15T12:00:05Z",
     });
     renderOverview();
@@ -310,6 +311,26 @@ describe("TestingOverview — live mode (testing_service)", () => {
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getAllByText("Восстанавливается").length).toBeGreaterThan(0);
+  });
+
+  it("панель «Обзор пула» показывает счётчик статуса «Тестирование завершено»", async () => {
+    getPoolOverviewMock.mockResolvedValue({
+      ...emptyPoolOverview(),
+      stands: [
+        {
+          stand_id: "ts_1", server_id: "srv_1", status: "testing_done",
+          busy_state: "testing_done", busy_service_name: "testing_service",
+          ping_reachable: true, ping_checked_at: "2026-09-15T12:00:00Z",
+        },
+      ],
+      stand_status_counts: { recovering: 0, unreachable: 0, testing: 0, testing_done: 9, ready: 0, no_data: 0 },
+    });
+    renderOverview();
+    await screen.findAllByText("stand-live-01");
+
+    const label = await screen.findByText("Тестирование завершено");
+    const card = label.parentElement as HTMLElement;
+    expect(within(card).getByText("9")).toBeInTheDocument();
   });
 
   it("переключение на «Выбранный прогон» запрашивает выбранный test_run_id", async () => {

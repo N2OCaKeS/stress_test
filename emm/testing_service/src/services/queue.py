@@ -248,7 +248,8 @@ async def enqueue(
 
     takeover = False
     replace = False
-    if await repo.count_active_for_stand(db, stand.id) == 0:
+    queue_was_active = await repo.count_active_for_stand(db, stand.id) > 0
+    if not queue_was_active:
         # Очередь стенда пуста и мы вот-вот заново возьмём его в цикл. Ни test,
         # ни stand ещё не залочены — сетевой вызов идёт без удержания строк.
         takeover = await _ensure_stand_free_for_launch(db, identity, stand, force=force)
@@ -263,6 +264,12 @@ async def enqueue(
     stand = await _load_stand_for_enqueue(db, resolved_stand_id, for_update=True)
     _check_test_stand_department_match(test, stand)
     was_empty = await repo.count_active_for_stand(db, stand.id) == 0
+    if was_empty and queue_was_active and is_admin and (replace or force):
+        # Очередь опустела между пред-проверкой и локом (последний item
+        # завершился, стенд ушёл в `testing_done`): админ, выбравший замену или
+        # force, всё равно должен получить стенд, а не 409 на обычном acquire.
+        # Для свободного стенда takeover=true равен обычному захвату.
+        takeover = True
     position = await repo.next_position_for_stand(db, stand.id)
 
     data = {
@@ -510,7 +517,8 @@ async def _start_or_continue_cycle(
                 requested_by_department_id=stand.department_id,
                 takeover=takeover,
             )
-            if takeover:
+            previous_holder = (acquired or {}).get("previous_holder")
+            if takeover and previous_holder:
                 audit_service.emit(
                     "queue.force_takeover",
                     target_id=stand.id, target_type="test_stand",
@@ -518,7 +526,7 @@ async def _start_or_continue_cycle(
                     details={
                         "stand_id": stand.id, "server_id": stand.server_id,
                         "queue_item_id": item.id,
-                        "previous_holder": (acquired or {}).get("previous_holder"),
+                        "previous_holder": previous_holder,
                     },
                 )
         else:

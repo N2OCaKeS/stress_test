@@ -1042,6 +1042,78 @@ class TestActiveQueueModes:
         assert replaced[0]["new_queue_item_id"] == new.id
         assert replaced[0]["interrupted"] == [{"queue_item_id": head.id, "state": QueueItemState.PREPARING}]
 
+    def _queue_emptied_before_lock(self, monkeypatch):
+        """Пред-проверка видит активную очередь, а к локу она уже пуста."""
+        real_count = queue_repo.count_active_for_stand
+        calls = {"n": 0}
+
+        async def flaky(db, stand_id):
+            calls["n"] += 1
+            return 1 if calls["n"] == 1 else await real_count(db, stand_id)
+
+        monkeypatch.setattr(queue_repo, "count_active_for_stand", flaky)
+
+    async def test_replace_race_queue_emptied_takes_over_testing_done(
+        self, client, admin_token, mock_server_service, monkeypatch,
+    ):
+        server = mock_server_service(overrides={
+            "batch_status": {
+                "busy_state": "testing_done", "busy_actor_type": "service",
+                "busy_service_name": "testing_service",
+            },
+        })
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        self._queue_emptied_before_lock(monkeypatch)
+
+        async with AsyncSessionLocal() as db:
+            new = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, on_active_queue="replace",
+            )
+
+        assert new.state == QueueItemState.PREPARING
+        assert [body.get("takeover") for body in server.acquire_bodies] == [True]
+
+    async def test_append_race_queue_emptied_has_no_takeover(
+        self, client, admin_token, mock_server_service, monkeypatch,
+    ):
+        server = mock_server_service(overrides={
+            "batch_status": {"busy_state": "testing_done", "busy_service_name": "testing_service"},
+        })
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        self._queue_emptied_before_lock(monkeypatch)
+
+        async with AsyncSessionLocal() as db:
+            new = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, on_active_queue="append",
+            )
+
+        assert server.acquire_bodies and all("takeover" not in body for body in server.acquire_bodies)
+        assert new.state == QueueItemState.FAILED
+
+    async def test_replace_race_on_free_stand_has_no_takeover_audit(
+        self, client, admin_token, mock_server_service, monkeypatch,
+    ):
+        server = mock_server_service()
+        events: list[str] = []
+        from src.services import audit_service
+        monkeypatch.setattr(
+            audit_service, "emit", lambda action, *args, **kwargs: events.append(action),
+        )
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+        self._queue_emptied_before_lock(monkeypatch)
+
+        async with AsyncSessionLocal() as db:
+            new = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, on_active_queue="replace",
+            )
+
+        assert new.state == QueueItemState.PREPARING
+        assert [body.get("takeover") for body in server.acquire_bodies] == [True]
+        assert "queue.force_takeover" not in events
+
     async def test_retry_failed_appends_for_admin_on_active_queue(
         self, client, admin_token, mock_server_service,
     ):

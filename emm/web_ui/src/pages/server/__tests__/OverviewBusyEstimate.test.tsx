@@ -93,8 +93,8 @@ async function flush() {
   }
 }
 
-function renderOverview(server: Server) {
-  return render(
+function overviewTree(server: Server) {
+  return (
     <ThemeProvider>
       <PersonaProvider>
         <ToastProvider>
@@ -103,8 +103,12 @@ function renderOverview(server: Server) {
           </MemoryRouter>
         </ToastProvider>
       </PersonaProvider>
-    </ThemeProvider>,
+    </ThemeProvider>
   );
+}
+
+function renderOverview(server: Server) {
+  return render(overviewTree(server));
 }
 
 describe("OverviewTab — оценка освобождения стенда", () => {
@@ -177,5 +181,38 @@ describe("OverviewTab — оценка освобождения стенда", (
       await vi.advanceTimersByTimeAsync(30_000);
     });
     expect(findActiveQueueItemMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("переход testing → testing_done: таймер и поллинг пропадают, появляются бейдж и «Подтвердить»", async () => {
+    findActiveQueueItemMock.mockResolvedValue({
+      queue_item_id: "qi_1",
+      state: "running",
+      test_id: "test_1",
+      started_at: "2026-09-18T10:00:00Z",
+      estimated_finish_at: "2026-09-18T10:30:00Z",
+    });
+    const { rerender } = renderOverview(baseServer({ busy_state: "testing" }));
+    await flush();
+
+    const expectedTime = formatMskTime("2026-09-18T10:30:00Z").slice(0, 5);
+    expect(screen.getByText(expectedTime)).toBeInTheDocument();
+    expect(screen.queryByText("Тестирование завершено")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Подтвердить" })).not.toBeInTheDocument();
+    const callsWhileTesting = findActiveQueueItemMock.mock.calls.length;
+
+    rerender(overviewTree(baseServer({ busy_state: "testing_done" })));
+    await flush();
+
+    expect(screen.queryByText(expectedTime)).not.toBeInTheDocument();
+    const row = screen.getByText("estimated_finish_at").parentElement;
+    expect(row?.textContent).toContain("—");
+    expect(screen.getByText("Тестирование завершено")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Подтвердить" })).toBeInTheDocument();
+
+    // Поллинг оценки остановлен: ни немедленного запроса, ни по таймеру.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(findActiveQueueItemMock).toHaveBeenCalledTimes(callsWhileTesting);
   });
 });

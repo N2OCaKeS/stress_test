@@ -440,6 +440,7 @@ async def create_test_run(
             enqueue_errors.append(TestRunPartialError(
                 stand_id=entry.stand_id, test_id=entry.test_id,
                 error_code=exc.error_code, message=exc.message,
+                details=exc.details or None,
             ))
 
     new_status = await test_run_status.recompute(db, run.id, emit_audit=False)

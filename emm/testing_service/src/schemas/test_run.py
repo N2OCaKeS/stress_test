@@ -143,6 +143,10 @@ class TestRunPartialError(BaseModel):
     test_id: str
     error_code: str
     message: str
+    details: dict | None = Field(
+        default=None,
+        description="Детали отказа (держатель стенда для STAND_BUSY, состав очереди для STAND_QUEUE_ACTIVE). Только в ответе на создание, при повторе по request_id не восстанавливаются.",
+    )
 
 
 class TestRunStpSyncError(BaseModel):

@@ -271,6 +271,7 @@ class TestCreateTestRun:
         assert err["stand_id"] == busy_stand
         assert err["test_id"] == busy_test
         assert err["error_code"] == "STAND_BUSY"
+        assert err["details"]["busy_service_name"] == "acs"
         # Занятый стенд не получил ни item'а, ни попытки взять бронь.
         acquired_for = {p for _, p in recorded_calls if p.endswith("/acquire-for-service")}
         assert len(acquired_for) == 1
@@ -329,7 +330,9 @@ class TestCreateTestRun:
 
         resp = await client.post(BASE, headers=_hdr(admin_token), json=_payload([stand_id], debug=True))
         assert resp.status_code == 201, resp.text
-        assert [err["error_code"] for err in resp.json()["enqueue_errors"]] == ["STAND_QUEUE_ACTIVE"]
+        errors = resp.json()["enqueue_errors"]
+        assert [err["error_code"] for err in errors] == ["STAND_QUEUE_ACTIVE"]
+        assert errors[0]["details"]["current"]["state"] == "preparing"
 
     async def test_active_queue_append_puts_the_whole_group_behind(
         self, client, admin_token, mock_server_service,

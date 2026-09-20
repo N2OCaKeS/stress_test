@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, act } from "@testing-library/react";
+import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ToastProvider } from "@/contexts/ToastContext";
 import type { TaskRead } from "@/api/server/types";
@@ -61,6 +61,7 @@ describe("NotificationBell + NotificationCenter", () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
   });

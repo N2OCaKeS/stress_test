@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, act } from "@testing-library/react";
+import { render, screen, act, cleanup } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
@@ -115,6 +115,7 @@ describe("OverviewTab — оценка освобождения стенда", (
   });
 
   afterEach(() => {
+    cleanup();
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
   });

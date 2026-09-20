@@ -431,6 +431,9 @@ export type TestRunStatus =
   | "failed"
   | "partially_failed";
 
+/** Что делать с уже активной очередью стенда при запуске: в конец либо заменить. */
+export type ActiveQueueMode = "append" | "replace";
+
 /**
  * Тело `POST /test-runs` (и `POST /test-runs/preview`, где `request_id` игнорируется).
  * Режима здесь нет — он фиксирован на каждом тесте (`TestDefinition.mode`),
@@ -458,12 +461,20 @@ export interface TestRunCreateRequest {
    */
   full?: boolean;
   /**
-   * Запустить даже на занятых стендах кампании. Занятый стенд без `force`
-   * попадает в `enqueue_errors` с `error_code: "STAND_BUSY"` вместо запуска;
-   * без роли department_admin/`admin` testing_service своего отдела сервер
-   * отвечает `FORCE_LAUNCH_DENIED`, а не запускает как обычно.
+   * Забрать занятые человеком стенды кампании (`busy`/`testing_done`).
+   * Занятый стенд без `force` попадает в `enqueue_errors` с
+   * `error_code: "STAND_BUSY"` вместо запуска; `updating` и чужой `acs` не
+   * отбираются никогда (`STAND_TAKEOVER_NOT_ALLOWED`). Без роли
+   * department_admin/`admin` testing_service своего отдела сервер отвечает
+   * `FORCE_LAUNCH_DENIED`, а не запускает как обычно.
    */
   force?: boolean;
+  /**
+   * Режим для стендов, где очередь testing_service уже активна. Не задан —
+   * у админа такой стенд попадает в `enqueue_errors` с `STAND_QUEUE_ACTIVE`
+   * (в `details` — что стоит в очереди), у остальных тесты встают в конец.
+   */
+  on_active_queue?: ActiveQueueMode;
   /** Ключ идемпотентности: повтор с тем же значением и тем же телом вернёт ту же кампанию, с другим телом — 409 REQUEST_ID_CONFLICT. */
   request_id?: string;
 }
@@ -507,6 +518,8 @@ export interface TestRunPartialError {
   test_id: string;
   error_code: string;
   message: string;
+  /** Держатель стенда (`STAND_BUSY`) или состав очереди (`STAND_QUEUE_ACTIVE`); только в ответе на создание. */
+  details?: Record<string, unknown> | null;
 }
 
 /** Карточка кампании. */

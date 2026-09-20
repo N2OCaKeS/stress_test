@@ -224,6 +224,7 @@ function StandsAdminPanel({
       {groupLaunchStand && (
         <StandGroupLaunchModal
           standId={groupLaunchStand.id}
+          standDepartmentId={groupLaunchStand.department_id}
           standLabel={asServerCard(groupLaunchStand.server)?.display_name || asServerCard(groupLaunchStand.server)?.hostname || groupLaunchStand.server_id}
           onClose={() => setGroupLaunchStand(null)}
           onLaunched={(id) => {

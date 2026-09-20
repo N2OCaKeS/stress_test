@@ -8,9 +8,11 @@ import { apiErrMsg } from "@/api/client";
 import { listOsVersions, resolveOsKernels } from "@/api/server/osVersions";
 import { createTestRun, previewTestRun } from "@/api/testing/testRuns";
 import { addTestToStp } from "@/api/testing/stp";
-import type { TestRunCreateResponse, TestRunPreviewEntry } from "@/api/testing/types";
+import type { ActiveQueueMode, TestRunCreateResponse, TestRunPreviewEntry } from "@/api/testing/types";
 import { usePersona } from "@/contexts/PersonaContext";
 import { canForceStandLaunch } from "@/lib/rbac";
+import { QueueActivePrompt, StandBusyPrompt } from "./StandLaunchConflict";
+import { describeHolder } from "./standConflict";
 
 const SKIP_LABELS: Record<string, string> = {
   skip_debug_required: "Требуется debug",
@@ -52,16 +54,19 @@ function StpAddInlineButton({ entry, onAdded }: { entry: TestRunPreviewEntry; on
 export function StandGroupLaunchModal({
   standId,
   standLabel,
+  standDepartmentId,
   onClose,
   onLaunched,
 }: {
   standId: string;
   standLabel?: string;
+  /** Отдел стенда: если он не совпадает с отделом персоны, кнопки забора/замены очереди не показываются. */
+  standDepartmentId?: string | null;
   onClose: () => void;
   onLaunched: (id: string) => void;
 }) {
   const { persona } = usePersona();
-  const canForce = canForceStandLaunch(persona);
+  const canForce = canForceStandLaunch(persona, standDepartmentId);
   const versionsQ = useQuery(() => listOsVersions({ limit: 500 }), []);
   const [rc, setRc] = useState("");
   const [detected, setDetected] = useState<Record<string, string[]>>({});
@@ -96,8 +101,12 @@ export function StandGroupLaunchModal({
   const launchable = entries.filter((entry) => entry.action === "launch");
   const emptyStand = previewQ.data?.stands_without_tests.includes(standId) ?? false;
 
-  async function launch(force: boolean) {
-    const body = { os_version_id: rc.trim(), kernel: kernel.trim(), test_run_stands: [standId], final, debug, force };
+  async function launch(options: { force?: boolean; onActiveQueue?: ActiveQueueMode } = {}) {
+    const body = {
+      os_version_id: rc.trim(), kernel: kernel.trim(), test_run_stands: [standId], final, debug,
+      force: options.force ?? false,
+      ...(options.onActiveQueue ? { on_active_queue: options.onActiveQueue } : {}),
+    };
     const fingerprint = JSON.stringify(body);
     if (request.current.fingerprint !== fingerprint) request.current = { fingerprint, id: crypto.randomUUID() };
     setBusy(true); setError("");
@@ -109,37 +118,34 @@ export function StandGroupLaunchModal({
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (busy || !ready || launchable.length === 0) return;
-    await launch(false);
+    await launch();
   }
 
   if (result) {
     const busyErrors = result.enqueue_errors.filter((err) => err.error_code === "STAND_BUSY");
-    const hasWarnings = result.stands_without_tests.length > 0 || result.enqueue_errors.length > 0;
+    const queueErrors = result.enqueue_errors.filter((err) => err.error_code === "STAND_QUEUE_ACTIVE");
+    const otherErrors = result.enqueue_errors.filter((err) => err.error_code !== "STAND_BUSY" && err.error_code !== "STAND_QUEUE_ACTIVE");
+    const hasWarnings = result.stands_without_tests.length > 0 || otherErrors.length > 0;
     return (
       <Modal open onOpenChange={(open) => { if (!open) onLaunched(result.id); }} title="Группа запущена" width="md">
         <div className="grid gap-3">
           <div className="text-sm">Кампания <span className="mono">{result.id}</span> создана.</div>
           {busyErrors.length > 0 && (
             <div className="text-xs text-warn grid gap-2">
-              <div>Стенд занят — часть тестов не запущена: {busyErrors[0].message}</div>
-              {canForce && (
-                <>
-                  <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => launch(true)}>
-                    {busy ? "Запускаем…" : "Запустить принудительно"}
-                  </Button>
-                  <div className="text-xs text-dim">
-                    Обходит только эту проверку — если стенд на самом деле всё ещё занят, item'ы всё равно заведутся, но почти сразу провалятся (статус — «failed»).
-                  </div>
-                </>
-              )}
+              <div>Стенд занят ({describeHolder(busyErrors[0].details)}) — тесты не запущены.</div>
+              <StandBusyPrompt details={busyErrors[0].details} canTakeover={canForce} busy={busy} onTakeover={() => launch({ force: true })} />
             </div>
+          )}
+          {queueErrors.length > 0 && (
+            <QueueActivePrompt details={queueErrors[0].details} canChoose={canForce} busy={busy} onChoose={(mode) => launch({ onActiveQueue: mode })} />
           )}
           {hasWarnings && (
             <div className="text-xs text-warn grid gap-1">
               {result.stands_without_tests.length > 0 && <div>Стенд остался без единого закреплённого теста.</div>}
-              {result.enqueue_errors.filter((err) => err.error_code !== "STAND_BUSY").map((err) => <div key={`${err.stand_id}-${err.test_id}`}>{err.message}</div>)}
+              {otherErrors.map((err) => <div key={`${err.stand_id}-${err.test_id}`}>{err.message}</div>)}
             </div>
           )}
+          {error && <div role="alert" className="text-xs text-danger">{error}</div>}
           <Button type="button" variant="primary" onClick={() => onLaunched(result.id)}>Готово</Button>
         </div>
       </Modal>

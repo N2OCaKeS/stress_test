@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { PersonaProvider } from "@/contexts/PersonaContext";
+import { ApiError } from "@/api/client";
 import type { TestLogSegment } from "@/api/testing/types";
 
 const listQueueItemsMock = vi.fn();
@@ -18,7 +19,7 @@ vi.mock("@/api/testing/testDefinitions", () => ({ listTestDefinitions: async () 
 ] }) }));
 vi.mock("@/api/testing/testStands", () => ({
   listTestStands: async () => ({ items: [{ id: "s1" }, { id: "s2" }] }),
-  getTestStand: async (id: string) => ({ id, server_id: id, server: { display_name: id === "s1" ? "stand15-110" : "vm-stand1" } }),
+  getTestStand: async (id: string) => ({ id, server_id: id, department_id: id === "s1" ? "core" : "other", server: { display_name: id === "s1" ? "stand15-110" : "vm-stand1" } }),
 }));
 vi.mock("@/api/server/osVersions", () => ({ listOsVersions: async () => ({ items: [{ id: "osv_1", name: "1.8.5", kernels: ["6.1"] }] }) }));
 
@@ -190,6 +191,85 @@ describe("AdhocMiddlePanel — реальные одиночные запуск�
     await waitFor(() => expect(launchQueueItemMock).toHaveBeenCalledTimes(2));
     expect(launchQueueItemMock.mock.calls[0][0].request_id).toBe(launchQueueItemMock.mock.calls[1][0].request_id);
     expect(launchQueueItemMock.mock.calls[0][0].debug_mode).toBe(false);
+  });
+
+  async function openLaunchModalAndSubmit(options: { debugStand?: string } = {}) {
+    renderHarness();
+    fireEvent.click(screen.getByRole("button", { name: /Запустить разовый тест/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Выберите тест" }));
+    fireEvent.click(await screen.findByRole("option", { name: "stress test · STR-SEGFAULT-FUZZ" }));
+    if (options.debugStand) {
+      fireEvent.click(screen.getByRole("checkbox", { name: "Debug" }));
+      fireEvent.click(screen.getByRole("button", { name: "Выберите стенд" }));
+      fireEvent.click(screen.getByRole("option", { name: options.debugStand }));
+    }
+    fireEvent.click(await screen.findByRole("button", { name: "Выберите РЦ" }));
+    fireEvent.click(screen.getByRole("option", { name: "1.8.5" }));
+    fireEvent.click(screen.getByRole("button", { name: "Запустить тест" }));
+  }
+  const busyError = (details: Record<string, unknown>) =>
+    new ApiError(409, { error_code: "STAND_BUSY", message: "Стенд сейчас занят — запуск недоступен", details });
+  const queueActiveError = () =>
+    new ApiError(409, {
+      error_code: "STAND_QUEUE_ACTIVE", message: "На стенде уже идёт очередь",
+      details: { queued_count: 2, current: { queue_item_id: "qi_1", state: "running", test_code: "DB-PG-TPCC" } },
+    });
+
+  it("занятый стенд: админ своего отдела забирает его кнопкой «Забрать стенд у …»", async () => {
+    launchQueueItemMock.mockRejectedValueOnce(busyError({ busy_state: "busy", busy_user_id: "petrov", takeover_possible: true }));
+    await openLaunchModalAndSubmit();
+    fireEvent.click(await screen.findByRole("button", { name: "Забрать стенд у petrov и запустить" }));
+    await waitFor(() => expect(launchQueueItemMock).toHaveBeenCalledTimes(2));
+    expect(launchQueueItemMock.mock.calls[0][0].force).toBe(false);
+    expect(launchQueueItemMock.mock.calls[1][0]).toEqual(expect.objectContaining({ force: true, stand_id: "s1" }));
+    expect(launchQueueItemMock.mock.calls[1][0].on_active_queue).toBeUndefined();
+    expect(screen.queryByText(/провалится|Обходит только/)).not.toBeInTheDocument();
+  });
+
+  it("занятый стенд, который отобрать нельзя (обновление/восстановление): кнопки нет, есть пояснение", async () => {
+    launchQueueItemMock.mockRejectedValueOnce(busyError({ busy_state: "updating", takeover_possible: false }));
+    await openLaunchModalAndSubmit();
+    await screen.findByText(/Стенд забрать нельзя/);
+    expect(screen.queryByRole("button", { name: /Забрать стенд/ })).not.toBeInTheDocument();
+  });
+
+  it("занятый стенд: не-админ видит только уведомление", async () => {
+    window.localStorage.setItem("dbos-persona", "erin");
+    try {
+      launchQueueItemMock.mockRejectedValueOnce(busyError({ busy_state: "busy", busy_user_id: "petrov", takeover_possible: true }));
+      await openLaunchModalAndSubmit();
+      await screen.findByText(/Стенд занят \(petrov\)/);
+      expect(screen.queryByRole("button", { name: /Забрать стенд/ })).not.toBeInTheDocument();
+    } finally {
+      window.localStorage.removeItem("dbos-persona");
+    }
+  });
+
+  it("занятый стенд другого отдела: кнопка забора не показывается даже админу", async () => {
+    launchQueueItemMock.mockRejectedValueOnce(busyError({ busy_state: "busy", busy_user_id: "petrov", takeover_possible: true }));
+    await openLaunchModalAndSubmit({ debugStand: "vm-stand1" });
+    await screen.findByText(/Стенд занят \(petrov\)/);
+    expect(screen.queryByRole("button", { name: /Забрать стенд/ })).not.toBeInTheDocument();
+  });
+
+  it("активная очередь: «Добавить в конец очереди» повторяет запрос с on_active_queue=append", async () => {
+    launchQueueItemMock.mockRejectedValueOnce(queueActiveError());
+    await openLaunchModalAndSubmit();
+    await screen.findByText(/в очереди ещё 2/);
+    expect(within(screen.getByRole("group", { name: "Очередь стенда занята" })).getByText("DB-PG-TPCC")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Добавить в конец очереди" }));
+    await waitFor(() => expect(launchQueueItemMock).toHaveBeenCalledTimes(2));
+    expect(launchQueueItemMock.mock.calls[1][0]).toEqual(expect.objectContaining({ on_active_queue: "append", force: false }));
+  });
+
+  it("активная очередь: «Очистить очередь и запустить сразу» повторяет запрос с on_active_queue=replace", async () => {
+    launchQueueItemMock.mockRejectedValueOnce(queueActiveError());
+    await openLaunchModalAndSubmit();
+    fireEvent.click(await screen.findByRole("button", { name: "Очистить очередь и запустить сразу" }));
+    await waitFor(() => expect(launchQueueItemMock).toHaveBeenCalledTimes(2));
+    expect(launchQueueItemMock.mock.calls[1][0]).toEqual(expect.objectContaining({ on_active_queue: "replace" }));
+    // Новый режим — новое тело, значит и новый ключ идемпотентности.
+    expect(launchQueueItemMock.mock.calls[1][0].request_id).not.toBe(launchQueueItemMock.mock.calls[0][0].request_id);
   });
 
   it("нигде не осталось текста про legacy «dev mode»/«dev режим»", async () => {

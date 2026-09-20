@@ -12,6 +12,9 @@ import { launchQueueItem } from "@/api/testing/queueItems";
 import { addTestToStp } from "@/api/testing/stp";
 import { usePersona } from "@/contexts/PersonaContext";
 import { canForceStandLaunch } from "@/lib/rbac";
+import type { ActiveQueueMode } from "@/api/testing/types";
+import { QueueActivePrompt, StandBusyPrompt } from "./StandLaunchConflict";
+import { describeHolder } from "./standConflict";
 
 /**
  * Подсказка §E2 при отказе `TEST_NOT_IN_STP`/`STP_RUN_NOT_FOUND`: различает
@@ -24,7 +27,6 @@ type StpPrompt = { kind: "add"; runId: string } | { kind: "not_generated" };
 
 export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => void; onLaunched: (id: string) => void }) {
   const { persona } = usePersona();
-  const canForce = canForceStandLaunch(persona);
   const versionsQ = useQuery(() => listOsVersions({ limit: 500 }), []);
   const testsQ = useQuery(() => listTestDefinitions({ limit: 500 }), []);
   const standsQ = useQuery(async () => {
@@ -41,10 +43,13 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
   const [error, setError] = useState("");
   const [stpPrompt, setStpPrompt] = useState<StpPrompt | null>(null);
   const [addBusy, setAddBusy] = useState(false);
-  const [standBusyInfo, setStandBusyInfo] = useState<string | null>(null);
+  const [standBusyDetails, setStandBusyDetails] = useState<Record<string, unknown> | null>(null);
+  const [queueActiveDetails, setQueueActiveDetails] = useState<Record<string, unknown> | null>(null);
   const request = useRef({ fingerprint: "", id: "" });
   const test = testsQ.data?.items.find((item) => item.id === testId);
   const resolvedStand = debug ? standId : test?.pinned_stand_id ?? "";
+  const standDepartmentId = standsQ.data?.find((item) => item.id === resolvedStand)?.department_id;
+  const canForce = canForceStandLaunch(persona, standDepartmentId);
   async function selectVersion(value: string) {
     setRc(value); setKernel(""); setError("");
     const known = versionsQ.data?.items.find((item) => item.id === value)?.kernels ?? [];
@@ -57,11 +62,15 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
     } catch (error) { setError(apiErrMsg(error, "Не удалось обнаружить ядра ОС")); }
     finally { setBusy(false); }
   }
-  async function attemptLaunch(force = false) {
-    const body = { test_id: testId, stand_id: resolvedStand, os_version_id: rc.trim(), kernel: kernel.trim(), debug_mode: debug, force };
+  async function attemptLaunch(options: { force?: boolean; onActiveQueue?: ActiveQueueMode } = {}) {
+    const body = {
+      test_id: testId, stand_id: resolvedStand, os_version_id: rc.trim(), kernel: kernel.trim(), debug_mode: debug,
+      force: options.force ?? false,
+      ...(options.onActiveQueue ? { on_active_queue: options.onActiveQueue } : {}),
+    };
     const fingerprint = JSON.stringify(body);
     if (request.current.fingerprint !== fingerprint) request.current = { fingerprint, id: crypto.randomUUID() };
-    setBusy(true); setError(""); setStpPrompt(null); setStandBusyInfo(null);
+    setBusy(true); setError(""); setStpPrompt(null); setStandBusyDetails(null); setQueueActiveDetails(null);
     try {
       onLaunched((await launchQueueItem({ ...body, request_id: request.current.id })).id);
     } catch (err) {
@@ -71,9 +80,10 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
       } else if (err instanceof ApiError && err.errorCode === "STP_RUN_NOT_FOUND") {
         setStpPrompt({ kind: "not_generated" });
       } else if (err instanceof ApiError && err.errorCode === "STAND_BUSY") {
-        const holder = (err.details?.busy_service_name as string | undefined) ?? (err.details?.busy_state as string | undefined) ?? "неизвестно кем";
-        setError(`Стенд занят (${holder}) — запуск отклонён.`);
-        setStandBusyInfo(holder);
+        setError(`Стенд занят (${describeHolder(err.details)}) — запуск отклонён.`);
+        setStandBusyDetails(err.details ?? {});
+      } else if (err instanceof ApiError && err.errorCode === "STAND_QUEUE_ACTIVE") {
+        setQueueActiveDetails(err.details ?? {});
       } else {
         setError(apiErrMsg(err, "Не удалось запустить тест"));
       }
@@ -132,15 +142,11 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
         </div>
       )}
       {error && <div role="alert" className="text-xs text-danger">{error}</div>}
-      {standBusyInfo && canForce && (
-        <div className="grid gap-1">
-          <Button type="button" size="sm" variant="primary" disabled={busy} onClick={() => attemptLaunch(true)}>
-            {busy ? "Запускаем…" : "Запустить принудительно"}
-          </Button>
-          <div className="text-xs text-dim">
-            Обходит только эту проверку — если стенд на самом деле всё ещё занят, постановка в очередь всё равно пройдёт, но запуск почти сразу провалится (статус item'а — «failed»).
-          </div>
-        </div>
+      {standBusyDetails && (
+        <StandBusyPrompt details={standBusyDetails} canTakeover={canForce} busy={busy} onTakeover={() => attemptLaunch({ force: true })} />
+      )}
+      {queueActiveDetails && (
+        <QueueActivePrompt details={queueActiveDetails} canChoose={canForce} busy={busy} onChoose={(mode) => attemptLaunch({ onActiveQueue: mode })} />
       )}
       <Button type="submit" variant="primary" disabled={busy || !testId || !resolvedStand || !rc.trim() || !kernel.trim() || !!unavailable}>{busy ? "Постановка в очередь…" : "Запустить тест"}</Button>
     </form>

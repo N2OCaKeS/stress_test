@@ -6,7 +6,7 @@
  * и `test_stands.py`.
  */
 import { apiGet, apiPost } from "@/api/client";
-import type { TestingPaginatedResponse } from "./types";
+import type { ActiveQueueMode, TestingPaginatedResponse } from "./types";
 export { getCurrentQueueItem, findActiveQueueItemForServer } from "@/api/testing/testStands";
 
 /**
@@ -29,11 +29,18 @@ export interface QueueLaunchRequest {
   request_id: string; test_id: string; stand_id: string; os_version_id: string;
   kernel: string; debug_mode: boolean;
   /**
-   * Запустить даже на занятом стенде. Без роли department_admin/`admin`
-   * testing_service своего отдела сервер отклоняет запрос отдельным
-   * `FORCE_LAUNCH_DENIED`, а не тихо запускает как обычно.
+   * Забрать стенд у текущего держателя (`busy`/`testing_done`). Без роли
+   * department_admin/`admin` testing_service своего отдела сервер отклоняет
+   * запрос отдельным `FORCE_LAUNCH_DENIED`; `updating` и чужой `acs` не
+   * отбираются никогда (`STAND_TAKEOVER_NOT_ALLOWED`).
    */
   force?: boolean;
+  /**
+   * Режим при уже активной очереди стенда: `append` — в конец, `replace` —
+   * очистить очередь, прервать текущий тест и начать сразу. Не задан — админ
+   * получает 409 `STAND_QUEUE_ACTIVE`, остальные встают в конец.
+   */
+  on_active_queue?: ActiveQueueMode;
 }
 export interface QueueItemsQuery {
   kind?: "standalone" | "campaign" | "all";

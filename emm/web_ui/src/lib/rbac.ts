@@ -272,13 +272,15 @@ export function isSecretAdmin(persona: Persona): boolean {
 }
 
 /**
- * True если персона может запустить тест/кампанию на занятом стенде через
- * `force` (§1 плана 2026-09-18 — предзапросная проверка занятости). Backend
- * проверяет то же самое по department_id стенда, а не персоны, — здесь только
- * гейт видимости кнопки «Запустить принудительно», реальное решение остаётся
- * за testing_service.
+ * True если персона может забрать стенд у держателя (`force`) или заменить
+ * активную очередь (`on_active_queue=replace`). Backend проверяет право по
+ * department_id стенда — здесь только гейт видимости кнопок, реальное решение
+ * остаётся за testing_service. Если отдел стенда известен и отличается от
+ * отдела персоны, кнопки не показываются: сервер такому вызывающему всё равно
+ * ответит `FORCE_LAUNCH_DENIED`.
  */
-export function canForceStandLaunch(persona: Persona): boolean {
+export function canForceStandLaunch(persona: Persona, standDepartmentId?: string | null): boolean {
+  if (standDepartmentId && persona.dept_id !== standDepartmentId) return false;
   return persona.platform_role === "dep_admin" || persona.service_roles?.testing === "admin";
 }
 

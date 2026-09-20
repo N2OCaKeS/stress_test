@@ -100,7 +100,7 @@
 | `queue_item.paused` | success | WARNING | `stand_id`, `from_state`; тест снят с исполнения без исхода, стенд стоит до `resume-queue`. |
 | `queue_item.resumed` | success | INFO | `stand_id`, новая `position`; остановленный элемент вернулся в конец очереди стенда. |
 | `queue_item.delete` | success | WARNING | `stand_id`, `from_state`; элемент убран из очереди насовсем — терминальной записи (как у `skip`) не остаётся. Недоступно для `preparing`/`ready`/`running` — сначала `skip`/`pause`. |
-| `queue.force_takeover` | success | WARNING | `stand_id`, `server_id`, `queue_item_id`, `previous_holder` (из ответа server_service); админ отобрал бронь стенда у человека (`busy`/`testing_done`) через `force`. |
+| `queue.force_takeover` | success | WARNING | `stand_id`, `server_id`, `queue_item_id`, `previous_holder` (из ответа server_service); админ отобрал бронь стенда у человека (`busy`/`testing_done`) через `force`; эмитится, только когда server_service вернул `previous_holder` (захват свободного стенда с `takeover=true` — обычный, без события). |
 | `queue.force_takeover` | failure | WARNING | `stand_id`, `reason=state_not_takeable`, данные держателя; `force` не помог — стенд в `updating`/чужом `acs`. |
 | `queue.force_takeover` | denied | WARNING | `stand_id`, `reason` (`force_requires_admin`/`replace_requires_admin`); `force`/`replace` от не-админа отдела стенда. |
 | `queue.replace` | success | WARNING | `stand_id`, `new_queue_item_id`, `cleared_queued_count`, `interrupted` (текущие item'ы, снятые skip'ом); админ выбрал «очистить очередь и запустить сразу». Каждый снятый item отдельно эмитит `queue_item.skipped`, очистка — `test_stand.queue_cleared`. |

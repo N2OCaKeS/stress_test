@@ -101,7 +101,7 @@
 | POST | `/queue-items/{id}/retry` | Повтор последней терминальной попытки в её исходном контексте. |
 | GET | `/queue-items` | Очередь/история своего отдела: `kind=standalone` (по умолчанию), `campaign` или `all`, optional `test_run_id`, `limit`/`offset`. |
 
-POST запуска: обязательные `request_id` (8–128 символов), `test_id`, `stand_id`, `os_version_id`, `kernel`, `mode` (`orel`/`smolensk`), optional `debug_mode` (false по умолчанию). POST retry: только `request_id`; стенд, тест, контекст и кампания наследуются. Произвольные поля, включая `test_run_id` и секреты в launch_context, не принимаются.
+POST запуска: обязательные `request_id` (8–128 символов), `test_id`, `stand_id`, `os_version_id`, `kernel`, `mode` (`orel`/`smolensk`), optional `debug_mode` (false по умолчанию), `force` (false), `on_active_queue` (`append`/`replace`, по умолчанию не задан) — см. «Занятый стенд, force и режимы очереди» ниже. POST retry: `request_id` и optional `force`; стенд, тест, контекст и кампания наследуются, на активной очереди retry всегда встаёт в конец (`append`), режим не принимается. Произвольные поля, включая `test_run_id` и секреты в launch_context, не принимаются.
 
 Запись разрешена администратору своего отдела или роли с `test_run:create` в своём отделе. Чужой стенд, тест чужого отдела и чужая кампания отклоняются. Чтение списка ограничено стендами своего отдела.
 
@@ -112,6 +112,51 @@ POST запуска: обязательные `request_id` (8–128 символ
 Debug допускается вне СТП и не меняет локальные ячейки или результаты Zephyr. Обычная попытка с сохранённой ссылкой обновляет выбранную СТП; legacy-попытки без ссылки сохраняют старое сопоставление по контексту. Старое создание кампании пока не требует СТП для каждого элемента — унификация этого входа относится к E1 и D4.
 
 Ответ содержит ID попытки/теста/стенда, test_run_id/retry_of_id, debug_mode, state, `interrupt_action`, RC/kernel/mode и времена/ошибку. Полный launch_context, ключ стэша и креды в ответ не входят.
+
+### Занятый стенд, force и режимы очереди
+
+Общий контракт для `POST /queue-items`, `POST /queue-items/{id}/retry`, `POST /test-stands/{id}/retry-failed` и `POST /test-runs`. Постановка смотрит на очередь testing_service на стенде и, если она пуста, на бронь стенда в server_service (`POST /internal/servers/batch-status`).
+
+Поля запроса:
+
+- `force` (bool, по умолчанию `false`) — запустить, даже если стенд занят не нами. Право проверяет сервер: `department_admin` отдела стенда либо роль `admin` testing_service в этом отделе. Не-админ с `force=true` на занятом стенде получает 403 `FORCE_LAUNCH_DENIED` (а не тихий запуск без force). На свободном стенде и для не-админа на пустой очереди `force` ничего не меняет.
+- `on_active_queue` (`append` | `replace`, по умолчанию не задан) — что делать, если очередь стенда уже активна (идёт тест или есть `queued`). Есть у `POST /queue-items` и `POST /test-runs`; у `retry` и `retry-failed` режима нет — они всегда `append`.
+
+Матрица результата (очередь пуста):
+
+| Стенд | Без `force` | С `force`, админ отдела стенда | С `force`, не-админ |
+|---|---|---|---|
+| `free` | запуск | запуск | запуск |
+| `busy` (человек), `testing_done` | 409 `STAND_BUSY` | бронь отбирается у держателя, запуск | 403 `FORCE_LAUNCH_DENIED` |
+| `updating` (обновление ОС), `acs` (чужое восстановление образа), прочее | 409 `STAND_BUSY` | 409 `STAND_TAKEOVER_NOT_ALLOWED` | 403 `FORCE_LAUNCH_DENIED` |
+
+Матрица результата (очередь стенда уже активна; бронь наша, `force` не нужен):
+
+| Вызывающий | `on_active_queue` не задан | `append` | `replace` |
+|---|---|---|---|
+| не-админ | молча в конец очереди | в конец | 403 `FORCE_LAUNCH_DENIED` |
+| админ отдела стенда | 409 `STAND_QUEUE_ACTIVE` | в конец | очистить остальные `queued`, прервать текущий тест (`skipped`), сразу начать новый |
+
+`replace` порядком: новый item заводится, затем удаляются прочие `queued` (кроме только что заведённых этим запросом), затем текущий `running`/`preparing`/`ready`/`paused` снимается через skip. Бронь стенда при этом не отпускается — очередь продолжает именно новый item. Если очередь опустела между проверкой и блокировкой стенда (последний item завершился, стенд ушёл в `testing_done`), админ с `replace` или `force` получает захват с отбором брони, а не 409 `SERVER_ALREADY_BUSY`.
+
+Коды ошибок:
+
+| Код | HTTP | Когда | `details` |
+|---|---|---|---|
+| `STAND_BUSY` | 409 | Стенд занят не нами, `force` не передан | `busy_state`, `busy_actor_type` (`user`/`service`), `busy_service_name`, `busy_user_id`, `busy_user_name`, `busy_note`, `takeover_possible` (bool: `true` для `busy`/`testing_done` — админ может повторить с `force=true`; `false` для `updating`/`acs`). Поля держателя берутся из `batch-status` server_service; `busy_user_name` может быть `null` — UI резолвит `busy_user_id` через auth_service. |
+| `STAND_TAKEOVER_NOT_ALLOWED` | 409 | `force=true`, но стенд в `updating` либо чужом `acs` — отобрать нельзя | те же поля держателя, что у `STAND_BUSY` |
+| `STAND_QUEUE_ACTIVE` | 409 | Админ поставил тест в стенд с активной очередью без `on_active_queue` | `stand_id`, `queued_count`, `current` (`queue_item_id`, `state`, `test_id`, `test_code`, `test_name`, `started_at`, `test_run_id`; `null`, если текущего нет) |
+| `FORCE_LAUNCH_DENIED` | 403 | `force=true` на занятом стенде или `on_active_queue=replace` от не-админа отдела стенда | — |
+
+Каждый отказ по `force`/`replace` пишет audit `queue.force_takeover` (`denied`/`failure`), успешный отбор брони — `queue.force_takeover` (`success`, с `previous_holder`), успешная замена очереди — `queue.replace` (см. `AUDIT_EVENTS.md`).
+
+Различия по эндпоинтам:
+
+- `POST /queue-items` — ошибки отдаются как обычный HTTP-ответ с кодом и `details` выше; повтор тем же `request_id` с изменёнными `force`/`on_active_queue` — 409 `REQUEST_ID_CONFLICT` (поля входят в отпечаток запроса).
+- `POST /queue-items/{id}/retry` — `force` как выше. Право админа перепроверяется сервером, `on_active_queue` не принимается (`extra=forbid`).
+- `POST /test-stands/{id}/retry-failed` — необязательное тело `{"force": bool}` (без тела = `false`), применяется к каждому перезапускаемому item'у. Занятый стенд без `force` — 409 `STAND_BUSY` на весь вызов (item'ы, заведённые до него, остаются); на активной очереди у админа вопроса нет, item'ы встают в конец.
+- `POST /test-runs` — `force` и `on_active_queue` общие для всех стендов кампании. Провал одного стенда не рушит кампанию: `STAND_BUSY`, `STAND_QUEUE_ACTIVE`, `STAND_TAKEOVER_NOT_ALLOWED`, `FORCE_LAUNCH_DENIED` попадают в `enqueue_errors[]` (`stand_id`, `test_id`, `error_code`, `message`, `details`), ответ остаётся 201. `details` (держатель стенда, состав очереди) отдаются только в ответе на создание, при повторе по `request_id` не восстанавливаются — в `entries[].enqueue_error_code`/`enqueue_error` остаются код и сообщение. Режим `on_active_queue` относится к первому тесту стенда в кампании, остальные тесты этого стенда встают в конец (иначе `replace` стирал бы уже заведённое). Оба поля входят в отпечаток идемпотентности.
+- `POST /test-runs/preview` — принимает то же тело, но `force`/`on_active_queue` игнорирует и не смотрит на занятость стендов: показывает только состав и причины пропуска. Занятость выясняется при реальном запуске.
 
 ### Управление очередью стенда
 

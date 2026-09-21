@@ -241,19 +241,6 @@ def usage_os_publisher(username,
 
     builder.add_heading(text="Результаты тестирования", level=2)
     builder.add_heading(text=f"Total Rating: {results_dict['rating']:.2f}", level=2)
-    builder.add_table({
-        "title": "Метрики (геометрическое среднее, load относительно idle-baseline)",
-        "headers": ["Метрика", "Baseline (idle)", "Результат (load)", "Индекс"],
-        "rows": [
-            [
-                crit["label"],
-                f'{crit["baseline"]:.2f}',
-                f'{crit["result"]:.2f}',
-                f'{crit["ratio"] * 100:.2f}',
-            ]
-            for crit in criteria.values()
-        ],
-    })
 
     builder.add_attachment(file_path=USAGE_OS_IDLE_CSV, title="idle_os.csv")
     builder.add_attachment(file_path=USAGE_OS_LOAD_CSV, title="load_os.csv")

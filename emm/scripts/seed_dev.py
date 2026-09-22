@@ -12,6 +12,10 @@
     (ssh_port=2222, привязан к debian OS-record),
   - заводит OS-аккаунт `tester` (пароль `tester1234`) на этом сервере с
     шифрованием через server_service AES-GCM,
+  - при заданной переменной окружения `ACS_PASS` — включает ACS-снимки
+    (`acs_settings`, реальный prod URL, пароль зашифрован тем же AES-GCM) и
+    даёт доступ отделу НТ (`acs_department_access`); без `ACS_PASS` шаг
+    пропускается с предупреждением, ACS остаётся выключен (см. `seed_acs`),
   - досевает системную роль `admin` в каталоге `service_role_definitions`
     для отдела НТ по всем сервисам,
   - заводит три credential'а в secret_service (dev_jira_token,
@@ -101,10 +105,25 @@ TEST_SERVER_SSH_PORT = 2222
 # из подсети, выданной docker'ом — worker внутри сети резолвит
 # `test_server` по docker DNS, IP здесь — плейсхолдер для not-null.
 TEST_SERVER_IP = "10.99.0.10"
+# Номер стенда — обязателен и уникален в рамках department_id (не глобально).
+# Отдел каждый прогон `make seed` создаётся заново, так что 1 всегда свободен.
+TEST_SERVER_NUMBER = 1
 
 # Каталог OS-версий — пока одна запись под debian-образ тестового сервера.
 # Когда заведём реальную Astra/Ubuntu — добавим рядом.
 OS_VERSION_NAME = "debian-stable"
+
+# Реальный ACS (clonezilla/DRBL) сервера, тот же, что зашит в легаси
+# allta_app_full/alltabot.py (SERVER_ACS_IP_OR_NAME/SERVER_ACS_PORT). URL —
+# не секрет, можно держать прямо в seed'е. Пароль — секрет, поэтому в код не
+# идёт: seed берёт его только из ACS_PASS в окружении на момент запуска (см.
+# `seed_acs`). Сервер read-only для нас, реальных обращений отсюда нет —
+# только запись URL-строки в БД.
+ACS_URL = "http://10.177.103.10:9999"
+# Singleton PK строки acs_settings — совпадает с server_service's
+# `models.acs_settings.SINGLETON_ID`; захардкожено, т.к. seed не импортирует
+# исходники server_service.
+ACS_SETTINGS_ID = "default"
 
 # UI-имена платформенных сервисов (должны совпадать с теми, что сидятся
 # через bootstrap auth_service'а — см. docker-compose env'ы и
@@ -132,6 +151,11 @@ def ok(msg: str) -> None:
 
 def fail(msg: str) -> None:
     print(f"  ✗ {msg}", file=sys.stderr)
+
+
+def warn(msg: str) -> None:
+    """Некритичное предупреждение — шаг пропущен, но seed продолжает работу."""
+    print(f"  ⚠ {msg}")
 
 
 def _docker_exec(container: str, code: str) -> str:
@@ -180,6 +204,20 @@ def encrypt_account_password(account_id: str, plaintext: str) -> str:
         "aad_for_server_account_password; "
         f"print(encrypt({plaintext!r}, "
         f"aad=aad_for_server_account_password({account_id!r})))"
+    )
+    return _docker_exec(SERVER_CONTAINER, code)
+
+
+def encrypt_acs_password(plaintext: str) -> str:
+    """AES-GCM шифр для acs_settings.acs_password_encrypted (singleton `default`).
+
+    Тот же конверт и та же зависимость от server_service, что и у
+    `encrypt_account_password` — ключ и AAD (`aad_for_acs_password`)
+    считываются внутри контейнера, seed'еру мастер-ключ не нужен.
+    """
+    code = (
+        "from src.services.secrets_service import encrypt, aad_for_acs_password; "
+        f"print(encrypt({plaintext!r}, aad=aad_for_acs_password({ACS_SETTINGS_ID!r})))"
     )
     return _docker_exec(SERVER_CONTAINER, code)
 
@@ -381,8 +419,8 @@ def seed_server(dept_id: str, created_by: str, os_version_id: str | None) -> str
         cur.execute(
             "INSERT INTO servers "
             "(id, hostname, display_name, ip_address, ssh_port, os_version_id, "
-            " department_id, status, power_state, busy_state, is_managed, created_by) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, 'unknown', 'unknown', 'free', false, %s)",
+            " department_id, number, status, power_state, busy_state, is_managed, created_by) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'unknown', 'unknown', 'free', false, %s)",
             (
                 server_id,
                 TEST_SERVER_HOSTNAME,
@@ -391,6 +429,7 @@ def seed_server(dept_id: str, created_by: str, os_version_id: str | None) -> str
                 TEST_SERVER_SSH_PORT,
                 os_version_id,
                 dept_id,
+                TEST_SERVER_NUMBER,
                 created_by,
             ),
         )
@@ -448,6 +487,45 @@ def seed_server_account(server_id: str, dept_id: str, created_by: str) -> str:
         "sudo=true, пароль зашифрован"
     )
     return account_id
+
+
+def seed_acs(dept_id: str, created_by: str) -> None:
+    """ACS-снимки: platform singleton (`acs_settings`) + opt-in отдела НТ.
+
+    Пароль ACS не хардкодится — читается из `ACS_PASS` в окружении seed'а.
+    Если переменная не задана, шаг просто пропускается с предупреждением:
+    строки `acs_settings`/`acs_department_access` не заводятся, вкладка
+    «Снимки ACS» остаётся скрытой (тот же дефолт, что и без этого seed'а).
+    """
+    section("server_service: ACS-снимки (url + пароль из ACS_PASS)")
+    acs_pass = os.environ.get("ACS_PASS")
+    if not acs_pass:
+        warn(
+            "ACS_PASS не задан в окружении — ACS оставлен выключенным. "
+            "Запустите `ACS_PASS=... python3 seed_dev.py`, чтобы включить."
+        )
+        return
+
+    encrypted = encrypt_acs_password(acs_pass)
+    with conn(PG_HOST, PG_PORT, "dev_server") as c, c.cursor() as cur:
+        cur.execute(
+            "INSERT INTO acs_settings (id, enabled, acs_url, acs_password_encrypted) "
+            "VALUES (%s, true, %s, %s) "
+            "ON CONFLICT (id) DO UPDATE SET "
+            "enabled = true, acs_url = EXCLUDED.acs_url, "
+            "acs_password_encrypted = EXCLUDED.acs_password_encrypted, "
+            "updated_at = now()",
+            (ACS_SETTINGS_ID, ACS_URL, encrypted),
+        )
+        cur.execute(
+            "INSERT INTO acs_department_access (id, department_id, is_enabled, created_by) "
+            "VALUES (%s, %s, true, %s) "
+            "ON CONFLICT (department_id) DO UPDATE SET "
+            "is_enabled = true, updated_at = now()",
+            (gen_id("ada"), dept_id, created_by),
+        )
+    ok(f"acs_settings enabled=true, url={ACS_URL}, пароль зашифрован")
+    ok(f"acs_department_access: отдел {dept_id} → is_enabled=true")
 
 
 # ── auth: service_role_definitions ──────────────────────────────────────────
@@ -788,6 +866,7 @@ def full_seed() -> None:
         dept_id, created_by=user_ids["admin"], os_version_id=os_version_id,
     )
     seed_server_account(server_id, dept_id, created_by=user_ids["admin"])
+    seed_acs(dept_id, created_by=user_ids["admin"])
     seed_secrets(dept_id, user_ids)
     seed_integration_settings_defaults(dept_id)
     seed_test_catalog(server_id)
@@ -808,6 +887,7 @@ def full_seed() -> None:
 
   Server:     test-server-01 → {TEST_SERVER_HOSTNAME}:{TEST_SERVER_SSH_PORT} (контейнер test_server)
               OS-version: {OS_VERSION_NAME}, account: tester (sudo, пароль зашифрован)
+  ACS:        {"enabled=true, url=" + ACS_URL if os.environ.get("ACS_PASS") else "выключен (ACS_PASS не был задан при запуске seed)"}
   Worker bot: server_worker (системный отдел «DBOS System») — заведён
               auth_service'ом на старте из WORKER_BOT_TOKEN, не этим seed'ом.
   Credentials: dev_jira_token, dev_postgres_password (dept НТ),

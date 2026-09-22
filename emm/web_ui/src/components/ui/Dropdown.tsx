@@ -47,6 +47,14 @@ interface DropdownCommonProps {
   maxHeight?: number;
   disabled?: boolean;
   className?: string;
+  /**
+   * По умолчанию список всегда сортируется по алфавиту (см. `filteredOptions`
+   * ниже) — так удобнее для длинных списков вроде серверов или отделов.
+   * `false` отключает эту сортировку и рендерит `options` в порядке, в
+   * котором их передал вызывающий код — нужно там, где порядок сам по себе
+   * несёт смысл (например месяцы или года), а не алфавит.
+   */
+  sortOptions?: boolean;
 }
 
 interface DropdownSingleProps extends DropdownCommonProps {
@@ -78,6 +86,7 @@ export function Dropdown(props: DropdownProps) {
     maxHeight = DEFAULT_MAX_HEIGHT,
     disabled,
     className,
+    sortOptions = true,
   } = props;
 
   const [open, setOpen] = useState(false);
@@ -150,9 +159,10 @@ export function Dropdown(props: DropdownProps) {
 
   const filteredOptions = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return options.filter((o) => !q || o.label.toLowerCase().includes(q))
-      .sort((a, b) => a.label.localeCompare(b.label, "ru", { numeric: true, sensitivity: "base" }));
-  }, [options, query]);
+    const matched = options.filter((o) => !q || o.label.toLowerCase().includes(q));
+    if (!sortOptions) return matched;
+    return matched.sort((a, b) => a.label.localeCompare(b.label, "ru", { numeric: true, sensitivity: "base" }));
+  }, [options, query, sortOptions]);
 
   const triggerText = useMemo(() => {
     if (props.mode === "single") {

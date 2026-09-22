@@ -576,15 +576,21 @@ function toPeriod(year: string | number, month: string | number): string {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
+/** Первый год, за который в принципе существуют отчёты по активности отдела. */
+const FIRST_ACTIVITY_REPORT_YEAR = 2026;
+
+/** Запас лет вперёд от текущего момента, чтобы не трогать код каждый год. */
+const FUTURE_YEARS_AHEAD = 15;
+
 /**
- * Годы для выпадашек периода отчёта — с запасом в обе стороны от `centerYear`,
- * без жёсткого потолка (в отличие от старого хардкода "до января 2026"):
- * год пересчитывается от текущего момента при каждом рендере, поэтому в
- * 2027-м дефолт сам станет 2027-м.
+ * Годы для выпадашек периода отчёта — фиксированный список от
+ * `FIRST_ACTIVITY_REPORT_YEAR` (раньше отчётов не существует) до текущего
+ * года плюс запас вперёд, по убыванию (новые сверху).
  */
-function yearOptions(centerYear: number): { value: string; label: string }[] {
+function yearOptions(currentYear: number): { value: string; label: string }[] {
   const years: { value: string; label: string }[] = [];
-  for (let y = centerYear + 3; y >= centerYear - 10; y -= 1) {
+  const maxYear = Math.max(currentYear + FUTURE_YEARS_AHEAD, FIRST_ACTIVITY_REPORT_YEAR);
+  for (let y = maxYear; y >= FIRST_ACTIVITY_REPORT_YEAR; y -= 1) {
     years.push({ value: String(y), label: String(y) });
   }
   return years;
@@ -707,11 +713,11 @@ function HrReportCard({ departmentId }: { departmentId: string }) {
       <div className="flex items-end gap-2 flex-wrap mb-3">
         <label className="grid gap-1">
           <span className="text-xs text-dim">Год</span>
-          <Dropdown mode="single" options={years} value={genYear} onChange={setGenYear} />
+          <Dropdown mode="single" options={years} value={genYear} onChange={setGenYear} sortOptions={false} />
         </label>
         <label className="grid gap-1">
           <span className="text-xs text-dim">Месяц</span>
-          <Dropdown mode="single" options={MONTH_OPTIONS} value={genMonth} onChange={setGenMonth} />
+          <Dropdown mode="single" options={MONTH_OPTIONS} value={genMonth} onChange={setGenMonth} sortOptions={false} />
         </label>
         <Button
           variant="primary"
@@ -738,19 +744,19 @@ function HrReportCard({ departmentId }: { departmentId: string }) {
         <span className="text-xs text-dim self-center mr-1">Показать отчёты за период:</span>
         <label className="grid gap-1">
           <span className="text-xs text-dim">от — год</span>
-          <Dropdown mode="single" options={years} value={fromYear} onChange={setFromYear} />
+          <Dropdown mode="single" options={years} value={fromYear} onChange={setFromYear} sortOptions={false} />
         </label>
         <label className="grid gap-1">
           <span className="text-xs text-dim">от — месяц</span>
-          <Dropdown mode="single" options={MONTH_OPTIONS} value={fromMonth} onChange={setFromMonth} />
+          <Dropdown mode="single" options={MONTH_OPTIONS} value={fromMonth} onChange={setFromMonth} sortOptions={false} />
         </label>
         <label className="grid gap-1">
           <span className="text-xs text-dim">до — год</span>
-          <Dropdown mode="single" options={years} value={toYear} onChange={setToYear} />
+          <Dropdown mode="single" options={years} value={toYear} onChange={setToYear} sortOptions={false} />
         </label>
         <label className="grid gap-1">
           <span className="text-xs text-dim">до — месяц</span>
-          <Dropdown mode="single" options={MONTH_OPTIONS} value={toMonth} onChange={setToMonth} />
+          <Dropdown mode="single" options={MONTH_OPTIONS} value={toMonth} onChange={setToMonth} sortOptions={false} />
         </label>
       </div>
 

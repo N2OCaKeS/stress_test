@@ -12,6 +12,10 @@ services:
     environment:
       - ALLTA_PORT=${ALLTA_PORT:-8000}
       - ALLTA_AUTH_API_KEY=${ALLTA_AUTH_API_KEY:-}
+      # Резолв iLO-кред по номеру стенда через server_service (libs/libilo.py).
+      # Пусто по умолчанию — вызов деградирует в понятную ошибку, импорт не падает.
+      - SERVER_SERVICE_URL=${SERVER_SERVICE_URL:-}
+      - ALLTA_APP_SERVICE_BOT_TOKEN=${ALLTA_APP_SERVICE_BOT_TOKEN:-}
     volumes:
       # Реальные пути и полный список DRBL-бинарей/библиотек сверяются на
       # 103.10 (dpkg -L drbl, ldd $(which drbl-ocs)) — см. drbl_stub/README.md.

@@ -529,6 +529,7 @@ async def _run_one_item(item: dict) -> None:
         succeeded=result.succeeded,
         exit_code=result.exit_code,
         error=result.error,
+        timed_out=result.timed_out,
     )
 
 

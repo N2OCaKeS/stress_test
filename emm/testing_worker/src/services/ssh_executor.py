@@ -95,6 +95,11 @@ class ExecutionResult:
     как она в итоге завершилась (успех, ненулевой код, таймаут исполнения,
     обрыв соединения на середине). `output` несёт всё, что успело
     накопиться, даже при провале.
+
+    `timed_out=True` — команда упёрлась в `command_timeout` (см.
+    `run_command`), а не в ненулевой код возврата/обрыв соединения.
+    Прокидывается в `testing_client.report_completed`, чтобы
+    `testing_service` завёл item как `timed_out`, а не generic `failed`.
     """
 
     connected: bool
@@ -104,6 +109,7 @@ class ExecutionResult:
     output: str = ""
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    timed_out: bool = False
 
 
 class _ChunkAccumulator:
@@ -262,6 +268,7 @@ async def execute(
         ticker_task = asyncio.ensure_future(_ticker(accumulator, chunk_interval_seconds, stop_ticker))
         exit_status: int | None = None
         run_error: str | None = None
+        command_timed_out = False
         try:
             await asyncio.wait_for(_stream_process_output(process, accumulator), timeout=command_timeout)
             result = await process.wait()
@@ -269,6 +276,7 @@ async def execute(
         except (asyncio.TimeoutError, TimeoutError) as exc:
             logger.warning("ssh_executor: command timed out for host=%s: %s", host, type(exc).__name__)
             run_error = f"SSH command timed out: {type(exc).__name__}"
+            command_timed_out = True
             # Обрыв этого SSH-канала сам по себе `sudo bash starter.sh` на
             # стенде не гасит (см. module docstring про interrupt-путь) —
             # без явного kill процесс просто продолжит жить после того, как
@@ -289,6 +297,7 @@ async def execute(
         return ExecutionResult(
             connected=True, succeeded=False, exit_code=None, error=run_error,
             output=output, started_at=started_at, finished_at=finished_at,
+            timed_out=command_timed_out,
         )
 
     if exit_status == 0:

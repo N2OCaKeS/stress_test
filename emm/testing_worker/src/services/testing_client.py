@@ -269,12 +269,18 @@ async def report_completed(
     exit_code: int | None,
     error: str | None,
     interrupted: str | None = None,
+    timed_out: bool = False,
 ) -> None:
     """POST /internal/queue/{queue_item_id}/completed.
 
     `interrupted` (`"skip"`/`"pause"`) — сессия оборвана по заявке оператора;
     в этом случае testing_service игнорирует `succeeded`/`exit_code`/`error`,
     исхода у теста нет.
+
+    `timed_out=True` — провал вызван `command_timeout` в `ssh_executor`
+    (`ExecutionResult.timed_out`), а не ненулевым кодом возврата/обрывом
+    соединения; testing_service заводит item как `timed_out`, а не generic
+    `failed`. Игнорируется при `succeeded=True`.
 
     Best-effort: сетевой сбой логируется как WARNING и проглатывается —
     следующий цикл всё равно уйдёт на новый `claim()`, а зависший
@@ -298,6 +304,7 @@ async def report_completed(
         "exit_code": exit_code,
         "error": error,
         "interrupted": interrupted,
+        "timed_out": timed_out,
     }
 
     try:

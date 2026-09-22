@@ -93,7 +93,7 @@ class TestRunOneItem:
         async def fake_log_segment(queue_item_id, **fields):
             recorded["calls"].append(("log_segment", queue_item_id, fields))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
@@ -208,7 +208,7 @@ class TestRunOneItem:
         async def fake_log_segment(queue_item_id, **fields):
             recorded["calls"].append(("log_segment", fields))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
@@ -247,7 +247,7 @@ class TestRunOneItem:
         async def fake_log_segment(queue_item_id, **fields):
             recorded["calls"].append(("log_segment", fields))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
@@ -430,7 +430,7 @@ class TestRunOneItemDeliversStarterScript:
         async def fake_log_segment(queue_item_id, **fields):
             recorded["calls"].append(("log_segment",))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", succeeded, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -469,7 +469,7 @@ class TestRunOneItemDeliversStarterScript:
         async def fake_execute(*args, **kwargs):
             raise AssertionError("execute() must not run without starter.sh on the stand")
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -494,7 +494,7 @@ class TestRunOneItemDeliversStarterScript:
         async def fake_execute(*args, **kwargs):
             raise AssertionError("execute() must not run after a failed SFTP write")
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", succeeded, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -521,7 +521,7 @@ class TestRunOneItemDeliversStarterScript:
         async def fake_execute(*args, **kwargs):
             raise AssertionError("execute() must not run without starter.sh on the stand")
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", queue_item_id, succeeded, error))
 
         monkeypatch.setattr(queue_loop, "_starter_script_content", fake_content)
@@ -573,7 +573,7 @@ class TestRunOneItemWritesGitTokenFile:
         async def fake_log_segment(queue_item_id, **fields):
             recorded["calls"].append(("log_segment",))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", succeeded, exit_code, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -605,7 +605,7 @@ class TestRunOneItemWritesGitTokenFile:
         async def fake_execute(*args, **kwargs):
             raise AssertionError("execute() must not run after a failed SFTP write")
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", succeeded, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -697,7 +697,7 @@ class TestRunOneItemWritesDatesFile:
         async def fake_log_segment(queue_item_id, **fields):
             recorded["calls"].append(("log_segment",))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", succeeded, exit_code, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -727,7 +727,7 @@ class TestRunOneItemWritesDatesFile:
             recorded["calls"].append(("execute",))
             raise AssertionError("execute() must not run after a failed SFTP write")
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -757,7 +757,7 @@ class TestRunOneItemWritesDatesFile:
         async def fake_log_segment(queue_item_id, **fields):
             recorded["calls"].append(("log_segment",))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed",))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -858,7 +858,7 @@ class TestRunOneItemPrepareOnly:
         async def fake_log_segment(queue_item_id, **fields):
             recorded["calls"].append(("log_segment", fields.get("label")))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", succeeded, exit_code, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -892,7 +892,7 @@ class TestRunOneItemPrepareOnly:
         async def fake_execute(*args, **kwargs):
             raise AssertionError("execute() must not run after a failed SFTP write")
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", queue_item_id, succeeded, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -918,7 +918,7 @@ class TestRunOneItemPrepareOnly:
         async def fake_execute(*args, **kwargs):
             raise AssertionError("execute() must not run after a failed SFTP write")
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             recorded["calls"].append(("report_completed", queue_item_id, succeeded, error))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -950,7 +950,7 @@ class TestRunOneItemPrepareOnly:
         async def fake_log_segment(queue_item_id, **fields):
             recorded["calls"].append(("log_segment", fields.get("label")))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
             pass
 
         monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
@@ -1013,7 +1013,7 @@ class TestInterruptWatcher:
         async def fake_log_segment(*a, **k):
             recorded["calls"].append(("log_segment",))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None, timed_out=False):
             recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error, interrupted))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
@@ -1054,7 +1054,7 @@ class TestInterruptWatcher:
         async def fake_log_segment(queue_item_id, **fields):
             recorded["calls"].append(("log_segment", fields["status"]))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None, timed_out=False):
             recorded["calls"].append(("report_completed", succeeded, exit_code, error, interrupted))
 
         monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
@@ -1086,7 +1086,7 @@ class TestInterruptWatcher:
             recorded["killed"] = True
             return True
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None, timed_out=False):
             recorded["interrupted"] = interrupted
 
         monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
@@ -1121,7 +1121,7 @@ class TestInterruptWatcher:
         async def fake_log_segment(*a, **k):
             pass
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None):
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, interrupted=None, timed_out=False):
             recorded["report"] = (succeeded, exit_code, error, interrupted)
 
         monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)

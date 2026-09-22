@@ -175,7 +175,9 @@ function placeholderMetrics(seed: number, status: StandStatus): StandMetrics {
 
 function mapQueueItemState(state: string): QueueState {
   if (state === "succeeded") return "done";
-  if (state === "failed") return "failed";
+  // `timed_out` — разновидность провала (см. `QueueItemState.TIMED_OUT`),
+  // здесь у карточки стенда нет отдельного визуального яруса под неё.
+  if (state === "failed" || state === "timed_out") return "failed";
   if (state === "skipped") return "skipped";
   if (state === "paused") return "paused";
   if (state === "queued") return "pending";
@@ -191,12 +193,13 @@ const QUEUE_STATE_NOTE: Record<string, string> = {
   skipped: "пропущен",
   succeeded: "завершён успешно",
   failed: "завершён с ошибкой",
+  timed_out: "провален по таймауту",
 };
 
 /** Состояния, в которых item считается активной работой стенда. */
 const ACTIVE_QUEUE_STATES = ["queued", "preparing", "ready", "running"];
 
-const TERMINAL_QUEUE_STATES = ["succeeded", "failed", "skipped"];
+const TERMINAL_QUEUE_STATES = ["succeeded", "failed", "timed_out", "skipped"];
 
 function itemTitle(item: PublicQueueItem): string {
   return item.test_code || item.test_name || item.test_id;

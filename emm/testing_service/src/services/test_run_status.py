@@ -18,7 +18,12 @@ from collections.abc import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import ACTIVE_QUEUE_STATES, QueueItemState, TestRunStatus
+from src.core.constants import (
+    ACTIVE_QUEUE_STATES,
+    FAILURE_QUEUE_STATES,
+    QueueItemState,
+    TestRunStatus,
+)
 from src.models import QueueItem, TestRunEntry
 from src.repositories import queue_item as queue_item_repo
 from src.repositories import test_run as repo
@@ -53,21 +58,24 @@ def compute_status(states: list[str]) -> str:
     оказались без закреплённых тестов) — `queued`, кампания заведена, но
     работать ей не над чем. Любой нетерминальный item — `running`.
 
-    Из терминальных исходов к провалу тянет только `FAILED`: чистый `FAILED`
-    даёт `failed`, `FAILED` вперемешку с чем угодно — `partially_failed`. Всё
-    остальное (`SUCCEEDED`, `SUCCEEDED` + `SKIPPED`, да хоть сплошной
-    `SKIPPED`) — `succeeded`: пропуск это решение оператора, а не провал
-    теста. Отдельного агрегатного статуса под пропуск не заводим — сколько
-    item'ов пропущено, видно из `progress.skipped` в карточке прогона.
+    Из терминальных исходов к провалу тянет `FAILED` и `TIMED_OUT`
+    (`FAILURE_QUEUE_STATES`) — таймаут SSH-команды такой же провал теста, как
+    и generic `failed`, просто с другой причиной. Чистая смесь этих двух
+    исходов даёт `failed`, что угодно из них вперемешку с успехом/пропуском —
+    `partially_failed`. Всё остальное (`SUCCEEDED`, `SUCCEEDED` + `SKIPPED`,
+    да хоть сплошной `SKIPPED`) — `succeeded`: пропуск это решение оператора,
+    а не провал теста. Отдельного агрегатного статуса под пропуск не заводим
+    — сколько item'ов пропущено, видно из `progress.skipped` в карточке
+    прогона.
     """
     if not states:
         return TestRunStatus.QUEUED
     if any(state in ACTIVE_QUEUE_STATES for state in states):
         return TestRunStatus.RUNNING
     outcomes = set(states)
-    if QueueItemState.FAILED not in outcomes:
+    if not outcomes & FAILURE_QUEUE_STATES:
         return TestRunStatus.SUCCEEDED
-    if outcomes == {QueueItemState.FAILED}:
+    if outcomes <= FAILURE_QUEUE_STATES:
         return TestRunStatus.FAILED
     return TestRunStatus.PARTIALLY_FAILED
 

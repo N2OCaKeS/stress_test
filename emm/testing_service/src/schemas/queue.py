@@ -125,6 +125,15 @@ class QueueCompletedRequest(BaseModel):
     succeeded: bool
     exit_code: int | None = Field(default=None)
     error: str | None = Field(default=None, max_length=2048)
+    timed_out: bool = Field(
+        default=False,
+        description=(
+            "SSH-сессия упёрлась в `command_timeout`, а не в ненулевой код "
+            "возврата/обрыв соединения (см. `ssh_executor.py`). Игнорируется "
+            "при `succeeded=True`; на провале определяет, уйдёт ли item в "
+            "`timed_out` вместо generic `failed`."
+        ),
+    )
     interrupted: Literal["skip", "pause"] | None = Field(
         default=None,
         description=(

@@ -43,6 +43,8 @@ export interface TestStandSummary {
  * `skipped` — терминальное, тест прерван без исхода и слот стенда освобождён.
  * `paused` — не терминальное: тест прерван, стенд остаётся занятым и стоит,
  * пока не позовут `POST /test-stands/{id}/resume-queue`.
+ * `timed_out` — терминальное, разновидность `failed`: SSH-команда упёрлась в
+ * `command_timeout`, а не в ненулевой код возврата/обрыв соединения.
  */
 export type QueueItemState =
   | "queued"
@@ -52,11 +54,12 @@ export type QueueItemState =
   | "succeeded"
   | "failed"
   | "skipped"
-  | "paused";
+  | "paused"
+  | "timed_out";
 
-/** Элемент очереди в терминальном состоянии (succeeded/failed/skipped) — поллить больше нечего. */
+/** Элемент очереди в терминальном состоянии (succeeded/failed/timed_out/skipped) — поллить больше нечего. */
 export function isTerminalQueueItemState(state: string): boolean {
-  return state === "succeeded" || state === "failed" || state === "skipped";
+  return state === "succeeded" || state === "failed" || state === "timed_out" || state === "skipped";
 }
 
 /**

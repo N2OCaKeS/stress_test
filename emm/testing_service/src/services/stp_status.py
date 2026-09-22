@@ -42,6 +42,9 @@ _TERMINAL_STATUS_MAP: dict[str, str] = {
     QueueItemState.RUNNING: StpCellStatus.IN_PROGRESS,
     QueueItemState.SUCCEEDED: StpCellStatus.PASSED,
     QueueItemState.FAILED: StpCellStatus.FAIL,
+    # Таймаут SSH-команды — тот же провал теста, что и generic `failed`,
+    # для СТП/Zephyr разницы в причине нет.
+    QueueItemState.TIMED_OUT: StpCellStatus.FAIL,
 }
 
 

@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import (
     ACTIVE_QUEUE_STATES,
+    FAILURE_QUEUE_STATES,
     IN_FLIGHT_QUEUE_STATES,
     SERVICE_NAME,
     PlatformRole,
@@ -714,10 +715,18 @@ async def _fail_item_and_maybe_retry(
     failed_step: str | None,
     error: str | None,
     audit_action: str,
+    timed_out: bool = False,
 ) -> QueueItem | None:
-    """Провалить `item` терминально и, если положено, создать retry в конце очереди."""
+    """Провалить `item` терминально и, если положено, создать retry в конце очереди.
+
+    `timed_out=True` — провал вызван `command_timeout` SSH-сессии
+    (`complete_item`), а не ненулевым кодом возврата/обрывом соединения:
+    item уходит в `timed_out` вместо generic `failed` (см. докстринг
+    `QueueItemState.TIMED_OUT`), retry-логика ниже для обоих исходов одна и
+    та же.
+    """
     settings = await dts_svc.get_effective(db, department_id)
-    item.state = QueueItemState.FAILED
+    item.state = QueueItemState.TIMED_OUT if timed_out else QueueItemState.FAILED
     item.failed_step = failed_step
     item.error = (error or "")[:2048] or None
     item.finished_at = datetime.now(timezone.utc)
@@ -768,15 +777,18 @@ async def _fail_and_advance(
     error: str | None,
     audit_action: str,
     is_first_ever: bool,
+    timed_out: bool = False,
 ) -> None:
     """Провалить `item` + либо продолжить очередь стенда, либо освободить бронь.
 
     `is_first_ever=True` значит бронь никогда не бралась для этого цикла —
-    в этом случае освобождать нечего, даже если queue опустела.
+    в этом случае освобождать нечего, даже если queue опустела. `timed_out`
+    прокидывается в `_fail_item_and_maybe_retry` как есть.
     """
     retry_item = await _fail_item_and_maybe_retry(
         db, item, stand.department_id,
         failed_step=failed_step, error=error, audit_action=audit_action,
+        timed_out=timed_out,
     )
     await db.commit()
     await stp_status.sync_cell_from_queue_item(db, item)
@@ -1173,6 +1185,7 @@ async def complete_item(db: AsyncSession, queue_item_id: str, body: QueueComplet
         failed_step=None, error=error,
         audit_action="queue_item.completed",
         is_first_ever=False,
+        timed_out=body.timed_out,
     )
     return item
 
@@ -1374,7 +1387,7 @@ async def retry_failed(
     skipped = 0
     for candidate in candidates:
         source = await repo.get_by_id_for_update(db, candidate.id)
-        if source is None or source.state != QueueItemState.FAILED or await repo.has_successor(db, source.id):
+        if source is None or source.state not in FAILURE_QUEUE_STATES or await repo.has_successor(db, source.id):
             skipped += 1
             continue
         if source.test_run_id:

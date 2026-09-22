@@ -178,7 +178,10 @@ class TestReportCompleted:
         assert recorded["path"] == "/internal/queue/qi_1/completed"
         assert recorded["identity"] == "testing_worker"
         body = _json.loads(recorded["body"])
-        assert body == {"succeeded": True, "exit_code": 0, "error": None, "interrupted": None}
+        assert body == {
+            "succeeded": True, "exit_code": 0, "error": None,
+            "interrupted": None, "timed_out": False,
+        }
 
     async def test_interrupted_run_is_reported_as_such(self, monkeypatch):
         recorded = {}

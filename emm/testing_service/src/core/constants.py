@@ -204,6 +204,15 @@ class QueueItemState(StrEnum):
     (`prepare.sh` отработал), а вместо запуска теста воркер положил на стенд
     файл с командой, которой был бы запущен тест. Отдельный статус, чтобы не
     путать это с реальным прогоном в статистике/СТП.
+
+    `timed_out` — терминальное, разновидность `failed`: SSH-сессия
+    `testing_worker` упёрлась в `command_timeout` (см.
+    `testing_worker/src/services/ssh_executor.py`), а не в ненулевой код
+    возврата/обрыв соединения. Заводится отдельно от generic `failed`, чтобы
+    в таблице прогонов и статистике было видно, что тест не провалился по
+    существу, а не уложился в отведённое время. Для агрегатов исхода
+    (статус кампании, СТП/Zephyr, счётчик "упало" в обзоре пула) считается
+    провалом наравне с `failed` — см. `FAILURE_QUEUE_STATES`.
     """
 
     QUEUED = "queued"
@@ -215,6 +224,7 @@ class QueueItemState(StrEnum):
     SKIPPED = "skipped"
     PAUSED = "paused"
     PREPARED = "prepared"
+    TIMED_OUT = "timed_out"
 
 
 # Состояния, которые занимают место в очереди стенда — пока у стенда есть
@@ -222,6 +232,15 @@ class QueueItemState(StrEnum):
 ACTIVE_QUEUE_STATES: frozenset[str] = frozenset({
     QueueItemState.QUEUED, QueueItemState.PREPARING, QueueItemState.RUNNING,
     QueueItemState.READY, QueueItemState.PAUSED,
+})
+
+# Терминальные исходы, которые для любой агрегации (статус кампании, СТП/
+# Zephyr, счётчик "упало" обзора пула, массовый retry-failed) — провал.
+# `timed_out` не смешивается с `failed` в самом `queue_items.state` (см.
+# докстринг `QueueItemState.TIMED_OUT`), но везде, где считается исход, а не
+# конкретная причина, эти два состояния равнозначны.
+FAILURE_QUEUE_STATES: frozenset[str] = frozenset({
+    QueueItemState.FAILED, QueueItemState.TIMED_OUT,
 })
 
 

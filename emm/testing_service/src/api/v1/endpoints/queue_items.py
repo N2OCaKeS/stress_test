@@ -137,7 +137,7 @@ async def list_items(
     created_until: AwareDatetime | None = None,
     states: list[Literal[
         "queued", "preparing", "ready", "running",
-        "succeeded", "failed", "skipped", "paused",
+        "succeeded", "failed", "skipped", "paused", "timed_out",
     ]] | None = Query(None),
     debug_mode: bool | None = None,
     q: str | None = Query(None, max_length=200),

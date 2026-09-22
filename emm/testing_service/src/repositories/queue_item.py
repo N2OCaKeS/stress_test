@@ -6,7 +6,12 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import aliased
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import ACTIVE_QUEUE_STATES, IN_FLIGHT_QUEUE_STATES, QueueItemState
+from src.core.constants import (
+    ACTIVE_QUEUE_STATES,
+    FAILURE_QUEUE_STATES,
+    IN_FLIGHT_QUEUE_STATES,
+    QueueItemState,
+)
 from src.models import QueueItem, TestStand, TestDefinition
 
 
@@ -107,7 +112,7 @@ async def list_queued_for_stand(db: AsyncSession, stand_id: str) -> list[QueueIt
 
 
 async def list_failed_for_stand(db: AsyncSession, stand_id: str) -> list[QueueItem]:
-    """Все `failed`-item'ы этого стенда — кандидаты массового retry.
+    """Все `failed`/`timed_out`-item'ы этого стенда — кандидаты массового retry.
 
     Не фильтрует по "последней попытке" сама — вызывающий (`retry_failed`)
     отсеивает уже перезапущенные через `has_successor`, как и одиночный
@@ -115,7 +120,7 @@ async def list_failed_for_stand(db: AsyncSession, stand_id: str) -> list[QueueIt
     """
     stmt = (
         select(QueueItem)
-        .where(QueueItem.stand_id == stand_id, QueueItem.state == QueueItemState.FAILED)
+        .where(QueueItem.stand_id == stand_id, QueueItem.state.in_(FAILURE_QUEUE_STATES))
         .order_by(QueueItem.position.asc(), QueueItem.created_at.asc())
     )
     return list((await db.execute(stmt)).scalars())
@@ -274,7 +279,7 @@ async def aggregate_pool_overview(
             running += 1
         elif current and state == QueueItemState.SUCCEEDED:
             succeeded += 1
-        elif current and state == QueueItemState.FAILED:
+        elif current and state in FAILURE_QUEUE_STATES:
             failed += 1
     return {"remaining": remaining, "running": running, "succeeded": succeeded, "failed": failed}
 

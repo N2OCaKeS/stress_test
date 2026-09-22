@@ -17,7 +17,7 @@ import pytest_asyncio
 from sqlalchemy import select
 
 from src.models import ServerAccountVm
-from tests._helpers import assert_error, auth_hdr as _hdr, make_dispatch_capture
+from tests._helpers import assert_error, auth_hdr as _hdr, make_dispatch_capture, next_stand_number
 
 BASE = "/api/server/v1/server-accounts"
 
@@ -46,6 +46,7 @@ async def make_hub(db):
             cpu_threads=16,
             ram_total_mb=32768,
             network_interface_name="eth0",
+            number=next_stand_number(),
         )
         db.add(srv)
         await db.flush()
@@ -72,6 +73,7 @@ async def make_vm(db):
         vm = Vm(
             id=new_id(),
             name=name or f"vm-{uuid.uuid4().hex[:6]}",
+            number=next_stand_number(),
             hub_server_id=hub.id,
             department_id=department_id,
             status="free",

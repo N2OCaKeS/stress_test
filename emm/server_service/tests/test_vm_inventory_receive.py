@@ -17,7 +17,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
-from tests._helpers import assert_error, auth_hdr as _hdr, make_emit_capture
+from tests._helpers import assert_error, auth_hdr as _hdr, make_emit_capture, next_stand_number
 
 BASE_INT = "/api/server/v1/internal"
 
@@ -50,6 +50,7 @@ async def make_hub(db):
             is_managed=True,
             is_vms_hub=True,
             virtualization=True,
+            number=next_stand_number(),
         )
         db.add(srv)
         await db.flush()
@@ -76,6 +77,7 @@ async def make_vm(db):
         vm = Vm(
             id=new_id(),
             name=name or f"vm-{uuid.uuid4().hex[:6]}",
+            number=next_stand_number(),
             hub_server_id=hub.id,
             department_id=department_id,
             cpu=cpu, ram_mb=8192, disk_gb=100,

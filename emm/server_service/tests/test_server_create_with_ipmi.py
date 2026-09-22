@@ -17,7 +17,7 @@ import pytest
 
 from src.services import secrets_service
 
-from tests._helpers import assert_error, auth_hdr as _hdr, b64
+from tests._helpers import assert_error, auth_hdr as _hdr, b64, next_stand_number
 
 BASE = "/api/server/v1/servers"
 
@@ -28,6 +28,7 @@ def _payload(**overrides):
         "ip_address": "10.20.20.20",
         "department_id": "dep_a",
         "ssh_port": 22,
+        "number": next_stand_number(),
     }
     data.update(overrides)
     return data

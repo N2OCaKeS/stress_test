@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.services import secrets_service
 from src.services.server_account import ensure_provision_credentials, reset_provision_credentials
+from tests._helpers import next_stand_number
 
 
 @pytest.fixture
@@ -41,6 +42,7 @@ def make_bare_account(db):
             ip_address=f"10.99.{int(suffix[:2], 16) % 256}.{int(suffix[2:4], 16) % 256}",
             ssh_port=22,
             department_id="dep_a",
+            number=next_stand_number(),
         )
         db.add(srv)
         await db.flush()

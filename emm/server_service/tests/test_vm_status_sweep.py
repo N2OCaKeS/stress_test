@@ -15,7 +15,7 @@ import pytest_asyncio
 
 from src.core.config import get_settings
 from src.core.constants import ServerStatus
-from tests._helpers import assert_error, auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr, next_stand_number
 
 BASE_INT = "/api/server/v1/internal"
 
@@ -59,6 +59,7 @@ async def make_vm(db, make_server):
         vm = Vm(
             id=new_id(),
             name=f"vm-{uuid.uuid4().hex[:6]}",
+            number=next_stand_number(),
             hub_server_id=hub.id,
             department_id=department_id,
             ip_address=ip_address,

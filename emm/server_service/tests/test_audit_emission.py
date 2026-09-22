@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers import assert_error, auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr, next_stand_number
 
 BASE = "/api/server/v1"
 
@@ -60,6 +60,7 @@ class TestServerCrudAudit:
                 "ip_address": "10.99.0.1",
                 "department_id": dept_a,
                 "ssh_port": 22,
+                "number": next_stand_number(),
             },
             headers=_hdr(admin_role_token_a),
         )
@@ -83,6 +84,7 @@ class TestServerCrudAudit:
                 "ip_address": "10.99.0.2",
                 "department_id": dept_b,
                 "ssh_port": 22,
+                "number": next_stand_number(),
             },
             headers=_hdr(admin_role_token_a),
         )

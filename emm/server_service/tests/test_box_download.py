@@ -18,7 +18,7 @@ import uuid
 import pytest
 import pytest_asyncio
 
-from tests._helpers import assert_error, auth_hdr as _hdr, make_dispatch_capture
+from tests._helpers import assert_error, auth_hdr as _hdr, make_dispatch_capture, next_stand_number
 
 BASE = "/api/server/v1/boxes"
 INT = "/api/server/v1/internal/boxes"
@@ -43,6 +43,7 @@ async def make_hub(db):
             virtualization=True,
             management_user="dbos",
             network_interface_name="eth0",
+            number=next_stand_number(),
         )
         db.add(srv)
         await db.flush()

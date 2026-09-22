@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers import assert_error, auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr, next_stand_number
 
 BASE = "/api/server/v1"
 
@@ -308,6 +308,7 @@ class TestTaskCancelVmCreateCleanup:
         vm = Vm(
             id=new_id(),
             name="vm-orphan",
+            number=next_stand_number(),
             hub_server_id=hub.id,
             department_id="dep_a",
             status="free",

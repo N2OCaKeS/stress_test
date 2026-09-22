@@ -24,7 +24,7 @@ BASE = "/api/server/v1"
 BASE_INT = f"{BASE}/internal"
 
 
-from tests._helpers import assert_error, auth_hdr as _hdr  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr, next_stand_number  # noqa: E402
 
 
 # ── Allowed actions: 4 разрешённых эндпоинта возвращают 200 ──────────────────
@@ -112,6 +112,7 @@ class TestWorkerBotForbiddenServerCrud:
                 "ip_address": "10.99.99.99",
                 "ssh_port": 22,
                 "department_id": "dep_a",
+                "number": next_stand_number(),
             },
         )
         assert_error(resp, 403, "PERMISSION_DENIED")

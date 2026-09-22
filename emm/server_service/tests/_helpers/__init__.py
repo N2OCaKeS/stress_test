@@ -18,12 +18,25 @@
 from __future__ import annotations
 
 import base64
+import itertools
 from typing import Any
 
 
 def b64(plaintext: str) -> str:
     """`base64.b64encode(plaintext)` — write-эндпоинты принимают пароли так."""
     return base64.b64encode(plaintext.encode("utf-8")).decode("ascii")
+
+
+# Номер стенда обязателен на Server/Vm (composite UNIQUE per department_id).
+# Монотонный счётчик на весь тестовый процесс тривиально уникален везде,
+# независимо от отдела — фикстурам, которым номер не важен, достаточно
+# `number=next_stand_number()` вместо ручного подбора.
+_STAND_NUMBER_SEQ = itertools.count(1)
+
+
+def next_stand_number() -> int:
+    """Следующий гарантированно свободный номер стенда для test-фикстур."""
+    return next(_STAND_NUMBER_SEQ)
 
 
 def auth_hdr(token: str, dept: str | None = None) -> dict[str, str]:

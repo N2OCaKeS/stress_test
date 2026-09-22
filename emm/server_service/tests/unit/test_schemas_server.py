@@ -18,6 +18,7 @@ _BASE_CREATE = {
     "hostname": "srv-01",
     "ip_address": "10.0.0.1",
     "department_id": "dep_a",
+    "number": 1,
 }
 
 
@@ -112,12 +113,30 @@ class TestServerCreateNonNegativeCounts:
 
 
 class TestServerCreateRequiredFields:
-    @pytest.mark.parametrize("field", ["hostname", "ip_address", "department_id"])
+    @pytest.mark.parametrize("field", ["hostname", "ip_address", "department_id", "number"])
     def test_required_field_missing(self, field: str):
         payload = dict(_BASE_CREATE)
         del payload[field]
         with pytest.raises(ValidationError):
             ServerCreate(**payload)
+
+
+class TestServerCreateStandNumber:
+    def test_minimum_value_accepted(self):
+        m = ServerCreate(**{**_BASE_CREATE, "number": 1})
+        assert m.number == 1
+
+    def test_zero_rejected(self):
+        with pytest.raises(ValidationError):
+            ServerCreate(**{**_BASE_CREATE, "number": 0})
+
+    def test_negative_rejected(self):
+        with pytest.raises(ValidationError):
+            ServerCreate(**{**_BASE_CREATE, "number": -1})
+
+    def test_null_rejected(self):
+        with pytest.raises(ValidationError):
+            ServerCreate(**{**_BASE_CREATE, "number": None})
 
 
 # ── ServerUpdate ──────────────────────────────────────────────────────────────
@@ -178,3 +197,19 @@ class TestServerUpdate:
         assert isinstance(m.ip_address, IPv4Address)
         m6 = ServerUpdate(ip_address="2001:db8::42")
         assert isinstance(m6.ip_address, IPv6Address)
+
+    def test_update_number_not_set_omitted_from_diff(self):
+        m = ServerUpdate(display_name="renamed")
+        assert "number" not in m.model_dump(exclude_unset=True)
+
+    def test_update_number_accepted(self):
+        m = ServerUpdate(number=7)
+        assert m.model_dump(exclude_unset=True) == {"number": 7}
+
+    def test_update_number_cannot_be_reset_to_null(self):
+        with pytest.raises(ValidationError):
+            ServerUpdate(number=None)
+
+    def test_update_number_zero_rejected(self):
+        with pytest.raises(ValidationError):
+            ServerUpdate(number=0)

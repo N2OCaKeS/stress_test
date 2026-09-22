@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers import assert_error, auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr, next_stand_number
 
 BASE = "/api/server/v1/server-categories"
 SERVERS = "/api/server/v1/servers"
@@ -311,6 +311,7 @@ class TestAssignCategoryToServer:
                 "hostname": "srv-bad-category",
                 "ip_address": "192.168.77.11",
                 "department_id": "dep_a",
+                "number": next_stand_number(),
                 "category_id": "scat_ghost",
             },
         )
@@ -324,6 +325,7 @@ class TestAssignCategoryToServer:
                 "hostname": "srv-with-category",
                 "ip_address": "192.168.77.12",
                 "department_id": "dep_a",
+                "number": next_stand_number(),
                 "category_id": "scat_middle_server",
             },
         )

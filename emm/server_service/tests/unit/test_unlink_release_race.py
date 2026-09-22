@@ -37,6 +37,7 @@ from src.schemas.identity import IdentityContext
 from src.services import secrets_service
 from src.services import server as server_svc
 from src.utils.ids import server_account_id, server_account_server_id, server_id
+from tests._helpers import next_stand_number
 
 
 _engine = create_async_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
@@ -61,6 +62,7 @@ async def two_linked_servers():
                 ip_address=f"10.99.{int(suffix[:2], 16) % 256}.1",
                 ssh_port=22,
                 department_id="dep_a",
+                number=next_stand_number(),
             ))
             session.add(Server(
                 id=srv_b_id,
@@ -68,6 +70,7 @@ async def two_linked_servers():
                 ip_address=f"10.99.{int(suffix[:2], 16) % 256}.2",
                 ssh_port=22,
                 department_id="dep_a",
+                number=next_stand_number(),
             ))
             session.add(ServerAccount(
                 id=acc_id,
@@ -178,6 +181,7 @@ async def busy_server():
                 ip_address=f"10.98.{int(suffix[:2], 16) % 256}.1",
                 ssh_port=22,
                 department_id="dep_a",
+                number=next_stand_number(),
                 busy_state=BusyState.BUSY,
                 busy_user_id="usr_lessee",
             ))

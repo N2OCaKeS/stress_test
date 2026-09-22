@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests._helpers import assert_error, auth_hdr as _hdr
+from tests._helpers import assert_error, auth_hdr as _hdr, next_stand_number
 
 BASE = "/api/server/v1/servers"
 
@@ -128,6 +128,7 @@ class TestCreateServer:
             "ip_address": "10.5.5.5",
             "department_id": "dep_a",
             "ssh_port": 22,
+            "number": next_stand_number(),
         }
         data.update(overrides)
         return data
@@ -263,6 +264,27 @@ class TestCreateServer:
         assert secret_serial not in resp.text
         assert "db_error" not in (body.get("details") or {})
 
+    async def test_duplicate_number_conflict_within_department(
+        self, client, admin_token, make_server,
+    ):
+        await make_server(department_id="dep_a", number=9200)
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json=self._payload(hostname="numdup", ip_address="10.12.12.12", number=9200),
+        )
+        assert_error(resp, 409, "SERVER_DUPLICATE")
+
+    async def test_same_number_allowed_in_different_department(
+        self, client, admin_token, make_server,
+    ):
+        await make_server(department_id="dep_b", number=9300)
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token),
+            json=self._payload(hostname="numreuse", ip_address="10.13.13.13", number=9300),
+        )
+        assert resp.status_code == 201
+        assert resp.json()["number"] == 9300
+
     async def test_invalid_ip_returns_422(self, client, admin_token):
         resp = await client.post(BASE, headers=_hdr(admin_token),
                                   json=self._payload(ip_address="not-an-ip"))
@@ -387,6 +409,33 @@ class TestUpdateServer:
     # UNIQUE до COMMIT'а, тест всегда давал 200 и был мёртвым сигналом.
     # Покрытие cross-dept hostname leak ловится CREATE-тестом ниже:
     # `TestCreateServer::test_create_conflict_does_not_leak_cross_dept_hostname`.
+
+    async def test_update_number_changes_it(self, client, admin_token, make_server):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.patch(
+            f"{BASE}/{srv.id}", headers=_hdr(admin_token), json={"number": 9001},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["number"] == 9001
+
+    async def test_update_number_cannot_be_reset_to_null(
+        self, client, admin_token, make_server,
+    ):
+        srv = await make_server(department_id="dep_a")
+        resp = await client.patch(
+            f"{BASE}/{srv.id}", headers=_hdr(admin_token), json={"number": None},
+        )
+        assert_error(resp, 422, "VALIDATION_ERROR")
+
+    async def test_update_duplicate_number_conflict_within_department(
+        self, client, admin_token, make_server,
+    ):
+        await make_server(department_id="dep_a", number=9100)
+        srv = await make_server(department_id="dep_a", number=9101)
+        resp = await client.patch(
+            f"{BASE}/{srv.id}", headers=_hdr(admin_token), json={"number": 9100},
+        )
+        assert_error(resp, 409, "SERVER_DUPLICATE")
 
 
 # ── DELETE /{id} ─────────────────────────────────────────────────────────────
@@ -538,6 +587,7 @@ class TestServerCpuFields:
             "ip_address": "10.30.30.10",
             "department_id": "dep_a",
             "ssh_port": 22,
+            "number": next_stand_number(),
         }
         data.update(overrides)
         return data
@@ -707,6 +757,7 @@ class TestServerStorage:
             "hostname": "storehost",
             "ip_address": "10.30.30.1",
             "department_id": "dep_a",
+            "number": next_stand_number(),
         }
         data.update(overrides)
         return data

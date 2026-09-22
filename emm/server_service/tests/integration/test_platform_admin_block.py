@@ -33,7 +33,7 @@ import pytest_asyncio
 BASE = "/api/server/v1"
 
 
-from tests._helpers import assert_error, auth_hdr as _hdr, make_emit_capture  # noqa: E402
+from tests._helpers import assert_error, auth_hdr as _hdr, make_emit_capture, next_stand_number  # noqa: E402
 
 
 # ── Audit capture (общий patcher как в test_audit_emission) ──────────────────
@@ -262,6 +262,7 @@ class TestDepartmentAdminNotBlocked:
                 "ip_address": "10.99.0.50",
                 "department_id": "dep_a",
                 "ssh_port": 22,
+                "number": next_stand_number(),
             },
         )
         assert resp.status_code == 201

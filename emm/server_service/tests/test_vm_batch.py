@@ -12,7 +12,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import select
 
-from tests._helpers import assert_error, auth_hdr as _hdr, make_dispatch_capture
+from tests._helpers import assert_error, auth_hdr as _hdr, make_dispatch_capture, next_stand_number
 
 BASE = "/api/server/v1"
 
@@ -40,6 +40,7 @@ async def make_hub(db):
             cpu_threads=cpu_threads,
             ram_total_mb=ram_total_mb,
             network_interface_name="eth0",
+            number=next_stand_number(),
         )
         db.add(srv)
         await db.flush()
@@ -57,6 +58,7 @@ def _create_body(hub, **over) -> dict:
     body = {
         "hub_server_id": hub.id,
         "name": f"vm-{uuid.uuid4().hex[:6]}",
+        "number": next_stand_number(),
         "department_id": "dep_a",
         "cpu": 4, "ram_mb": 8192, "disk_gb": 100,
         "network_mode": "nat",
@@ -175,6 +177,7 @@ async def test_account_vm_link_cascade_on_vm_delete(
     acc = await make_account(server_id=srv.id, login="carol")
     vm = Vm(
         id=new_vm_id(), name=f"vm-{uuid.uuid4().hex[:6]}",
+        number=next_stand_number(),
         hub_server_id=hub.id, department_id="dep_a",
         cpu=2, ram_mb=2048, disk_gb=20, network_mode="nat",
     )
@@ -206,6 +209,7 @@ async def test_account_vm_link_cascade_on_account_delete(
     acc = await make_account(server_id=srv.id, login="dave")
     vm = Vm(
         id=new_vm_id(), name=f"vm-{uuid.uuid4().hex[:6]}",
+        number=next_stand_number(),
         hub_server_id=hub.id, department_id="dep_a",
         cpu=2, ram_mb=2048, disk_gb=20, network_mode="nat",
     )
@@ -328,7 +332,7 @@ async def test_snapshots_groups_and_hidden_build(
     from src.utils.ids import vm_id as new_vm_id
 
     hub = await make_hub()
-    vm = Vm(id=new_vm_id(), name="snap-vm", hub_server_id=hub.id,
+    vm = Vm(id=new_vm_id(), name="snap-vm", number=next_stand_number(), hub_server_id=hub.id,
             department_id="dep_a", cpu=2, ram_mb=2048, disk_gb=20, network_mode="nat")
     db.add(vm)
     await db.flush()
@@ -359,7 +363,7 @@ async def test_snapshots_search_by_name(
     from src.utils.ids import vm_id as new_vm_id
 
     hub = await make_hub()
-    vm = Vm(id=new_vm_id(), name="snap-vm2", hub_server_id=hub.id,
+    vm = Vm(id=new_vm_id(), name="snap-vm2", number=next_stand_number(), hub_server_id=hub.id,
             department_id="dep_a", cpu=2, ram_mb=2048, disk_gb=20, network_mode="nat")
     db.add(vm)
     await db.flush()

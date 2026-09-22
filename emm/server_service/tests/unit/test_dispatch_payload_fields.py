@@ -14,7 +14,7 @@ import pytest
 BASE = "/api/server/v1"
 
 
-from tests._helpers import auth_hdr as _hdr  # noqa: E402
+from tests._helpers import auth_hdr as _hdr, next_stand_number  # noqa: E402
 
 
 @pytest.fixture
@@ -118,6 +118,7 @@ class TestServerDispatchPayloadHasSshFields:
             department_id="dep_a",
             is_managed=True,
             management_user="dbos",
+            number=next_stand_number(),
         )
         db.add(srv)
         await db.flush()

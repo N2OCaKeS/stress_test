@@ -12,7 +12,7 @@ import uuid
 import pytest
 import pytest_asyncio
 
-from tests._helpers import assert_error, auth_hdr as _hdr, make_dispatch_capture
+from tests._helpers import assert_error, auth_hdr as _hdr, make_dispatch_capture, next_stand_number
 
 BASE = "/api/server/v1"
 
@@ -40,6 +40,7 @@ async def make_hub(db):
             cpu_threads=cpu_threads,
             ram_total_mb=ram_total_mb,
             network_interface_name="eth0",
+            number=next_stand_number(),
         )
         db.add(srv)
         await db.flush()
@@ -67,6 +68,7 @@ async def make_vm(db):
         vm = Vm(
             id=new_id(),
             name=name or f"vm-{uuid.uuid4().hex[:6]}",
+            number=next_stand_number(),
             hub_server_id=hub.id,
             department_id=department_id,
             status=status,
@@ -166,7 +168,9 @@ async def test_preset_cross_dept_isolation(client, admin_role_token_a):
 
 
 @pytest.mark.asyncio
-async def test_create_default_deploys_presets(client, admin_role_token_a, make_hub, monkeypatch):
+async def test_create_default_deploys_presets(
+    client, admin_role_token_a, make_hub, monkeypatch, db,
+):
     calls = make_dispatch_capture(monkeypatch)
     await _make_preset(client, admin_role_token_a, name="br-station", network_mode="bridge")
     await _make_preset(client, admin_role_token_a, name="nat-station", network_mode="nat")
@@ -181,6 +185,18 @@ async def test_create_default_deploys_presets(client, admin_role_token_a, make_h
     assert body["skipped"] == []
     assert {c["task_kind"] for c in calls} == {"vm.create"}
     assert len(calls) == 2
+
+    # Пресеты выше созданы без явного `number` — карточка ВМ всё равно не
+    # может остаться без номера стенда (NOT NULL), сервис обязан
+    # авто-назначить его и не столкнуть лбами две ВМ одного батча.
+    from src.models import Vm
+    from sqlalchemy import select
+
+    vm_ids = [c["vm_id"] for c in body["created"]]
+    rows = (await db.execute(select(Vm).where(Vm.id.in_(vm_ids)))).scalars().all()
+    numbers = [row.number for row in rows]
+    assert all(n is not None for n in numbers)
+    assert len(set(numbers)) == len(numbers)
 
 
 @pytest.mark.asyncio

@@ -12,7 +12,7 @@ import uuid
 import pytest
 import pytest_asyncio
 
-from tests._helpers import assert_error, auth_hdr as _hdr, make_dispatch_capture
+from tests._helpers import assert_error, auth_hdr as _hdr, make_dispatch_capture, next_stand_number
 
 BASE = "/api/server/v1"
 
@@ -65,7 +65,7 @@ async def make_hub(db):
             cpu_threads=cpu_threads,
             ram_total_mb=ram_total_mb,
             network_interface_name="eth0",
-            number=number,
+            number=number if number is not None else next_stand_number(),
         )
         db.add(srv)
         await db.flush()
@@ -102,7 +102,7 @@ async def make_vm(db):
         vm = Vm(
             id=new_id(),
             name=name or f"vm-{uuid.uuid4().hex[:6]}",
-            number=number,
+            number=number if number is not None else next_stand_number(),
             hub_server_id=hub.id,
             department_id=department_id,
             status=status,
@@ -170,6 +170,7 @@ def _create_body(hub, **over) -> dict:
     body = {
         "hub_server_id": hub.id,
         "name": f"vm-{uuid.uuid4().hex[:6]}",
+        "number": next_stand_number(),
         "department_id": "dep_a",
         "cpu": 4, "ram_mb": 8192, "disk_gb": 100,
         # nat по умолчанию — bridge требует ip_address/pool_id, задаём точечно.
@@ -300,6 +301,37 @@ async def test_create_capacity_counts_existing(
     assert_error(resp, 409, "VM_CAPACITY_EXCEEDED")
 
 
+@pytest.mark.asyncio
+async def test_create_duplicate_number_conflict_within_department(
+    client, admin_role_token_a, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub = await make_hub()
+    await make_vm(hub=hub, number=6001)
+    resp = await client.post(
+        f"{BASE}/vms", json=_create_body(hub, number=6001),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 409, "VM_DUPLICATE")
+
+
+@pytest.mark.asyncio
+async def test_create_same_number_allowed_in_different_department(
+    client, admin_role_token_a, make_token, make_hub, make_vm, monkeypatch,
+):
+    make_dispatch_capture(monkeypatch)
+    hub_b = await make_hub(department_id="dep_b")
+    await make_vm(hub=hub_b, department_id="dep_b", number=6002)
+
+    hub_a = await make_hub(department_id="dep_a")
+    resp = await client.post(
+        f"{BASE}/vms",
+        json=_create_body(hub_a, number=6002),
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 202, resp.text
+
+
 # ── read: list / get / by-number ─────────────────────────────────────────────
 
 
@@ -330,6 +362,97 @@ async def test_server_by_number(client, admin_role_token_a, make_hub):
     resp = await client.get(f"{BASE}/servers/by-number/7", headers=_hdr(admin_role_token_a))
     assert resp.status_code == 200
     assert resp.json()["id"] == hub.id
+
+
+@pytest.mark.asyncio
+async def test_server_by_stand_number_alias(client, admin_role_token_a, make_hub):
+    """`by-stand-number` — тот же lookup, что и `by-number` (стабильный путь
+    для внешних интеграций вроде allta_app_service)."""
+    hub = await make_hub(number=8)
+    resp = await client.get(f"{BASE}/servers/by-stand-number/8", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 200
+    assert resp.json()["id"] == hub.id
+
+    resp = await client.get(f"{BASE}/servers/by-stand-number/999999", headers=_hdr(admin_role_token_a))
+    assert_error(resp, 404, "SERVER_NOT_FOUND")
+
+
+@pytest.mark.asyncio
+async def test_vm_by_stand_number_alias(client, admin_role_token_a, make_hub, make_vm):
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, number=4243)
+    resp = await client.get(f"{BASE}/vms/by-stand-number/4243", headers=_hdr(admin_role_token_a))
+    assert resp.status_code == 200
+    assert resp.json()["id"] == vm.id
+
+
+@pytest.mark.asyncio
+async def test_stand_number_reusable_across_departments(
+    client, admin_role_token_a, make_token, make_hub,
+):
+    """Номер уникален per-department, не глобально: dep_a и dep_b могут
+    независимо занять один и тот же номер без конфликта."""
+    hub_a = await make_hub(department_id="dep_a", number=555)
+    hub_b = await make_hub(department_id="dep_b", number=555)
+
+    admin_b = make_token(department_id="dep_b", service_roles={"server_service": ["admin"]})
+
+    resp_a = await client.get(f"{BASE}/servers/by-number/555", headers=_hdr(admin_role_token_a))
+    assert resp_a.status_code == 200
+    assert resp_a.json()["id"] == hub_a.id
+
+    resp_b = await client.get(f"{BASE}/servers/by-number/555", headers=_hdr(admin_b))
+    assert resp_b.status_code == 200
+    assert resp_b.json()["id"] == hub_b.id
+
+    # dep_a не видит номер 555 отдела dep_b — каждый видит только свой.
+    assert resp_a.json()["id"] != resp_b.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_identity_update_changes_name_and_number(
+    client, admin_role_token_a, make_hub, make_vm,
+):
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, number=4300)
+    resp = await client.patch(
+        f"{BASE}/vms/{vm.id}/identity",
+        json={"name": "renamed-vm", "number": 4301},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["name"] == "renamed-vm"
+    assert body["number"] == 4301
+
+
+@pytest.mark.asyncio
+async def test_identity_update_cannot_reset_number_to_null(
+    client, admin_role_token_a, make_hub, make_vm,
+):
+    hub = await make_hub()
+    vm = await make_vm(hub=hub, number=4302)
+    resp = await client.patch(
+        f"{BASE}/vms/{vm.id}/identity",
+        json={"number": None},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 422, "VALIDATION_ERROR")
+
+
+@pytest.mark.asyncio
+async def test_identity_update_number_conflict_within_department(
+    client, admin_role_token_a, make_hub, make_vm,
+):
+    hub = await make_hub()
+    await make_vm(hub=hub, number=4310)
+    vm2 = await make_vm(hub=hub, number=4311)
+    resp = await client.patch(
+        f"{BASE}/vms/{vm2.id}/identity",
+        json={"number": 4310},
+        headers=_hdr(admin_role_token_a),
+    )
+    assert_error(resp, 409, "VM_DUPLICATE")
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,8 @@ import os
 import subprocess
 import uuid
 
+from tests._helpers import next_stand_number
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -548,6 +550,7 @@ async def make_server(db):
         hostname: str | None = None,
         ip_address: str | None = None,
         serial_number: str | None = None,
+        number: int | None = None,
         with_ipmi: bool = False,
     ) -> Server:
         suffix = uuid.uuid4().hex[:6]
@@ -558,6 +561,7 @@ async def make_server(db):
             ssh_port=22,
             department_id=department_id,
             serial_number=serial_number,
+            number=number if number is not None else next_stand_number(),
         )
         db.add(srv)
         await db.flush()

@@ -244,8 +244,12 @@ async def get_vm_by_number(
     identity: IdentityContext,
     number: int,
 ) -> Vm:
-    """SELECT ВМ по номеру + permission/visibility. Не найдено → 404 VM_NOT_FOUND."""
-    obj = await repo.get_by_number(db, number)
+    """SELECT ВМ по номеру стенда своего отдела + permission. 404 VM_NOT_FOUND если нет.
+
+    Номер уникален только в рамках department_id — lookup всегда идёт в
+    department caller'а.
+    """
+    obj = await repo.get_by_department_number(db, identity.department_id, number)
     if obj is None:
         raise NotFoundError(error_code="VM_NOT_FOUND", message="VM not found")
     return await get_vm(db, identity, obj.id)
@@ -789,8 +793,9 @@ async def update_vm_identity(
     """Синхронно сменить `name`/`number` карточки ВМ. Пустой диф → без UPDATE.
 
     Право `(vm, update)`. Ничего не применяется на hub'е/госте — только
-    строка `vms`. UNIQUE-конфликт (`name` в пределах hub'а, `number` в паре
-    servers+vm) → 409 `VM_DUPLICATE`.
+    строка `vms`. UNIQUE-конфликт (`name` в пределах hub'а, `number` в
+    рамках отдела) → 409 `VM_DUPLICATE`. `number` нельзя сбросить в null —
+    отбивается на уровне схемы (`VmIdentityUpdateRequest`).
     """
     with emit_denied_on_authz_error(
         "vm.updated", target_id=vm_id, target_type="vm",
@@ -2826,6 +2831,17 @@ def _capacity_check_total(hub, existing: dict[str, int], planned: dict[str, int]
             )
 
 
+async def _next_stand_number(db: AsyncSession, department_id: str) -> int:
+    """Следующий свободный номер стенда отдела (общий пул servers+vm).
+
+    Используется для VM, разворачиваемых из пресета без явного `number` —
+    карточка ВМ не может остаться без номера (`vms.number` NOT NULL).
+    """
+    server_max = await server_repo.max_number_for_department(db, department_id)
+    vm_max = await repo.max_number_for_department(db, department_id)
+    return max(server_max, vm_max) + 1
+
+
 async def create_default_vms(
     db: AsyncSession,
     identity: IdentityContext,
@@ -2904,10 +2920,13 @@ async def create_default_vms(
     created: list[dict] = []
     for preset in deployable:
         box_url, box_os_versions = await _resolve_box_url(db, preset.box, hub.id)
+        number = preset.number
+        if number is None:
+            number = await _next_stand_number(db, preset.department_id)
         vm_data = {
             "id": new_vm_id(),
             "name": preset.name,
-            "number": preset.number,
+            "number": number,
             "hub_server_id": hub.id,
             "department_id": preset.department_id,
             "os_version": preset.os_version,

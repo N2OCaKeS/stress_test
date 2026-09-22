@@ -13,11 +13,23 @@ async def get_by_id(db: AsyncSession, vm_id: str) -> Vm | None:
     ).scalar_one_or_none()
 
 
-async def get_by_number(db: AsyncSession, number: int) -> Vm | None:
-    """SELECT ВМ по номеру стенда (глобально уникален)."""
+async def get_by_department_number(
+    db: AsyncSession, department_id: str, number: int
+) -> Vm | None:
+    """SELECT ВМ по номеру стенда в рамках отдела (UNIQUE per department_id)."""
     return (
-        await db.execute(select(Vm).where(Vm.number == number))
+        await db.execute(
+            select(Vm).where(
+                Vm.department_id == department_id, Vm.number == number,
+            )
+        )
     ).scalar_one_or_none()
+
+
+async def max_number_for_department(db: AsyncSession, department_id: str) -> int:
+    """MAX(vms.number) в отделе, 0 если ВМ ещё нет."""
+    stmt = select(func.max(Vm.number)).where(Vm.department_id == department_id)
+    return (await db.execute(stmt)).scalar() or 0
 
 
 async def list_by_busy_state(db: AsyncSession, busy_state: str) -> list[Vm]:

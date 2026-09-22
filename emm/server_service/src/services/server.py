@@ -43,7 +43,10 @@ from src.utils.ids import ipmi_controller_id, server_disk_id, server_id as new_i
 
 logger = logging.getLogger(__name__)
 
-_DUPLICATE_HINT = "hostname, ip_address или serial_number уже используется"
+_DUPLICATE_HINT = (
+    "hostname, ip_address или serial_number уже используется, либо номер "
+    "стенда уже занят в этом отделе"
+)
 
 
 async def _ensure_category_exists(db: AsyncSession, category_id: str | None) -> None:
@@ -399,12 +402,14 @@ async def get_server_by_number(
     identity: IdentityContext,
     number: int,
 ) -> Server:
-    """SELECT сервера по номеру + permission/visibility (через get_server).
+    """SELECT сервера по номеру стенда своего отдела + permission (через get_server).
 
-    Номер глобально уникален в паре servers+vm. Не найдено / чужой отдел →
-    404 SERVER_NOT_FOUND (тот же маск, что и у get_server).
+    Номер уникален только в рамках department_id — lookup всегда идёт в
+    department caller'а, чужой номер (даже существующий в другом отделе)
+    не резолвится. Не найдено → 404 SERVER_NOT_FOUND (тот же маск, что и у
+    get_server).
     """
-    obj = await repo.get_by_number(db, number)
+    obj = await repo.get_by_department_number(db, identity.department_id, number)
     if obj is None:
         raise NotFoundError(error_code="SERVER_NOT_FOUND", message="Server not found")
     return await get_server(db, identity, obj.id)
@@ -551,8 +556,8 @@ async def create_server(
         else:
             error_code = "SERVER_DUPLICATE"
             message = (
-                "Server with this hostname, IP, serial_number or disk slot "
-                "already exists"
+                "Server with this hostname, IP, serial_number, stand number "
+                "(within the department) or disk slot already exists"
             )
         audit_service.emit(
             "server.create",
@@ -682,7 +687,7 @@ async def update_server(
         )
         raise ConflictError(
             error_code="SERVER_DUPLICATE",
-            message="Update collides with an existing server (hostname/IP/serial_number/disk slot)",
+            message="Update collides with an existing server (hostname/IP/serial_number/stand number/disk slot)",
             details={"hint": _DUPLICATE_HINT, "stage": failing_stage},
         ) from exc
     await db.refresh(obj)

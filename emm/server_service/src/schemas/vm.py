@@ -23,7 +23,7 @@ class VmCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Голое имя ВМ (без префикса stand<N>_). Уникально в пределах hub'а.")
     hostname: str | None = Field(default=None, max_length=255, description="Hostname гостя. Опционален: пусто → имя ВМ (name).")
     accounts: list[str] = Field(default_factory=list, description="ID существующих server_account отдела для провижна в госте (привязка к ВМ). Аккаунты должны быть того же отдела и доступны caller'у.")
-    number: int | None = Field(default=None, ge=0, description="Опциональный номер стенда. Глобально уникален в паре servers+vm.")
+    number: int = Field(..., ge=1, description="Номер стенда. Обязателен, уникален в рамках department_id.")
     department_id: str = Field(description="Department-владелец ВМ. Должен совпадать с department'ом caller'а, иначе 403 DEPARTMENT_ISOLATION.")
     os_version: str | None = Field(default=None, max_length=64, description="Версия ОС ВМ (свободная строка, напр. 1.8.1.6). У universal-бокса опускается.")
     box: str | None = Field(default=None, max_length=128, description="Имя бокса-образа из FTP-каталога (vm_station / single-бокс).")
@@ -245,7 +245,7 @@ class VmResponse(BaseModel):
     id: str = Field(description="VM ID (prefix vm_).")
     name: str = Field(description="Голое имя ВМ.")
     hostname: str | None = Field(default=None, description="Hostname гостя (или None → имя ВМ).")
-    number: int | None = Field(default=None, description="Номер стенда (или None).")
+    number: int = Field(description="Номер стенда (уникален в рамках department_id).")
     hub_server_id: str = Field(description="Сервер-hub ВМ.")
     department_id: str = Field(description="Department-владелец.")
     os_version: str | None = Field(default=None, description="Версия ОС ВМ.")
@@ -480,7 +480,14 @@ class VmIdentityUpdateRequest(BaseModel):
     """
 
     name: str | None = Field(default=None, min_length=1, max_length=255, description="Голое имя ВМ. UNIQUE в пределах hub'а.")
-    number: int | None = Field(default=None, ge=0, description="Номер стенда. UNIQUE в паре servers+vm. null — снять номер.")
+    number: int | None = Field(default=None, ge=1, description="Сменить номер стенда (уникален в рамках department_id). Обязательное поле — сбросить в null нельзя.")
+
+    @field_validator("number")
+    @classmethod
+    def _check_number(cls, value: int | None) -> int | None:
+        if value is None:
+            raise ValueError("number is required and cannot be reset to null; omit the field to leave it unchanged")
+        return value
 
 
 class VmAstraUpdateRequest(BaseModel):

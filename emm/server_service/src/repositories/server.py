@@ -242,10 +242,20 @@ async def get_by_id(db: AsyncSession, server_id: str) -> Server | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
-async def get_by_number(db: AsyncSession, number: int) -> Server | None:
-    """SELECT по номеру стенда (глобально уникален в паре servers+vm)."""
-    stmt = select(Server).where(Server.number == number)
+async def get_by_department_number(
+    db: AsyncSession, department_id: str, number: int
+) -> Server | None:
+    """SELECT по номеру стенда в рамках отдела (UNIQUE per department_id)."""
+    stmt = select(Server).where(
+        Server.department_id == department_id, Server.number == number,
+    )
     return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def max_number_for_department(db: AsyncSession, department_id: str) -> int:
+    """MAX(servers.number) в отделе, 0 если серверов ещё нет."""
+    stmt = select(func.max(Server.number)).where(Server.department_id == department_id)
+    return (await db.execute(stmt)).scalar() or 0
 
 
 async def get_for_update(db: AsyncSession, server_id: str) -> Server | None:

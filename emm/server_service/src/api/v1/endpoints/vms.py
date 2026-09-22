@@ -298,7 +298,19 @@ async def list_vms(
     "/by-number/{number}",
     response_model=VmResponse,
     summary="Получить ВМ по номеру стенда",
-    description="Номер глобально уникален в паре servers+vm. Не найдено / чужой отдел → 404.",
+    description="Номер уникален в рамках department_id, lookup идёт в отделе caller'а. Не найдено / чужой отдел → 404.",
+    responses={404: {"description": "VM_NOT_FOUND."}},
+)
+@router.get(
+    "/by-stand-number/{number}",
+    response_model=VmResponse,
+    summary="Получить ВМ по номеру стенда",
+    description=(
+        "Синоним GET /vms/by-number/{number} — стабильный путь для внешних "
+        "интеграций (например allta_app_service). Номер уникален в рамках "
+        "department_id, lookup идёт в отделе caller'а. Не найдено / чужой "
+        "отдел → 404."
+    ),
     responses={404: {"description": "VM_NOT_FOUND."}},
 )
 async def get_vm_by_number(
@@ -306,7 +318,7 @@ async def get_vm_by_number(
     identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> VmResponse:
-    """GET /vms/by-number/{number}."""
+    """GET /vms/by-number/{number} и /vms/by-stand-number/{number}."""
     vm = await svc.get_vm_by_number(db, identity, number)
     return VmResponse.from_vm(vm)
 

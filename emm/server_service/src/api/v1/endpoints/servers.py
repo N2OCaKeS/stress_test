@@ -167,8 +167,21 @@ async def create_server(
     response_model=ServerResponse,
     summary="Получить сервер по номеру стенда",
     description=(
-        "Номер глобально уникален в паре servers+vm. Cross-department доступ "
-        "и отсутствие скрыты за 404, как у GET /servers/{id}."
+        "Номер уникален в рамках department_id, lookup идёт в отделе "
+        "caller'а. Cross-department доступ и отсутствие скрыты за 404, как "
+        "у GET /servers/{id}."
+    ),
+    responses={404: {"description": "Сервер не найден / чужой department."}},
+)
+@router.get(
+    "/by-stand-number/{number}",
+    response_model=ServerResponse,
+    summary="Получить сервер по номеру стенда",
+    description=(
+        "Синоним GET /servers/by-number/{number} — стабильный путь для "
+        "внешних интеграций (например allta_app_service). Номер уникален в "
+        "рамках department_id, lookup идёт в отделе caller'а. "
+        "Cross-department доступ и отсутствие скрыты за 404."
     ),
     responses={404: {"description": "Сервер не найден / чужой department."}},
 )
@@ -177,7 +190,7 @@ async def get_server_by_number(
     identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> ServerResponse:
-    """GET /servers/by-number/{number} — lookup сервера по номеру."""
+    """GET /servers/by-number/{number} и /servers/by-stand-number/{number} — lookup по номеру."""
     obj = await svc.get_server_by_number(db, identity, number)
     return ServerResponse.from_server(obj, await svc.load_storage(db, obj.id))
 

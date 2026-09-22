@@ -148,9 +148,11 @@ async def get_ipmi_credentials(
     `ipmi_controllers.password_encrypted`, расшифровывает и возвращает
     `{kind, endpoint_url, username, password}`.
 
-    Доступ: `(ipmi_controller, *, view_credentials)`. По соглашению — только
-    роль `worker_bot` (least-privilege, 4 grants: view_credentials,
-    rotate_credentials, view_password, rotate_password).
+    Доступ: `(ipmi_controller, *, view_credentials)`. По соглашению — роль
+    `worker_bot` (least-privilege, 4 grants: view_credentials,
+    rotate_credentials, view_password, rotate_password) для server_worker,
+    либо узкая роль `allta_bridge` (2 grants: server.view + этот) для
+    внешнего бота allta_app_service.
 
     Аудит: `ipmi_controller.view_credentials` (WARNING на success).
     """

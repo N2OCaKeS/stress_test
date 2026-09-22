@@ -149,6 +149,49 @@ describe("EntityHeader — общая шапка сервера и ВМ", () => 
   });
 });
 
+// ── Сигналы доступности: ok / warn (высокая latency) / danger ───────────────
+
+describe("ReachSignal / ReachRowBadge — три уровня доступности по ping", () => {
+  it("ReachSignal: низкая latency — зелёный «доступен»", () => {
+    render(<ReachSignal label="ping" reachable latencyMs={12} />);
+    const el = screen.getByTitle("доступность по ping");
+    expect(el).toHaveClass("text-ok");
+    expect(el).toHaveTextContent("доступен");
+  });
+
+  it("ReachSignal: latency выше порога — оранжевый «высокая задержка»", () => {
+    render(<ReachSignal label="ping" reachable latencyMs={220} />);
+    const el = screen.getByTitle("доступность по ping");
+    expect(el).toHaveClass("text-warn");
+    expect(el).toHaveTextContent("высокая задержка");
+  });
+
+  it("ReachSignal: недоступен — красный, latency роли не играет", () => {
+    render(<ReachSignal label="ping" reachable={false} latencyMs={500} />);
+    const el = screen.getByTitle("доступность по ping");
+    expect(el).toHaveClass("text-danger");
+    expect(el).toHaveTextContent("недоступен");
+  });
+
+  it("ReachRowBadge: низкая latency — badge-ok", () => {
+    render(<ReachRowBadge reachable latencyMs={12} />);
+    const el = screen.getByTitle("ping: доступен");
+    expect(el).toHaveClass("badge-ok");
+  });
+
+  it("ReachRowBadge: latency выше порога — badge-warn", () => {
+    render(<ReachRowBadge reachable latencyMs={220} />);
+    const el = screen.getByTitle("ping: доступен, высокая задержка");
+    expect(el).toHaveClass("badge-warn");
+  });
+
+  it("ReachRowBadge: недоступен — badge-danger", () => {
+    render(<ReachRowBadge reachable={false} latencyMs={220} />);
+    const el = screen.getByTitle("ping: недоступен");
+    expect(el).toHaveClass("badge-danger");
+  });
+});
+
 // ── Общая таблица пакетов ────────────────────────────────────────────────────
 
 describe("PackagesTable — общий вид пакетов сервера и ВМ", () => {

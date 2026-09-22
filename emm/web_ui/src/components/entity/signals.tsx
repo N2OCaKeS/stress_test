@@ -7,8 +7,28 @@ import { formatLatencyMs } from "@/pages/server/_serverShared";
 import { Badge } from "@/components/ui/Badge";
 
 /**
+ * Порог деградации latency для ping/ssh (мс). Тестовые стенды сидят в одном
+ * LAN-сегменте, где здоровая проба укладывается в единицы-десятки мс — всё,
+ * что выше 150 мс, уже говорит о проблеме на линке или перегрузке хоста, хотя
+ * узел формально ещё отвечает. Используем как границу ok/warn.
+ */
+const HIGH_LATENCY_MS = 150;
+
+type ReachTier = "ok" | "warn" | "danger";
+
+function reachTier(
+  reachable: boolean,
+  latencyMs: number | null | undefined,
+): ReachTier {
+  if (!reachable) return "danger";
+  return latencyMs != null && latencyMs > HIGH_LATENCY_MS ? "warn" : "ok";
+}
+
+/**
  * Сигнал доступности (ping/ssh) в шапке карточки: «доступен» + latency либо
  * «недоступен»; `null` — проба не снималась, показываем нейтральный прочерк.
+ * При высокой latency (см. HIGH_LATENCY_MS) узел всё ещё доступен, но
+ * подсвечивается оранжевым как предупреждение.
  */
 export function ReachSignal({
   label,
@@ -27,12 +47,20 @@ export function ReachSignal({
     );
   }
   const lat = formatLatencyMs(latencyMs);
+  const tier = reachTier(reachable, latencyMs);
+  const colorClass =
+    tier === "ok" ? "text-ok" : tier === "warn" ? "text-warn" : "text-danger";
+  const statusWord = reachable
+    ? tier === "warn"
+      ? "высокая задержка"
+      : "доступен"
+    : "недоступен";
   return (
     <span
-      className={`text-xs ${reachable ? "text-ok" : "text-danger"}`}
+      className={`text-xs ${colorClass}`}
       title={`доступность по ${label}`}
     >
-      {label}: <b>{reachable ? "доступен" : "недоступен"}</b>
+      {label}: <b>{statusWord}</b>
       {reachable && lat ? ` · ${lat}` : ""}
     </span>
   );
@@ -60,7 +88,8 @@ export function PowerStateBadge({
 
 /**
  * Компактный бейдж доступности по ping для строки списка: доступен (зелёный,
- * latency где есть), недоступен (красный), проба не снималась (нейтральный «—»).
+ * latency где есть), доступен с высокой задержкой (оранжевый, см.
+ * HIGH_LATENCY_MS), недоступен (красный), проба не снималась (нейтральный «—»).
  */
 export function ReachRowBadge({
   reachable,
@@ -78,6 +107,14 @@ export function ReachRowBadge({
   }
   if (reachable) {
     const lat = formatLatencyMs(latencyMs);
+    const tier = reachTier(reachable, latencyMs);
+    if (tier === "warn") {
+      return (
+        <Badge kind="warn" title="ping: доступен, высокая задержка">
+          {lat ?? "доступен"}
+        </Badge>
+      );
+    }
     return (
       <Badge kind="ok" title="ping: доступен">
         {lat ?? "доступен"}

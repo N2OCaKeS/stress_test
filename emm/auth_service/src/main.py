@@ -32,6 +32,7 @@ from src.services.audit_events import register_events
 from src.services import password_policy_service
 from src.services.bootstrap_service import (
     bootstrap_admin,
+    bootstrap_allta_app_service_bot,
     bootstrap_platform_services,
     bootstrap_testing_service_bot,
     bootstrap_server_service_bot,
@@ -318,6 +319,7 @@ def create_application() -> FastAPI:
                 await bootstrap_worker_bot(db)
                 await bootstrap_testing_service_bot(db)
                 await bootstrap_server_service_bot(db)
+                await bootstrap_allta_app_service_bot(db)
             except Exception:
                 _startup_logger.exception(
                     "bootstrap platform services / worker bot failed"

@@ -590,6 +590,20 @@ class Settings(BaseSettings):
 
     server_service_bot_token: str = Field(default="", alias="SERVER_SERVICE_BOT_TOKEN")
 
+    # Токен бота allta_app_service — резолвит iLO/BMC-креды стенда через
+    # server_service (`by-stand-number` lookup + internal ipmi/credentials).
+    # Тот же принцип, что WORKER_BOT_TOKEN/TESTING_SERVICE_BOT_TOKEN, роль —
+    # узкая custom `allta_bridge@server_service`.
+    allta_app_service_bot_token: str = Field(
+        default="",
+        alias="ALLTA_APP_SERVICE_BOT_TOKEN",
+        description=(
+            "Готовый bot-токен allta_app_service (`dbos_bot_…`). Auth_service "
+            "на старте идемпотентно заводит под него бота allta_app_service с "
+            "ролью allta_bridge@server_service. Пустой — шаг пропускается."
+        ),
+    )
+
     # ── Production-валидатор ─────────────────────────────────────────────────
     #
     # Запускается только при `APP_ENV=production`. Цель — не дать сервису

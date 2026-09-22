@@ -169,3 +169,14 @@ TESTING_SERVICE_BOT_NAME = "testing_service"
 TESTING_SERVICE_BOT_SERVICE = "server_service"
 TESTING_SERVICE_BOT_ROLE = "guest"
 TESTING_SERVICE_BOT_SECRET_SERVICE = "secret_service"
+
+# Бот allta_app_service: резолвит iLO/BMC-креды по номеру стенда через
+# server_service вместо чтения локального файла (`/home/u/ilo.py`). Роль
+# `allta_bridge` — узкая, заводится и наполняется правами на стороне
+# server_service (не auth_service): `(server, view)` для резолва
+# номер→server_id и `(ipmi_controller, view_credentials)` для чтения BMC-
+# credentials через internal-эндпоинт. Имя роли должно совпадать буквально
+# с тем, что заведено в server_service.
+ALLTA_APP_SERVICE_BOT_NAME = "allta_app_service"
+ALLTA_APP_SERVICE_BOT_SERVICE = "server_service"
+ALLTA_APP_SERVICE_BOT_ROLE = "allta_bridge"

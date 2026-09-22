@@ -408,3 +408,92 @@ async def test_bootstrap_testing_service_bot_backfills_secret_grant_on_preexisti
     # Флаг заведён до появления колонки (дефолт False) — этот рестарт
     # должен его донастроить, даже когда токен уже существовал.
     assert refreshed.is_service_bot is True
+
+
+# ── allta_app_service-бот ────────────────────────────────────────────────────
+
+
+async def test_bootstrap_allta_app_service_bot_grants_allta_bridge_on_server_service(
+    db, monkeypatch
+):
+    """Бот заведён с ролью allta_bridge на server_service, токен проходит introspect."""
+    from src.core import config as config_mod
+    from src.core.constants import (
+        ALLTA_APP_SERVICE_BOT_NAME,
+        ALLTA_APP_SERVICE_BOT_ROLE,
+        ALLTA_APP_SERVICE_BOT_SERVICE,
+    )
+    from src.repositories.bot_roles import BotRoleRepository
+    from src.repositories.bots import BotRepository
+    from src.services import authorization_service
+
+    _silence_audit(monkeypatch)
+    token = "dbos_bot_" + "h" * 43
+    monkeypatch.setenv("ALLTA_APP_SERVICE_BOT_TOKEN", token)
+    config_mod.get_settings.cache_clear()
+
+    await bootstrap_service.bootstrap_platform_services(db)
+    await bootstrap_service.bootstrap_allta_app_service_bot(db)
+
+    bot = await BotRepository(db).first_by_name(ALLTA_APP_SERVICE_BOT_NAME)
+    assert bot is not None
+    assert bot.allowed_services == [ALLTA_APP_SERVICE_BOT_SERVICE]
+    assert bot.is_service_bot is True
+
+    role_repo = BotRoleRepository(db)
+    assert ALLTA_APP_SERVICE_BOT_ROLE in await role_repo.get_roles_by_service(
+        bot.id, ALLTA_APP_SERVICE_BOT_SERVICE
+    )
+
+    res = await authorization_service.introspect(db, token)
+    assert res.active is True
+    assert res.sub == bot.id
+    assert res.is_service_bot is True
+    assert res.service_roles.get(ALLTA_APP_SERVICE_BOT_SERVICE) == [
+        ALLTA_APP_SERVICE_BOT_ROLE
+    ]
+
+
+async def test_bootstrap_allta_app_service_bot_skipped_when_token_empty(db, monkeypatch):
+    """Пустой ALLTA_APP_SERVICE_BOT_TOKEN — бот не создаётся."""
+    from src.core import config as config_mod
+    from src.core.constants import ALLTA_APP_SERVICE_BOT_NAME
+    from src.repositories.bots import BotRepository
+
+    _silence_audit(monkeypatch)
+    monkeypatch.setenv("ALLTA_APP_SERVICE_BOT_TOKEN", "")
+    config_mod.get_settings.cache_clear()
+
+    await bootstrap_service.bootstrap_allta_app_service_bot(db)
+
+    assert await BotRepository(db).first_by_name(ALLTA_APP_SERVICE_BOT_NAME) is None
+
+
+async def test_bootstrap_allta_app_service_bot_idempotent(db, monkeypatch):
+    """Повторный вызов — no-op: ровно один бот, один токен, тот же хэш."""
+    from src.core import config as config_mod
+    from src.core.constants import ALLTA_APP_SERVICE_BOT_NAME
+    from src.core.security import hash_opaque_token
+    from src.repositories.bot_tokens import BotTokenRepository
+    from src.repositories.bots import BotRepository
+
+    emitted = _silence_audit(monkeypatch)
+    token = "dbos_bot_" + "i" * 43
+    monkeypatch.setenv("ALLTA_APP_SERVICE_BOT_TOKEN", token)
+    config_mod.get_settings.cache_clear()
+
+    await bootstrap_service.bootstrap_platform_services(db)
+    await bootstrap_service.bootstrap_allta_app_service_bot(db)
+    first = await BotRepository(db).first_by_name(ALLTA_APP_SERVICE_BOT_NAME)
+    assert any(action == "bot.create" for (action, _) in emitted)
+
+    emitted.clear()
+    await bootstrap_service.bootstrap_allta_app_service_bot(db)
+    assert emitted == [], "второй прогон должен быть no-op"
+
+    second = await BotRepository(db).first_by_name(ALLTA_APP_SERVICE_BOT_NAME)
+    assert first.id == second.id
+
+    tokens = await BotTokenRepository(db).list_for_bot(second.id)
+    assert len(tokens) == 1
+    assert tokens[0].token_hash == hash_opaque_token(token)

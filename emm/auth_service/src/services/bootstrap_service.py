@@ -11,6 +11,10 @@
 * `bootstrap_testing_service_bot` — тот же принцип, роль guest@server_service,
   бот `testing_service` с токеном из `TESTING_SERVICE_BOT_TOKEN` (только если
   токен задан) — нужен choices_source dynamic-резолверам testing_service.
+* `bootstrap_allta_app_service_bot` — тот же принцип, узкая custom-роль
+  `allta_bridge@server_service`, бот `allta_app_service` с токеном из
+  `ALLTA_APP_SERVICE_BOT_TOKEN` (только если токен задан) — резолвит
+  iLO/BMC-креды стенда через server_service.
 """
 
 import logging
@@ -21,6 +25,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.config import get_settings
 from src.core.constants import (
+    ALLTA_APP_SERVICE_BOT_NAME,
+    ALLTA_APP_SERVICE_BOT_ROLE,
+    ALLTA_APP_SERVICE_BOT_SERVICE,
     PLATFORM_SERVICES,
     SYSTEM_DEPARTMENT_NAME,
     TESTING_SERVICE_BOT_NAME,
@@ -373,6 +380,37 @@ async def bootstrap_server_service_bot(db: AsyncSession) -> None:
         await _bootstrap_catalog_bot(db, token, "server_service", (("secret_service", "guest"),))
 
 
+# Грант бота allta_app_service: узкая роль `allta_bridge`, заведена и
+# наполнена правами на стороне server_service — `(server, view)` для
+# резолва номер стенда → server_id и `(ipmi_controller, view_credentials)`
+# для чтения BMC-кредов через internal-эндпоинт. Здесь роль только
+# заводится как системная запись каталога (`ServiceRoleDefinition`) и
+# привязывается к боту; сама матрица прав живёт в server_service.
+_ALLTA_APP_SERVICE_BOT_GRANTS: tuple[tuple[str, str], ...] = (
+    (ALLTA_APP_SERVICE_BOT_SERVICE, ALLTA_APP_SERVICE_BOT_ROLE),
+)
+
+
+async def bootstrap_allta_app_service_bot(db: AsyncSession) -> None:
+    """Завести бота `allta_app_service` из `ALLTA_APP_SERVICE_BOT_TOKEN` (если задан).
+
+    Тот же принцип, что `bootstrap_testing_service_bot`/
+    `bootstrap_server_service_bot`, роль — узкая custom `allta_bridge`, а не
+    системный `guest`: боту нужен доступ к internal-эндпоинту reveal IPMI-
+    кредов, который системная роль не даёт. Идемпотентно и safe к гонке
+    реплик (см. `_bootstrap_catalog_bot`). Пустой
+    `ALLTA_APP_SERVICE_BOT_TOKEN` — шаг пропускается целиком.
+    """
+    settings = get_settings()
+    token = (settings.allta_app_service_bot_token or "").strip()
+    if not token:
+        return
+
+    await _bootstrap_catalog_bot(
+        db, token, ALLTA_APP_SERVICE_BOT_NAME, _ALLTA_APP_SERVICE_BOT_GRANTS
+    )
+
+
 async def _bootstrap_catalog_bot(db: AsyncSession, token: str, bot_name: str, grants: tuple[tuple[str, str], ...]) -> None:
     from src.models.bot_service_role import BotServiceRole
     from src.repositories.bot_roles import BotRoleRepository
@@ -435,7 +473,7 @@ async def _bootstrap_catalog_bot(db: AsyncSession, token: str, bot_name: str, gr
                     department_id=dept.id,
                     service_name=service_name,
                     role_name=role_name,
-                    description="System guest role (bootstrap seed)",
+                    description=f"System {role_name} role (bootstrap seed)",
                     created_by="bootstrap",
                     is_system=True,
                 )
@@ -497,22 +535,6 @@ async def _bootstrap_catalog_bot(db: AsyncSession, token: str, bot_name: str, gr
                 "roles": [f"{r}@{s}" for s, r in grants],
             },
         )
-        audit_service.emit(
-            "bot.token_create",
-            actor_id="bootstrap",
-            actor_type="service",
-            target_id=bot.id,
-            target_type="bot",
-            status="success",
-            allowed=True,
-            details={
-                "reason": "bootstrap_seed",
-                "bot_id": bot.id,
-                "bot_name": bot_name,
-                "token_name": "bootstrap",
-                "token_prefix": token[:TOKEN_PREFIX_LEN],
-            },
-        )
     elif newly_granted:
         # Уже существующий бот (заведён прошлой версией бутстрапа) —
         # догнали недостающий грант без пересоздания токена/бота.
@@ -535,19 +557,20 @@ async def _bootstrap_catalog_bot(db: AsyncSession, token: str, bot_name: str, gr
                 "roles_added": newly_granted,
             },
         )
-    audit_service.emit(
-        "bot.token_create",
-        actor_id="bootstrap",
-        actor_type="service",
-        target_id=bot.id,
-        target_type="bot",
-        status="success",
-        allowed=True,
-        details={
-            "reason": "bootstrap_seed",
-            "bot_id": bot.id,
-            "bot_name": bot_name,
-            "token_name": "bootstrap",
-            "token_prefix": token[:TOKEN_PREFIX_LEN],
-        },
-    )
+    if not token_exists:
+        audit_service.emit(
+            "bot.token_create",
+            actor_id="bootstrap",
+            actor_type="service",
+            target_id=bot.id,
+            target_type="bot",
+            status="success",
+            allowed=True,
+            details={
+                "reason": "bootstrap_seed",
+                "bot_id": bot.id,
+                "bot_name": bot_name,
+                "token_name": "bootstrap",
+                "token_prefix": token[:TOKEN_PREFIX_LEN],
+            },
+        )

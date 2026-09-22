@@ -79,6 +79,13 @@ LEFT JOIN dept_max m ON m.department_id = n.department_id;
 
 
 def upgrade() -> None:
+    # Старые constraint'ы глобальные (голый `number`), новые — per-department.
+    # Дропаем их до backfill: иначе два отдела, независимо получающие
+    # number=1 в рамках своего счётчика, сталкиваются со старым глобальным
+    # UNIQUE ещё до того, как он заменяется на composite.
+    op.drop_constraint("uq_servers_number", "servers", type_="unique")
+    op.drop_constraint("uq_vms_number", "vms", type_="unique")
+
     op.execute(_BACKFILL_SQL)
     op.execute(
         """
@@ -99,9 +106,6 @@ def upgrade() -> None:
 
     op.alter_column("servers", "number", nullable=False)
     op.alter_column("vms", "number", nullable=False)
-
-    op.drop_constraint("uq_servers_number", "servers", type_="unique")
-    op.drop_constraint("uq_vms_number", "vms", type_="unique")
 
     op.create_index(
         "uq_servers_dept_stand_number", "servers", ["department_id", "number"],

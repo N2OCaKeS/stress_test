@@ -78,6 +78,9 @@ describe("CreateVmPane (батч-форма)", () => {
     fireEvent.change(screen.getByPlaceholderText("alse-1.8-rc"), {
       target: { value: "vm-a" },
     });
+    fireEvent.change(screen.getByPlaceholderText("уникален в рамках отдела"), {
+      target: { value: "501" },
+    });
     // «Добавить ВМ» сворачивает #1 и открывает #2.
     fireEvent.click(screen.getByRole("button", { name: /Добавить ВМ/ }));
     // Свёрнутый #1 показывает своё имя как заголовок; открытый один блок с полем.
@@ -87,6 +90,9 @@ describe("CreateVmPane (батч-форма)", () => {
     fireEvent.change(screen.getByPlaceholderText("alse-1.8-rc"), {
       target: { value: "vm-b" },
     });
+    fireEvent.change(screen.getByPlaceholderText("уникален в рамках отдела"), {
+      target: { value: "502" },
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /Создать все/ }));
 
@@ -94,6 +100,7 @@ describe("CreateVmPane (батч-форма)", () => {
     const items = onSubmit.mock.calls[0][0];
     expect(items).toHaveLength(2);
     expect(items.map((i) => i.name)).toEqual(["vm-a", "vm-b"]);
+    expect(items.map((i) => i.number)).toEqual([501, 502]);
 
     // Per-VM результат.
     expect(
@@ -122,6 +129,9 @@ describe("CreateVmPane (батч-форма)", () => {
 
     fireEvent.change(screen.getByPlaceholderText("alse-1.8-rc"), {
       target: { value: "vm-acc" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("уникален в рамках отдела"), {
+      target: { value: "503" },
     });
     // Учётки отдела core грузятся из моков.
     const label = (await screen.findByText("tester")).closest("label");

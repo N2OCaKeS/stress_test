@@ -729,6 +729,7 @@ interface VmBlockData {
   key: string;
   name: string;
   hostname: string;
+  number: string;
   cpu: string;
   ramMb: string;
   diskGb: string;
@@ -752,6 +753,7 @@ function newVmBlock(box: string): VmBlockData {
     key: `vmblk-${vmBlockSeq}`,
     name: "",
     hostname: "",
+    number: "",
     cpu: "2",
     ramMb: "4096",
     diskGb: "40",
@@ -772,8 +774,10 @@ interface VmBlockValidation {
   cpuN: number;
   ramN: number;
   diskN: number;
+  numberN: number;
   minDisk: number | null;
   nameError: string | null;
+  numberError: string | null;
   diskWarning: string | null;
   ipValid: boolean;
   valid: boolean;
@@ -786,9 +790,14 @@ function validateVmBlock(
   const cpuN = Number.parseInt(b.cpu, 10);
   const ramN = Number.parseInt(b.ramMb, 10);
   const diskN = Number.parseInt(b.diskGb, 10);
+  const numberN = Number(b.number.trim());
   const nameError =
     b.name.trim() && !/^[a-zA-Z0-9._-]+$/.test(b.name.trim())
       ? "Имя: латиница, цифры, точка, дефис, подчёркивание"
+      : null;
+  const numberError =
+    b.number.trim() && (!Number.isInteger(numberN) || numberN < 1)
+      ? "Номер должен быть целым числом ≥ 1"
       : null;
   const img = images.find((im) => im.name === b.box) ?? null;
   const minDisk = img?.min_disk_gb ?? null;
@@ -812,9 +821,22 @@ function validateVmBlock(
     ramN > 0 &&
     Number.isFinite(diskN) &&
     diskN > 0 &&
+    !!b.number.trim() &&
+    !numberError &&
     !diskWarning &&
     ipValid;
-  return { cpuN, ramN, diskN, minDisk, nameError, diskWarning, ipValid, valid };
+  return {
+    cpuN,
+    ramN,
+    diskN,
+    numberN,
+    minDisk,
+    nameError,
+    numberError,
+    diskWarning,
+    ipValid,
+    valid,
+  };
 }
 
 /**
@@ -836,6 +858,7 @@ function vmBlockToItem(
     department_id: departmentId,
     name: b.name.trim(),
     hostname: b.hostname.trim() ? b.hostname.trim() : null,
+    number: v.numberN,
     cpu: v.cpuN,
     ram_mb: v.ramN,
     disk_gb: v.diskN,
@@ -1181,6 +1204,21 @@ function VmBlockForm({
             />
           </label>
         </div>
+
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Номер стенда *</span>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            value={block.number}
+            onChange={(e) => onPatch({ number: e.target.value })}
+            placeholder="уникален в рамках отдела"
+          />
+          {v.numberError && (
+            <span className="text-[11px] text-danger">{v.numberError}</span>
+          )}
+        </label>
 
         <div className="grid grid-cols-3 gap-3">
           <label className="flex flex-col gap-1 text-sm">

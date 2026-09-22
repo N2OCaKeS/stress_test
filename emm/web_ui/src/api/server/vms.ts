@@ -161,7 +161,7 @@ export interface Vm {
   name: string;
   /** Hostname гостя (`hostnamectl`). null — берётся имя ВМ. */
   hostname?: string | null;
-  /** Глобально уникальный номер (в паре servers+vm). null — не задан. */
+  /** Номер стенда. Обязателен для новых записей, уникален в рамках отдела. */
   number: number | null;
   hub_server_id: string;
   department_id: string;
@@ -281,7 +281,8 @@ export interface VmCreateRequest {
    * бекендом (по отделу/хабу). Для `nat` не используется.
    */
   pool_id?: string | null;
-  number?: number | null;
+  /** Номер стенда, уникален в рамках отдела. Обязателен. */
+  number: number;
   autostart?: boolean;
   cred_strategy?: VmCredStrategy;
   /**
@@ -328,7 +329,8 @@ export interface VmUpdateRequest {
 /** Тело PATCH /vms/{id}/identity — name/number карточки ВМ. Синхронно, 200. */
 export interface VmIdentityUpdateRequest {
   name?: string;
-  number?: number | null;
+  /** Не передан — не меняется; сбросить в null нельзя, поле обязательно. */
+  number?: number;
 }
 
 /**

@@ -676,13 +676,14 @@ function OverviewEditForm({
       setErr("ssh_port должен быть целым числом 1..65535");
       return;
     }
-    let numberVal: number | null = null;
-    if (number.trim()) {
-      numberVal = Number(number);
-      if (!Number.isInteger(numberVal) || numberVal < 0) {
-        setErr("number должен быть целым числом ≥ 0");
-        return;
-      }
+    if (!number.trim()) {
+      setErr("number обязателен");
+      return;
+    }
+    const numberVal = Number(number);
+    if (!Number.isInteger(numberVal) || numberVal < 1) {
+      setErr("number должен быть целым числом ≥ 1");
+      return;
     }
     if (!hostname.trim()) {
       setErr("hostname не может быть пустым");
@@ -735,12 +736,13 @@ function OverviewEditForm({
               placeholder={initial.hostname}
             />
           </FormRow>
-          <FormRow label="number" hint="Номер стенда, UNIQUE в паре servers+vm. Пусто = снять номер">
+          <FormRow label="number" hint="Номер стенда, уникален в рамках отдела. Обязателен">
             <input
               className="input mono"
               value={number}
               onChange={(e) => setNumber(e.target.value)}
               inputMode="numeric"
+              required
             />
           </FormRow>
           <FormRow label="location" hint="Стойка / DC / комната">
@@ -1095,13 +1097,14 @@ function IdentityModal({
       setErr("name не может быть пустым");
       return;
     }
-    let numberVal: number | null = null;
-    if (number.trim()) {
-      numberVal = Number(number);
-      if (!Number.isInteger(numberVal) || numberVal < 0) {
-        setErr("number должен быть целым числом ≥ 0");
-        return;
-      }
+    if (!number.trim()) {
+      setErr("number обязателен");
+      return;
+    }
+    const numberVal = Number(number);
+    if (!Number.isInteger(numberVal) || numberVal < 1) {
+      setErr("number должен быть целым числом ≥ 1");
+      return;
     }
     setSubmitting(true);
     try {
@@ -1128,13 +1131,14 @@ function IdentityModal({
           </label>
           <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">
-              number · UNIQUE в паре servers+vm, пусто = снять номер
+              number * · номер стенда, уникален в рамках отдела
             </span>
             <input
               className="input mono"
               inputMode="numeric"
               value={number}
               onChange={(e) => setNumber(e.target.value)}
+              required
             />
           </label>
           <div className="text-[11px] text-dim">

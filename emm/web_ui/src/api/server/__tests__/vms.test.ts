@@ -88,6 +88,7 @@ describe("vms api client", () => {
         disk_gb: 40,
         box: "vm_station",
         network_mode: "bridge" as const,
+        number: 501,
         autostart: true,
         cred_strategy: "per_snapshot" as const,
         accounts: ["acc-1", "acc-2"],
@@ -101,6 +102,7 @@ describe("vms api client", () => {
         disk_gb: 60,
         box: "vm_station",
         network_mode: "nat" as const,
+        number: 502,
         accounts: [],
       },
     ];
@@ -422,7 +424,7 @@ describe("vms api client", () => {
       network_mode: "bridge" as const,
       ip_address: "10.177.103.55",
       pool_id: "pool-core",
-      number: null,
+      number: 303,
     };
     await createVm(body);
     expect(apiPost).toHaveBeenCalledWith("/server/v1/vms", body);

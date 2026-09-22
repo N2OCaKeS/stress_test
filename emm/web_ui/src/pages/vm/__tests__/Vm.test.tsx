@@ -143,6 +143,11 @@ describe("Vm zone (mock mode)", () => {
     fireEvent.change(screen.getByPlaceholderText("alse-1.8-rc"), {
       target: { value: "test-vm" },
     });
+    // Имя есть, но номер стенда ещё не задан — сабмит по-прежнему disabled.
+    expect(submit).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText("уникален в рамках отдела"), {
+      target: { value: "504" },
+    });
     expect(submit).not.toBeDisabled();
   });
 

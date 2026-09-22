@@ -102,7 +102,7 @@ export interface Server {
   id: string;
   hostname: string;
   display_name: string | null;
-  /** Опциональный человекочитаемый номер стенда. UNIQUE в паре servers+vm. */
+  /** Номер стенда. Обязателен для новых записей, уникален в рамках отдела. */
   number: number | null;
   ip_address: string;
   mgmt_ip_address: string | null;
@@ -194,6 +194,8 @@ export interface Server {
 export interface ServerCreateRequest {
   hostname: string;
   display_name?: string | null;
+  /** Номер стенда, уникален в рамках отдела. Обязателен. */
+  number: number;
   ip_address: string;
   mgmt_ip_address?: string | null;
   ssh_port?: number;
@@ -217,7 +219,8 @@ export interface ServerCreateRequest {
 export interface ServerUpdateRequest {
   hostname?: string;
   display_name?: string | null;
-  number?: number | null;
+  /** Номер стенда. Не передан — не меняется; сбросить в null нельзя, поле обязательно. */
+  number?: number;
   ip_address?: string | null;
   mgmt_ip_address?: string | null;
   ssh_port?: number | null;

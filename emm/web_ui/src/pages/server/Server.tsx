@@ -1311,6 +1311,7 @@ function CreatePane({
   );
   const [ipAddress, setIpAddress] = useState("");
   const [sshPort, setSshPort] = useState<string>("22");
+  const [number, setNumber] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const fixedDeptLabel = useDeptLabel(fixedDeptId);
 
@@ -1321,6 +1322,13 @@ function CreatePane({
       ? "Ожидается IPv4 или IPv6 адрес"
       : null;
 
+  const numberN = number.trim() ? Number(number.trim()) : NaN;
+  const numberError =
+    number.trim() && (!Number.isInteger(numberN) || numberN < 1)
+      ? "Номер должен быть целым числом ≥ 1"
+      : null;
+  const numberMissing = !number.trim();
+
   // depts может прийти позже — подхватим первый, если ещё не выбран (только у
   // account_admin с выпадающим списком).
   if (isAccountAdmin && !departmentId && depts.length) {
@@ -1330,10 +1338,19 @@ function CreatePane({
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (submitting) return;
-    if (!hostname.trim() || !ipAddress.trim() || !departmentId || ipError) return;
+    if (
+      !hostname.trim() ||
+      !ipAddress.trim() ||
+      !departmentId ||
+      ipError ||
+      numberMissing ||
+      numberError
+    )
+      return;
     const body: ServerCreateRequest = {
       hostname: hostname.trim(),
       display_name: displayName.trim() || null,
+      number: numberN,
       ip_address: ipAddress.trim(),
       department_id: departmentId,
       ssh_port: Number(sshPort) || 22,
@@ -1416,6 +1433,21 @@ function CreatePane({
             )}
           </label>
           <label className="flex flex-col gap-1 text-sm">
+            <span className="text-dim text-xs">Номер стенда *</span>
+            <input
+              className="surface-2 border border-token rounded px-2 py-1"
+              type="number"
+              min={1}
+              value={number}
+              onChange={(e) => setNumber(e.target.value)}
+              required
+              placeholder="уникален в рамках отдела"
+            />
+            {numberError && (
+              <span className="text-[11px] text-danger">{numberError}</span>
+            )}
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
             <span className="text-dim text-xs">SSH-порт</span>
             <input
               className="surface-2 border border-token rounded px-2 py-1"
@@ -1435,7 +1467,9 @@ function CreatePane({
                 !hostname.trim() ||
                 !ipAddress.trim() ||
                 !departmentId ||
-                !!ipError
+                !!ipError ||
+                numberMissing ||
+                !!numberError
               }
             >
               {submitting ? "Создаём…" : "Создать"}

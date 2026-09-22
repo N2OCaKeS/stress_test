@@ -6,7 +6,14 @@
  */
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 
-export type ButtonVariant = "default" | "primary" | "ghost" | "danger" | "danger-solid";
+export type ButtonVariant =
+  | "default"
+  | "primary"
+  | "ghost"
+  | "danger"
+  | "danger-solid"
+  | "success"
+  | "success-solid";
 export type ButtonSize = "default" | "sm";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -20,6 +27,8 @@ const VARIANT_CLASS: Record<ButtonVariant, string> = {
   ghost: "btn-ghost",
   danger: "btn-danger",
   "danger-solid": "btn-danger-solid",
+  success: "btn-success",
+  "success-solid": "btn-success-solid",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(

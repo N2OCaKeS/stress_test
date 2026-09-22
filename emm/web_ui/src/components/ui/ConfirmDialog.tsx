@@ -237,7 +237,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 className={
-                  danger ? "btn btn-danger" : "btn btn-primary"
+                  danger ? "btn btn-danger" : "btn btn-success-solid"
                 }
                 onClick={accept}
                 disabled={acceptDisabled}

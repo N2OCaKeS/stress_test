@@ -209,6 +209,7 @@ html[data-theme="blue"] {
 .badge-acs { color: var(--status-acs); border-color: var(--status-acs); }
 
 .btn-danger { color: var(--danger); border-color: var(--danger); }
+.btn-success { color: var(--ok); border-color: var(--ok); }
 
 .cred-row {
   padding: 8px 12px;
@@ -877,11 +878,21 @@ html[data-theme="blue"] .gradient-bg {
 }
 .btn-danger-solid:hover { filter: brightness(1.1); }
 
+/* Buttons — solid success */
+.btn-success-solid {
+  background: var(--ok);
+  color: var(--accent-fg);
+  border-color: var(--ok);
+}
+.btn-success-solid:hover { filter: brightness(1.1); }
+
 /* Grey out disabled buttons regardless of variant color; listed together so this wins over the per-variant rules above no matter the source order. */
 .btn:disabled,
 .btn-primary:disabled,
 .btn-danger:disabled,
 .btn-danger-solid:disabled,
+.btn-success:disabled,
+.btn-success-solid:disabled,
 .btn-ghost:disabled {
   opacity: 0.45;
   filter: grayscale(0.4);

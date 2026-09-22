@@ -857,3 +857,81 @@ class TestBatchStatus:
             f"{BASE}/batch-status", headers=_hdr(TESTING_SECRET), json={"server_ids": []},
         )
         assert resp.status_code == 422, resp.text
+
+
+async def _enable_acs(db, *, department_id: str = "dep_a", enabled: bool = True) -> None:
+    """Тот же helper, что у `test_acs_snapshots_list.py` — не общий, потому что
+    в этом файле тестов нет ни одного другого потребителя ACS-настроек."""
+    from src.models.acs_settings import SINGLETON_ID, AcsSettings
+    from src.services import secrets_service
+
+    row = await db.get(AcsSettings, SINGLETON_ID)
+    if row is None:
+        row = AcsSettings(
+            id=SINGLETON_ID, enabled=enabled, acs_url="http://acs.example.com",
+            acs_password_encrypted=secrets_service.encrypt(
+                "acs-plaintext-secret", aad=secrets_service.aad_for_acs_password(SINGLETON_ID),
+            ),
+        )
+        db.add(row)
+    else:
+        row.enabled = enabled
+    await db.flush()
+
+
+class TestAcsSnapshotsForService:
+    """`GET /internal/servers/{id}/acs-snapshots` — owner п.9: тот же живой
+    список, что у user-facing эндпоинта, но по service-to-service каналу, для
+    синхронной ACS-проверки перед постановкой в очередь `testing_service`.
+
+    Департаментский opt-in (`AcsDepartmentAccess`) намеренно не гейтится
+    здесь — как и у `acs.snapshot_restore`, который этот preflight
+    предвосхищает (`prepare_for_test.py::start` дефайлит restore безусловно).
+    """
+
+    async def test_filters_by_hostname_prefix(
+        self, client, make_server, db, configure_service_keys, monkeypatch,
+    ):
+        srv = await make_server(department_id="dep_a", hostname="lowserver1")
+        await _enable_acs(db)
+
+        async def fake_list_snapshots(base_url, password):
+            return [f"{srv.hostname}-1.8.5", "othertest-1.8.5", "unrelated"]
+
+        monkeypatch.setattr(
+            "src.api.v1.endpoints.internal_service_reservation.acs_client.list_snapshots",
+            fake_list_snapshots,
+        )
+
+        resp = await client.get(
+            f"{BASE}/{srv.id}/acs-snapshots", headers=_hdr(TESTING_SECRET),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["snapshots"] == [
+            {"name": f"{srv.hostname}-1.8.5", "version_name": "1.8.5"},
+        ]
+
+    async def test_acs_disabled_503(self, client, make_server, db, configure_service_keys):
+        srv = await make_server()
+        await _enable_acs(db, enabled=False)
+
+        resp = await client.get(
+            f"{BASE}/{srv.id}/acs-snapshots", headers=_hdr(TESTING_SECRET),
+        )
+        assert resp.status_code == 503, resp.text
+        assert resp.json()["error_code"] == "ACS_DISABLED"
+
+    async def test_unknown_server_404(self, client, configure_service_keys):
+        resp = await client.get(
+            f"{BASE}/srv_does_not_exist/acs-snapshots", headers=_hdr(TESTING_SECRET),
+        )
+        assert resp.status_code == 404, resp.text
+
+    async def test_unknown_identity_rejected(self, client, make_server, configure_service_keys):
+        srv = await make_server()
+        resp = await client.get(
+            f"{BASE}/{srv.id}/acs-snapshots",
+            headers=_hdr(TESTING_SECRET, identity="rogue_service"),
+        )
+        assert resp.status_code == 403, resp.text
+        assert resp.json()["error_code"] == "SERVICE_IDENTITY_NOT_ALLOWED"

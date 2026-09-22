@@ -58,7 +58,8 @@ def mock_server_service(monkeypatch, recorded_calls):
     """Подменяет транспорт исходящих вызовов в server_service.
 
     `overrides` — dict `{"acquire": 200|409, "service_status": 200|409,
-    "prepare": 202, "release": 200, "connection": 200, "batch_status": {...}}`,
+    "prepare": 202, "release": 200, "connection": 200, "batch_status": {...},
+    "os_version_name": "1.8.5"|None, "acs_snapshots": [...]}`,
     по умолчанию всё успешно. `department_id`/`host` настраиваются отдельно.
 
     `batch_status` — состояние, которое видит `_ensure_stand_free_for_launch`
@@ -90,6 +91,29 @@ def mock_server_service(monkeypatch, recorded_calls):
         overrides = overrides or {}
         acquire_calls = {"count": 0}
         handle = SimpleNamespace(acquire_bodies=[])
+        # ACS snapshot preflight (`queue._check_acs_snapshot_available`): по
+        # умолчанию любая версия считается снятой — иначе пришлось бы чинить
+        # каждый тест, который просто ставит что-то в очередь и не в курсе
+        # ACS (в т.ч. те, что монкейтчат `server_client.get_os_version`
+        # напрямую в обход этого HTTP-транспорта, см. `mock_os_version_
+        # catalog` в `test_stp.py`, — раз резолв РЦ идёт мимо, синхронизировать
+        # его с ответом `/acs-snapshots` через транспорт нечем). Патчим сам
+        # `list_acs_snapshot_versions`, а не HTTP-ручку: `overrides["acs_
+        # snapshots"]` (список снимков как их отдаёт server_service)
+        # переопределяет дефолт для тестов самой ACS-проверки.
+        class _AnyVersion(set):
+            """`x in this` всегда `True` — «снимок для любой РЦ есть»."""
+
+            def __contains__(self, item: object) -> bool:
+                return True
+
+        async def _fake_list_acs_snapshot_versions(server_id: str, *, refresh: bool = False):
+            acs_override = overrides.get("acs_snapshots")
+            if acs_override is not None:
+                return {item["version_name"] for item in acs_override if item.get("version_name")}
+            return _AnyVersion()
+
+        monkeypatch.setattr(server_client, "list_acs_snapshot_versions", _fake_list_acs_snapshot_versions)
 
         def _preflight_busy_state() -> str | None:
             """Заявленное `batch_status` в его общей (не per-id) форме, если задано."""
@@ -101,6 +125,12 @@ def mock_server_service(monkeypatch, recorded_calls):
         def handler(request: httpx.Request) -> httpx.Response:
             recorded_calls.append((request.method, request.url.path))
             path = request.url.path
+            if request.method == "GET" and path.startswith("/api/server/v1/os-versions/"):
+                version_id = path.rsplit("/", 1)[-1]
+                name = overrides.get("os_version_name", version_id)
+                if name is None:
+                    return httpx.Response(404, json={})
+                return httpx.Response(200, json={"id": version_id, "name": name})
             if request.method == "GET" and "/internal/" not in path and path.startswith("/api/server/v1/servers/"):
                 server_id = path.rsplit("/", 1)[-1]
                 return httpx.Response(200, json={
@@ -544,6 +574,98 @@ class TestEnqueue:
             )).scalar_one()
         assert retry.state == QueueItemState.FAILED
         assert any(p.endswith("/release-for-service-as-done") for _, p in recorded_calls)
+
+
+class TestAcsSnapshotPreflight:
+    """Owner п.9: без снимка ACS restore не откатит стенд на выбранную РЦ —
+    `enqueue()` обязан отказать синхронно, в любом режиме, до prepare-пайплайна.
+    """
+
+    async def test_missing_snapshot_rejects_enqueue(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        from src.core.exceptions import DomainValidationError
+
+        mock_server_service(overrides={"acs_snapshots": []})
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        with pytest.raises(DomainValidationError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert excinfo.value.error_code == "ACS_SNAPSHOT_NOT_FOUND"
+        assert excinfo.value.details["version_name"] == LAUNCH_CTX["RC"]
+        # Отказ синхронный — до всякого похода в prepare-пайплайн.
+        assert not any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
+        assert not any(p.endswith("/prepare-for-test") for _, p in recorded_calls)
+
+    async def test_missing_snapshot_rejects_debug_launch_too(
+        self, client, admin_token, mock_server_service,
+    ):
+        """Owner: гейт общий для ВСЕХ режимов, не только обычного запуска."""
+        from src.core.exceptions import DomainValidationError
+
+        mock_server_service(overrides={"acs_snapshots": []})
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, None)
+
+        with pytest.raises(DomainValidationError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(
+                    db, _identity(), test_id, launch_context=LAUNCH_CTX,
+                    debug_mode=True, stand_id=stand_id,
+                )
+
+        assert excinfo.value.error_code == "ACS_SNAPSHOT_NOT_FOUND"
+
+    async def test_snapshot_present_allows_enqueue(
+        self, client, admin_token, mock_server_service,
+    ):
+        mock_server_service(overrides={
+            "acs_snapshots": [{"name": f"host-{LAUNCH_CTX['RC']}", "version_name": LAUNCH_CTX["RC"]}],
+        })
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert item.state == QueueItemState.PREPARING
+
+    async def test_channel_unavailable_fails_open(
+        self, client, admin_token, mock_server_service,
+    ):
+        """Если каталог версий/ACS недоступны — не блокируем постановку, тот же
+        провал придёт асинхронно из restore-шага, как и раньше этой проверки."""
+        mock_server_service(overrides={"os_version_name": None})
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert item.state == QueueItemState.PREPARING
+
+    async def test_second_launch_of_same_stand_and_rc_is_cached(
+        self, client, admin_token, mock_server_service, recorded_calls,
+    ):
+        """Повторная постановка на тот же (стенд, РЦ) не бьёт по ACS снова."""
+        mock_server_service()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+        recorded_calls.clear()
+        async with AsyncSessionLocal() as db:
+            second = await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX, on_active_queue="append",
+            )
+
+        assert second.state == QueueItemState.QUEUED
+        assert not any(p.endswith("/acs-snapshots") for _, p in recorded_calls)
+        assert not any(p.startswith("/api/server/v1/os-versions/") for _, p in recorded_calls)
 
 
 class TestContinuationReacquireRace:

@@ -31,6 +31,7 @@ server_service отвечает `SERVER_NOT_BUSY` (бронь ещё не бра
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -138,6 +139,65 @@ def _check_test_stand_department_match(test, stand) -> None:
         )
 
 
+# (server_id, os_version_id) → (monotonic-дедлайн, (снимок_есть, версия)).
+# Кампания и повторные постановки бьют один и тот же (стенд, РЦ) снова и снова
+# за секунды — без кэша каждая такая постановка сходила бы в ACS по сети.
+_ACS_SNAPSHOT_CHECK_CACHE_TTL_SECONDS = 20.0
+_acs_snapshot_check_cache: dict[tuple[str, str], tuple[float, tuple[bool, str]]] = {}
+
+
+async def _check_acs_snapshot_available(stand, ctx: dict[str, str]) -> None:
+    """Отказать в постановке, если у ACS нет снимка выбранной РЦ для этого стенда.
+
+    Без снимка `acs.snapshot_restore` не сможет откатить диск стенда на
+    выбранную версию — сейчас это выясняется часы спустя асинхронно
+    (`server_service/prepare_for_test.py`, `failed_step="restore"`). Проверка
+    синхронная и общая для ВСЕХ режимов постановки (обычный и debug) — именно
+    поэтому она живёт в `enqueue()`, а не в отдельной debug-ветке.
+
+    Best-effort: если сам канал проверки недоступен (server_service/ACS не
+    отвечают, `os_version_id` не резолвится в каталоге) — не блокируем
+    постановку, а логируем и пропускаем. Итог тот же, что и раньше (провал
+    придёт асинхронно из restore-шага), эта проверка лишь ловит самый частый
+    и дешёвый случай раньше, а не заменяет собой весь пайплайн подготовки.
+
+    Решение кэшируется на короткое время по паре (стенд, РЦ) — серия
+    постановок кампании/повторов на один и тот же стенд не бьёт по ACS на
+    каждый item.
+    """
+    if not server_client.is_internal_channel_configured():
+        return
+    rc = ctx.get("RC", "")
+    cache_key = (stand.server_id, rc)
+    now = time.monotonic()
+    cached = _acs_snapshot_check_cache.get(cache_key)
+    if cached is not None and cached[0] > now:
+        exists, version_name = cached[1]
+    else:
+        try:
+            version_name = await server_client.resolve_os_version_name(rc)
+            available_versions = await server_client.list_acs_snapshot_versions(stand.server_id)
+        except AppException as exc:
+            logger.warning(
+                "acs snapshot preflight skipped for stand %s / rc %s: %s", stand.id, rc, exc,
+            )
+            return
+        exists = version_name in available_versions
+        _acs_snapshot_check_cache[cache_key] = (
+            now + _ACS_SNAPSHOT_CHECK_CACHE_TTL_SECONDS, (exists, version_name),
+        )
+    if not exists:
+        raise DomainValidationError(
+            error_code="ACS_SNAPSHOT_NOT_FOUND",
+            message=(
+                f"Для этого стенда нет снимка ACS версии «{version_name}» — стенд не "
+                "сможет откатиться на неё при подготовке к тесту. Снимите образ этой "
+                "версии на стенде (ACS) перед запуском."
+            ),
+            details={"stand_id": stand.id, "os_version_id": rc, "version_name": version_name},
+        )
+
+
 async def enqueue(
     db: AsyncSession,
     identity: Identity,
@@ -241,7 +301,6 @@ async def enqueue(
             message="launch_context must include RC, KERNEL and MODE for prepare-for-test",
             details={"missing": missing},
         )
-
     is_admin = _is_stand_admin(identity, stand)
     if on_active_queue == "replace" and not is_admin:
         _deny_force(stand, reason="replace_requires_admin")
@@ -257,6 +316,13 @@ async def enqueue(
         # Очередь активна — бронь наша с прошлого item'а, ничего нового не
         # захватывается; вопрос только в том, как встать в неё.
         replace = await _resolve_active_queue_mode(db, stand, is_admin, on_active_queue)
+
+    # Здесь запрос уже прошёл все дешёвые/чисто-БД проверки (авторизация,
+    # состояние очереди) — не тратим сетевой вызов на ACS ради постановки,
+    # которая всё равно будет отклонена раньше. Но это ДО захвата FOR UPDATE
+    # и до вставки строки — снимка либо нет вовсе (реджект), либо он есть, и
+    # тогда лишний сетевой поход не должен держать лок на test/stand.
+    await _check_acs_snapshot_available(stand, ctx)
 
     # С этой точки берём FOR UPDATE непосредственно перед вставкой строки —
     # ровно на то время, что нужно для атомарного "было ли пусто" + insert.

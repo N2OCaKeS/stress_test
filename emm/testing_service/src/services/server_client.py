@@ -44,6 +44,7 @@ server.py`): виден сервер своего отдела либо тот, 
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -508,3 +509,55 @@ async def resolve_os_kernels(os_version_id: str) -> list[str]:
     if not kernels:
         raise DomainValidationError(error_code="OS_KERNELS_NOT_FOUND", message="Для выбранной ОС не найдены ядра")
     return kernels
+
+
+# server_id → (monotonic-дедлайн, версии РЦ со снимком). Постановка в очередь
+# кампании штампует десятки item'ов подряд на один и тот же стенд — без кэша
+# каждый из них сходил бы в ACS по сети синхронно. TTL короткий: это гейт
+# перед восстановлением стенда, не витрина, устаревать он не должен надолго.
+_ACS_SNAPSHOT_CACHE_TTL_SECONDS = 20.0
+_acs_snapshot_cache: dict[str, tuple[float, set[str]]] = {}
+
+
+async def list_acs_snapshot_versions(server_id: str, *, refresh: bool = False) -> set[str]:
+    """Версии РЦ, для которых у ACS есть снимок диска этого стенда.
+
+    `GET /internal/servers/{id}/acs-snapshots`, за коротким in-memory кэшем
+    (см. `_ACS_SNAPSHOT_CACHE_TTL_SECONDS`) — используется
+    `services/queue.py::enqueue()` перед постановкой в очередь: без снимка
+    `prepare-for-test` не сможет откатить стенд на выбранную РЦ, и отказ иначе
+    пришёл бы часы спустя асинхронно из `acs.snapshot_restore`. Ошибки ACS
+    (disabled/timeout/unreachable/ошибочный статус) со стороны server_service
+    пробрасываются как есть — `error_code` из тела ответа, не кэшируются.
+    """
+    now = time.monotonic()
+    if not refresh:
+        cached = _acs_snapshot_cache.get(server_id)
+        if cached is not None and cached[0] > now:
+            return cached[1]
+
+    headers = _internal_headers()
+    response = await _send_get(f"{_INTERNAL_SERVERS_PATH}/{server_id}/acs-snapshots", None, headers)
+    if response.status_code == 404:
+        raise NotFoundError(
+            error_code="SERVER_NOT_FOUND",
+            message="server_service returned 404 for the requested server",
+        )
+    if response.status_code >= 300:
+        payload = _parse_json_or_empty(response)
+        logger.warning(
+            "server_service (acs-snapshots) ответил %s на server_id=%s", response.status_code, server_id,
+        )
+        raise ServiceUnavailableError(
+            error_code=payload.get("error_code") or "SERVER_SERVICE_ERROR",
+            message=payload.get("message") or f"server_service returned {response.status_code}",
+            details=payload.get("details") or {},
+        )
+    body = _parse_json(response)
+    versions = {
+        str(item.get("version_name"))
+        for item in body.get("snapshots") or []
+        if item.get("version_name")
+    }
+    _acs_snapshot_cache[server_id] = (now + _ACS_SNAPSHOT_CACHE_TTL_SECONDS, versions)
+    return versions

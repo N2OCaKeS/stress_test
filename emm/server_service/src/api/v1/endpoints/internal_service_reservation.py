@@ -39,7 +39,8 @@ from src.schemas.internal import (
     PreviousHolder,
     ServiceReservationResponse,
 )
-from src.services import server as server_svc
+from src.schemas.server import AcsSnapshotItem, AcsSnapshotListResponse
+from src.services import acs_client, acs_settings as acs_settings_svc, server as server_svc
 
 # Whitelist identity, которым разрешена бронь от имени сервиса. `acs` заведён
 # заранее под ретрофит снимков (сегодня server_service ставит эти поля себе
@@ -223,6 +224,47 @@ async def get_connection_info(
     """
     server = await server_svc.get_connection_info_for_service(db, server_id=server_id)
     return ServerConnectionInfoResponse(server_id=server.id, host=str(server.ip_address))
+
+
+@router.get(
+    "/{server_id}/acs-snapshots",
+    response_model=AcsSnapshotListResponse,
+    responses={
+        **_COMMON_RESPONSES,
+        503: {"description": "ACS_DISABLED / ACS_TIMEOUT / ACS_UNREACHABLE / ACS_ERROR."},
+    },
+)
+async def acs_snapshots_for_service(
+    server_id: str = Path(description="ID сервера."),
+    db: AsyncSession = Depends(get_db),
+    caller: str = Depends(require_internal_caller(*_ALLOWED_IDENTITIES)),
+) -> AcsSnapshotListResponse:
+    """Живой список снимков ACS этого сервера для сервисного каллера без bearer'а.
+
+    Тот же `GET check-snapshots` + фильтр по `{hostname}-` префиксу, что у
+    user-facing `GET /servers/{id}/acs-snapshots`, но без permission/
+    department-видимости — только whitelist `_ALLOWED_IDENTITIES`. Единственный
+    сегодняшний потребитель — `testing_service.queue.enqueue()`: перед
+    постановкой в очередь синхронно проверяет, что для пары (стенд, РЦ) вообще
+    есть снимок, на который ACS сможет откатиться при `prepare-for-test`
+    (иначе `acs.snapshot_restore` провалится часы спустя асинхронно).
+
+    Ошибки ACS (disabled/timeout/unreachable/ошибочный статус) пробрасываются
+    как есть — тот же контракт, что у user-facing эндпоинта.
+    """
+    server = await server_svc.get_connection_info_for_service(db, server_id=server_id)
+    acs_url, acs_password = await acs_settings_svc.get_acs_credentials(db)
+    all_names = await acs_client.list_snapshots(acs_url, acs_password)
+    prefix = f"{server.hostname}-"
+    items = sorted(
+        (
+            AcsSnapshotItem(name=name, version_name=name[len(prefix):])
+            for name in all_names
+            if name.startswith(prefix)
+        ),
+        key=lambda item: item.name,
+    )
+    return AcsSnapshotListResponse(snapshots=items)
 
 
 @router.post(

@@ -1,0 +1,1492 @@
+{
+    "astra-version": {
+        "vm-machines": [
+            "sudcm",
+            "sufs",
+            "suac",
+            "sudcs",
+            "susrv",
+            "suodcm",
+            "suoac",
+            "fidcm",
+            "fidcr1",
+            "fidcr2",
+            "fisrv",
+            "fiac",
+            "samdc",
+            "samac",
+            "samfs",
+            "clear",
+            "all"
+        ],
+        "version": [
+            {
+                "1.8": [
+                    "1.8-night.s",
+                    "1.8-night.v",
+                    "1.8-night.o",
+                    "1.8-testing.s",
+                    "1.8-testing.v",
+                    "1.8-testing.o",
+                    "1.8.0.s",
+                    "1.8.0.v",
+                    "1.8.0.o",
+                    "1.8.1.s",
+                    "1.8.1.v",
+                    "1.8.1.o",
+                    "1.8.1.UU.1.s",
+                    "1.8.1.UU.1.v",
+                    "1.8.1.UU.1.o",
+                    "1.8.1.UU.2.s",
+                    "1.8.1.UU.2.v",
+                    "1.8.1.UU.2.o",
+                    "1.8.2.s",
+                    "1.8.2.v",
+                    "1.8.2.o",
+                    "1.8.2.UU.1.s",
+                    "1.8.2.UU.1.v",
+                    "1.8.2.UU.1.o",
+                    "1.8.3.s",
+                    "1.8.3.v",
+                    "1.8.3.o",
+                    "1.8.3.UU.1.s",
+                    "1.8.3.UU.1.v",
+                    "1.8.3.UU.1.o",
+                    "1.8.4.s",
+                    "1.8.4.v",
+                    "1.8.4.o",
+                    "1.8.5.s",
+                    "1.8.5.v",
+                    "1.8.5.o",
+                    "1.8.6.s",
+                    "1.8.6.v",
+                    "1.8.6.o"
+                ]
+            },
+            {
+                "1.7": [
+                    "1.7-night.s",
+                    "1.7-night.v",
+                    "1.7-night.o",
+                    "1.7-testing.s",
+                    "1.7-testing.v",
+                    "1.7-testing.o",
+                    "1.7.0.s",
+                    "1.7.0.v",
+                    "1.7.0.o",
+                    "1.7.1.s",
+                    "1.7.1.v",
+                    "1.7.1.o",
+                    "1.7.2.s",
+                    "1.7.2.v",
+                    "1.7.2.o",
+                    "1.7.2.UU.1.s",
+                    "1.7.2.UU.1.v",
+                    "1.7.2.UU.1.o",
+                    "1.7.3.s",
+                    "1.7.3.v",
+                    "1.7.3.o",
+                    "1.7.3.UU.1.s",
+                    "1.7.3.UU.1.v",
+                    "1.7.3.UU.1.o",
+                    "1.7.3.UU.2.s",
+                    "1.7.3.UU.2.v",
+                    "1.7.3.UU.2.o",
+                    "1.7.4.s",
+                    "1.7.4.v",
+                    "1.7.4.o",
+                    "1.7.4.UU.1.s",
+                    "1.7.4.UU.1.v",
+                    "1.7.4.UU.1.o",
+                    "1.7.5.s",
+                    "1.7.5.v",
+                    "1.7.5.o",
+                    "1.7.5.UU.1.s",
+                    "1.7.5.UU.1.v",
+                    "1.7.5.UU.1.o",
+                    "1.7.6.s",
+                    "1.7.6.v",
+                    "1.7.6.o",
+                    "1.7.6.UU.1.s",
+                    "1.7.6.UU.1.v",
+                    "1.7.6.UU.1.o",
+                    "1.7.6.UU.2.s",
+                    "1.7.6.UU.2.v",
+                    "1.7.6.UU.2.o",
+                    "1.7.7.s",
+                    "1.7.7.v",
+                    "1.7.7.o",
+                    "1.7.7.UU.1.s",
+                    "1.7.7.UU.1.v",
+                    "1.7.7.UU.1.o",
+                    "1.7.7.UU.2.s",
+                    "1.7.7.UU.2.v",
+                    "1.7.7.UU.2.o",
+                    "1.7.8.s",
+                    "1.7.8.v",
+                    "1.7.8.o",
+                    "1.7.9.s",
+                    "1.7.9.v",
+                    "1.7.9.o",
+                    "1.7.9.UU.1.s",
+                    "1.7.9.UU.1.v",
+                    "1.7.9.UU.1.o",
+                    "1.7.10.s",
+                    "1.7.10.v",
+                    "1.7.10.o",
+                    "1.7.11.s",
+                    "1.7.11.v",
+                    "1.7.11.o"
+                ]
+            },
+            {
+                "4.7": [
+                    "4.7-testing.s",
+                    "4.7-testing.v",
+                    "4.7-testing.o",
+                    "4.7-night.s",
+                    "4.7-night.v",
+                    "4.7-night.o",
+                    "4.7.0.s",
+                    "4.7.0.v",
+                    "4.7.0.o",
+                    "4.7.5.s",
+                    "4.7.5.v",
+                    "4.7.5.o",
+                    "4.7.6.s",
+                    "4.7.6.v",
+                    "4.7.6.o",
+                    "4.7.7.s",
+                    "4.7.7.v",
+                    "4.7.7.o",
+                    "4.7.8.s",
+                    "4.7.8.v",
+                    "4.7.8.o",
+                    "4.7.9.s",
+                    "4.7.9.v",
+                    "4.7.9.o"
+
+                ]
+            },
+            {
+                "4.8": [
+                    "4.8-testing.s",
+                    "4.8-testing.v",
+                    "4.8-testing.o",
+                    "4.8-night.s",
+                    "4.8-night.v",
+                    "4.8-night.o",
+                    "4.8.2.s",
+                    "4.8.2.v",
+                    "4.8.2.o"
+                ]
+            },
+            {
+                "1.6": [
+                    "1.6.0",
+                    "1.6.1",
+                    "1.6.2",
+                    "1.6.3",
+                    "1.6.4",
+                    "1.6.5",
+                    "1.6.6",
+                    "1.6.7",
+                    "1.6.8",
+                    "1.6.9",
+                    "1.6.10",
+                    "1.6.11",
+                    "1.6.12",
+                    "1.6.13",
+                    "1.6.14",
+                    "1.6-testing"
+                ]
+            },
+            {
+                "2.12": [
+                    "2.12.40",
+                    "2.12.42",
+                    "2.12.43",
+                    "2.12.44",
+                    "2.12.45",
+                    "2.12.46"
+                ]
+            },
+            {
+                "12.8": [
+                    "12.8.1",
+                    "12.8-testing"
+                ]
+            }
+        ],
+        "postfix": [
+            {
+                "1.8": "_1.8"
+            },
+            {
+                "1.7": "_1.7"
+            },
+            {
+                "1.6": "_1.6"
+            },
+            {
+                "4.7": "_4.7"
+            },
+            {
+                "4.8": "_4.8"
+            },
+            {
+                "12.8": "_12.8"
+            }
+        ],
+        "network": [
+            {
+                "sudcm": [
+                    "08:00:27:E1:87:C4",
+                    "int0",
+                    "10.0.0.21",
+                    "5921"
+                ]
+            },
+            {
+                "sufs": [
+                    "08:00:27:64:AF:57",
+                    "int0",
+                    "10.0.0.22",
+                    "5922"
+                ]
+            },
+            {
+                "suac": [
+                    "08:00:27:35:FB:4D",
+                    "int0",
+                    "10.0.0.25",
+                    "5925"
+                ]
+            },
+            {
+                "sudcs": [
+                    "08:00:27:93:D3:2B",
+                    "int0",
+                    "10.0.0.24",
+                    "5924"
+                ]
+            },
+            {
+                "susrv": [
+                    "08:00:27:73:E5:1C",
+                    "int0",
+                    "10.0.0.23",
+                    "5923"
+                ]
+            },
+            {
+                "suodcm": [
+                    "08:00:27:56:02:DE",
+                    "int1",
+                    "10.0.10.6",
+                    "5906"
+                ]
+            },
+            {
+                "suoac": [
+                    "08:00:27:AC:61:56",
+                    "int1",
+                    "10.0.10.7",
+                    "5907"
+                ]
+            },
+            {
+                "fidcm": [
+                    "52:54:00:25:F4:8B",
+                    "int2",
+                    "10.0.20.20",
+                    "5930"
+                ]
+            },
+            {
+                "fidcr1": [
+                    "52:54:00:7D:A5:95",
+                    "int2",
+                    "10.0.20.21",
+                    "5931"
+                ]
+            },
+            {
+                "fidcr2": [
+                    "08:00:27:86:E7:E6",
+                    "int2",
+                    "10.0.20.22",
+                    "5932"
+                ]
+            },
+            {
+                "fisrv": [
+                    "52:54:00:12:2A:57",
+                    "int2",
+                    "10.0.20.23",
+                    "5933"
+                ]
+            },
+            {
+                "fiac": [
+                    "52:54:00:67:A4:E3",
+                    "int2",
+                    "10.0.20.30",
+                    "5934"
+                ]
+            },
+            {
+                "samdc": [
+                    "52:54:00:50:A4:81",
+                    "int2",
+                    "10.0.20.101",
+                    "5935"
+                ]
+            },
+            {
+                "samac": [
+                    "52:54:00:B9:E4:50",
+                    "int2",
+                    "10.0.20.102",
+                    "5936"
+                ]
+            },
+            {
+                "samfs": [
+                    "52:54:00:E3:7B:25",
+                    "int2",
+                    "10.0.20.103",
+                    "5937"
+                ]
+            },
+            {
+                "clear": [
+                    "52:54:00:24:1F:71",
+                    "vagrant-libvirt",
+                    "127.0.1.1",
+                    "5938"
+                ]
+            }
+        ],
+        "vbox_network": [
+            {
+                "sudcm": [
+                    "2021",
+                    "3421"
+                ]
+            },
+            {
+                "sufs": [
+                    "2022",
+                    "3422"
+                ]
+            },
+            {
+                "suac": [
+                    "2025",
+                    "3423"
+                ]
+            },
+            {
+                "sudcs": [
+                    "2024",
+                    "3424"
+                ]
+            },
+            {
+                "susrv": [
+                    "2023",
+                    "3425"
+                ]
+            },
+            {
+                "suodcm": [
+                    "2034",
+                    "3434"
+                ]
+            },
+            {
+                "suoac": [
+                    "2035",
+                    "3435"
+                ]
+            },
+            {
+                "fidcm": [
+                    "2026",
+                    "3431"
+                ]
+            },
+            {
+                "fidcr1": [
+                    "2027",
+                    "3432"
+                ]
+            },
+            {
+                "fidcr2": [
+                    "2028",
+                    "3433"
+                ]
+            },
+            {
+                "fisrv": [
+                    "2029",
+                    "3434"
+                ]
+            },
+            {
+                "fiac": [
+                    "2030",
+                    "3435"
+                ]
+            },
+            {
+                "samdc": [
+                    "2031",
+                    "3441"
+                ]
+            },
+            {
+                "samac": [
+                    "2032",
+                    "3442"
+                ]
+            },
+            {
+                "samfs": [
+                    "2033",
+                    "3443"
+                ]
+            },
+            {
+                "clear": [
+                    "2035",
+                    "3444"
+                ]
+            }
+        ],
+        "vagrant_box": [
+            {
+                "12.8.1": [
+                    "orel-vanilla-gui/12.8.1.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-12.8-testing.json"
+                ]
+            },
+            {
+                "12.8-testing": [
+                    "orel-vanilla-gui/12.8.1.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-12.8-testing.json"
+                ]
+            },
+            {
+                "1.8-testing.s": [
+                    "alse-gui-max/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-max%2F1.8.6"
+                ]
+            },
+            {
+                "1.8-testing.v": [
+                    "alse-gui-adv/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-adv%2F1.8.6"
+                ]
+            },
+            {
+                "1.8-testing.o": [
+                    "alse-gui-base/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-base%2F1.8.6"
+                ]
+            },
+            {
+                "1.8-night.s": [
+                    "alse-gui-max/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-max%2F1.8.6"
+                ]
+            },
+            {
+                "1.8-night.v": [
+                    "alse-gui-adv/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-adv%2F1.8.6"
+                ]
+            },
+            {
+                "1.8-night.o": [
+                    "alse-gui-base/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-base%2F1.8.6"
+                ]
+            },
+            {
+                "1.8.6.s": [
+                    "alse-gui-max/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-max%2F1.8.6"
+                ]
+            },
+            {
+                "1.8.6.v": [
+                    "alse-gui-adv/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-adv%2F1.8.6"
+                ]
+            },
+            {
+                "1.8.6.o": [
+                    "alse-gui-base/1.8.6",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-base%2F1.8.6"
+                ]
+            },
+            {
+                "1.8.5.s": [
+                    "alse-gui-max/1.8.5",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-max%2F1.8.5"
+                ]
+            },
+            {
+                "1.8.5.v": [
+                    "alse-gui-adv/1.8.5",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-adv%2F1.8.5"
+                ]
+            },
+            {
+                "1.8.5.o": [
+                    "alse-gui-base/1.8.5",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-base%2F1.8.5"
+                ]
+            },
+            {
+                "1.8.4.s": [
+                    "alse-gui-max/1.8.4",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-max%2F1.8.4"
+                ]
+            },
+            {
+                "1.8.4.v": [
+                    "alse-gui-adv/1.8.4",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-adv%2F1.8.4"
+                ]
+            },
+            {
+                "1.8.4.o": [
+                    "alse-gui-base/1.8.4",
+                    "https://artifactory.astralinux.ru/artifactory/api/vagrant/mg-vagrant/alse-gui-base%2F1.8.4"
+                ]
+            },
+            {
+                "1.8.3.UU.1.s": [
+                    "alse-gui-max/1.8.3.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.3.uu1"
+                ]
+            },
+            {
+                "1.8.3.UU.1.v": [
+                    "alse-gui-adv/1.8.3.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.8.3.uu1"
+                ]
+            },
+            {
+                "1.8.3.UU.1.o": [
+                    "alse-gui-base/1.8.3.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.8.3.uu1"
+                ]
+            },
+            {
+                "1.8.3.s": [
+                    "alse-gui-max/1.8.3",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.3"
+                ]
+            },
+            {
+                "1.8.3.v": [
+                    "alse-gui-adv/1.8.3",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.8.3"
+                ]
+            },
+            {
+                "1.8.3.o": [
+                    "alse-gui-base/1.8.3",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.8.3"
+                ]
+            },
+            {
+                "1.8.2.UU.1.s": [
+                    "alse-gui-max/1.8.2.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.2.uu1"
+                ]
+            },
+            {
+                "1.8.2.UU.1.v": [
+                    "alse-gui-adv/1.8.2.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.8.2.uu1"
+                ]
+            },
+            {
+                "1.8.2.UU.1.o": [
+                    "alse-gui-base/1.8.2.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.8.2.uu1"
+                ]
+            },
+            {
+                "1.8.2.s": [
+                    "alse-gui-max/1.8.2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.2"
+                ]
+            },
+            {
+                "1.8.2.v": [
+                    "alse-gui-adv/1.8.2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.8.2"
+                ]
+            },
+            {
+                "1.8.2.o": [
+                    "alse-gui-base/1.8.2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.8.2"
+                ]
+            },
+            {
+                "1.8.1.UU.2.s": [
+                    "alse-gui-max/1.8.1.uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.1.uu2"
+                ]
+            },
+            {
+                "1.8.1.UU.2.v": [
+                    "alse-gui-adv/1.8.1.uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.8.1.uu2"
+                ]
+            },
+            {
+                "1.8.1.UU.2.o": [
+                    "alse-gui-base/1.8.1.uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.8.1.uu2"
+                ]
+            },
+            {
+                "1.8.1.UU.1.s": [
+                    "alse-gui-max/1.8.1.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.1.uu1"
+                ]
+            },
+            {
+                "1.8.1.UU.1.v": [
+                    "alse-gui-adv/1.8.1.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.8.1.uu1"
+                ]
+            },
+            {
+                "1.8.1.UU.1.o": [
+                    "alse-gui-base/1.8.1.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.8.1.uu1"
+                ]
+            },
+            {
+                "1.8.1.s": [
+                    "alse-gui-max/1.8.1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.8.1"
+                ]
+            },
+            {
+                "1.8.1.v": [
+                    "alse-gui-adv/1.8.1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.8.1"
+                ]
+            },
+            {
+                "1.8.1.o": [
+                    "alse-gui-base/1.8.1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.8.1"
+                ]
+            },
+            {
+                "1.8.0.s": [
+                    "smolensk-vanilla-gui/1.8.0",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.8.0.json"
+                ]
+            },
+            {
+                "1.8.0.v": [
+                    "voronezh-vanilla-gui/1.8.0",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-1.8.0.json"
+                ]
+            },
+            {
+                "1.8.0.o": [
+                    "orel-vanilla-gui/1.8.0",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-1.8.0.json"
+                ]
+            },
+            {
+                "4.8-testing.s": [
+                    "smolensk-vanilla-gui/4.8.5.10",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.8.5.json"
+                ]
+            },
+            {
+                "4.8-testing.v": [
+                    "voronezh-vanilla-gui/4.8.5.10",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.8.5.json"
+                ]
+            },
+            {
+                "4.8-testing.o": [
+                    "orel-vanilla-gui/4.8.5.10",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.8.5.json"
+                ]
+            },
+                        {
+                "4.8-night.s": [
+                    "smolensk-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.8.2.json"
+                ]
+            },
+            {
+                "4.8-night.v": [
+                    "voronezh-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.8.2.json"
+                ]
+            },
+            {
+                "4.8-night.o": [
+                    "orel-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.8.2.json"
+                ]
+            },
+            {
+                "4.8.2.s": [
+                    "smolensk-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.8.2.json"
+                ]
+            },
+            {
+                "4.8.2.v": [
+                    "voronezh-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.8.2.json"
+                ]
+            },
+            {
+                "4.8.2.o": [
+                    "orel-vanilla-gui/4.8.2.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.8.2.json"
+                ]
+            },
+            {
+                "4.7.0.s": [
+                    "smolensk-vanilla-gui/4.7.0.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.0.json"
+                ]
+            },
+            {
+                "4.7.0.v": [
+                    "voronezh-vanilla-gui/4.7.0.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.0.json"
+                ]
+            },
+            {
+                "4.7.0.o": [
+                    "orel-vanilla-gui/4.7.0.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.0.json"
+                ]
+            },
+            {
+                "4.7.5.s": [
+                    "smolensk-vanilla-gui/4.7.5.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.5.json"
+                ]
+            },
+            {
+                "4.7.5.v": [
+                    "voronezh-vanilla-gui/4.7.5.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.5.json"
+                ]
+            },
+            {
+                "4.7.5.o": [
+                    "orel-vanilla-gui/4.7.5.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.5.json"
+                ]
+            },
+            {
+                "4.7.6.s": [
+                    "smolensk-vanilla-gui/4.7.6.9",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.6.json"
+                ]
+            },
+            {
+                "4.7.6.v": [
+                    "voronezh-vanilla-gui/4.7.6.9",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.6.json"
+                ]
+            },
+            {
+                "4.7.6.o": [
+                    "orel-vanilla-gui/4.7.6.9",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.6.json"
+                ]
+            },
+            {
+                "4.7.7.s": [
+                    "smolensk-vanilla-gui/4.7.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.7.json"
+                ]
+            },
+            {
+                "4.7.7.v": [
+                    "voronezh-vanilla-gui/4.7.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.7.json"
+                ]
+            },
+            {
+                "4.7.7.o": [
+                    "orel-vanilla-gui/4.7.7.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.7.json"
+                ]
+            },
+            {
+                "4.7.8.s": [
+                    "smolensk-vanilla-gui/4.7.8.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.8.json"
+                ]
+            },
+            {
+                "4.7.8.v": [
+                    "voronezh-vanilla-gui/4.7.8.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.8.json"
+                ]
+            },
+            {
+                "4.7.8.o": [
+                    "orel-vanilla-gui/4.7.8.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.8.json"
+                ]
+            },
+            {
+                "4.7.9.s": [
+                    "smolensk-vanilla-gui/4.7.9.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.9.json"
+                ]
+            },
+            {
+                "4.7.9.v": [
+                    "voronezh-vanilla-gui/4.7.9.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.9.json"
+                ]
+            },
+            {
+                "4.7.9.o": [
+                    "orel-vanilla-gui/4.7.9.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.9.json"
+                ]
+            },
+            {
+                "4.7-testing.s": [
+                    "smolensk-vanilla-gui/4.7.9.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.9.json"
+                ]
+            },
+            {
+                "4.7-testing.v": [
+                    "voronezh-vanilla-gui/4.7.9.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.9.json"
+                ]
+            },
+            {
+                "4.7-testing.o": [
+                    "orel-vanilla-gui/4.7.9.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.9.json"
+                ]
+            },
+            {
+                "4.7-night.s": [
+                    "smolensk-vanilla-gui/4.7.9.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-4.7.9.json"
+                ]
+            },
+            {
+                "4.7-night.v": [
+                    "voronezh-vanilla-gui/4.7.9.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/voronezh-vanilla-gui-4.7.9.json"
+                ]
+            },
+            {
+                "4.7-night.o": [
+                    "orel-vanilla-gui/4.7.9.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-4.7.9.json"
+                ]
+            },
+            {
+                "1.7.0.s": [
+                    "alse-vanilla-gui-max/1.7.0",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.0"
+                ]
+            },
+            {
+                "1.7.0.v": [
+                    "alse-vanilla-gui-adv/1.7.0",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-adv%2F1.7.0"
+                ]
+            },
+            {
+                "1.7.0.o": [
+                    "alse-vanilla-gui-base/1.7.0",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-base%2F1.7.0"
+                ]
+            },
+            {
+                "1.7.1.s": [
+                    "alse-vanilla-gui-max/1.7.1",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.1"
+                ]
+            },
+            {
+                "1.7.1.v": [
+                    "alse-vanilla-gui-adv/1.7.1",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-adv%2F1.7.1"
+                ]
+            },
+            {
+                "1.7.1.o": [
+                    "alse-vanilla-gui-base/1.7.1",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-base%2F1.7.1"
+                ]
+            },
+            {
+                "1.7.2.s": [
+                    "alse-vanilla-gui-max/1.7.2",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.2"
+                ]
+            },
+            {
+                "1.7.2.v": [
+                    "alse-vanilla-gui-adv/1.7.2",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-adv%2F1.7.2"
+                ]
+            },
+            {
+                "1.7.2.o": [
+                    "alse-vanilla-gui-base/1.7.2",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-base%2F1.7.2"
+                ]
+            },
+            {
+                "1.7.2.UU.1.s": [
+                    "alse-vanilla-gui-max/1.7.2",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.2"
+                ]
+            },
+            {
+                "1.7.2.UU.1.v": [
+                    "alse-vanilla-gui-adv/1.7.2",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-adv%2F1.7.2"
+                ]
+            },
+            {
+                "1.7.2.UU.1.o": [
+                    "alse-vanilla-gui-base/1.7.2",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-base%2F1.7.2"
+                ]
+            },
+            {
+                "1.7.3.s": [
+                    "alse-vanilla-gui-max/1.7.3",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.3"
+                ]
+            },
+            {
+                "1.7.3.v": [
+                    "alse-vanilla-gui-adv/1.7.3",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.3"
+                ]
+            },
+            {
+                "1.7.3.o": [
+                    "alse-vanilla-gui-base/1.7.3",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.3"
+                ]
+            },
+            {
+                "1.7.3.UU.1.s": [
+                    "alse-vanilla-gui-max/1.7.3uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.3uu1"
+                ]
+            },
+            {
+                "1.7.3.UU.1.v": [
+                    "alse-vanilla-gui-adv/1.7.3uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-adv%2F1.7.3uu1"
+                ]
+            },
+            {
+                "1.7.3.UU.1.o": [
+                    "alse-vanilla-gui-base/1.7.3uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-base%2F1.7.3uu1"
+                ]
+            },
+            {
+                "1.7.3.UU.2.s": [
+                    "alse-vanilla-gui-max/1.7.3uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.3uu2"
+                ]
+            },
+            {
+                "1.7.3.UU.2.v": [
+                    "alse-vanilla-gui-adv/1.7.3uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-adv%2F1.7.3uu2"
+                ]
+            },
+            {
+                "1.7.3.UU.2.o": [
+                    "alse-vanilla-gui-base/1.7.3uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-base%2F1.7.3uu2"
+                ]
+            },
+            {
+                "1.7.4.s": [
+                    "alse-vanilla-gui-max/1.7.4",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.4"
+                ]
+            },
+            {
+                "1.7.4.v": [
+                    "alse-vanilla-gui-adv/1.7.4",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-adv%2F1.7.4"
+                ]
+            },
+            {
+                "1.7.4.o": [
+                    "alse-vanilla-gui-base/1.7.4",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-base%2F1.7.4"
+                ]
+            },
+            {
+                "1.7.4.UU.1.s": [
+                    "alse-vanilla-gui-max/1.7.4uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.4uu1"
+                ]
+            },
+            {
+                "1.7.4.UU.1.v": [
+                    "alse-vanilla-gui-adv/1.7.4uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-adv%2F1.7.4uu1"
+                ]
+            },
+            {
+                "1.7.4.UU.1.o": [
+                    "alse-vanilla-gui-base/1.7.4uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-base%2F1.7.4uu1"
+                ]
+            },
+            {
+                "1.7.5.s": [
+                    "alse-vanilla-gui-max/1.7.5",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-max%2F1.7.5"
+                ]
+            },
+            {
+                "1.7.5.v": [
+                    "alse-vanilla-gui-adv/1.7.5",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-adv%2F1.7.5"
+                ]
+            },
+            {
+                "1.7.5.o": [
+                    "alse-vanilla-gui-base/1.7.5",
+                    "https://registry.astralinux.ru/vagrant/alse-vanilla-gui-base%2F1.7.5"
+                ]
+            },
+            {
+                "1.7.5.UU.1.s": [
+                    "alse-gui-max/1.7.5uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.5uu1"
+                ]
+            },
+            {
+                "1.7.5.UU.1.v": [
+                    "alse-gui-adv/1.7.5uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.5uu1"
+                ]
+            },
+            {
+                "1.7.5.UU.1.o": [
+                    "alse-gui-base/1.7.5uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.5uu1"
+                ]
+            },
+            {
+                "1.7.6.s": [
+                    "alse-gui-max/1.7.6",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.6"
+                ]
+            },
+            {
+                "1.7.6.v": [
+                    "alse-gui-adv/1.7.6",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.6"
+                ]
+            },
+            {
+                "1.7.6.o": [
+                    "alse-gui-base/1.7.6",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.6"
+                ]
+            },
+            {
+                "1.7.6.UU.1.s": [
+                    "alse-gui-max/1.7.6uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.6uu1"
+                ]
+            },
+            {
+                "1.7.6.UU.1.v": [
+                    "alse-gui-adv/1.7.6uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.6uu1"
+                ]
+            },
+            {
+                "1.7.6.UU.1.o": [
+                    "alse-gui-base/1.7.6uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.6uu1"
+                ]
+            },
+            {
+                "1.7.6.UU.2.s": [
+                    "alse-gui-max/1.7.6.uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.6.uu2"
+                ]
+            },
+            {
+                "1.7.6.UU.2.v": [
+                    "alse-gui-adv/1.7.6.uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.6.uu2"
+                ]
+            },
+            {
+                "1.7.6.UU.2.o": [
+                    "alse-gui-base/1.7.6.uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.6.uu2"
+                ]
+            },
+            {
+                "1.7.7.s": [
+                    "alse-gui-max/1.7.7",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.7"
+                ]
+            },
+            {
+                "1.7.7.v": [
+                    "alse-gui-adv/1.7.7",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.7"
+                ]
+            },
+            {
+                "1.7.7.o": [
+                    "alse-gui-base/1.7.7",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.7"
+                ]
+            },
+            {
+                "1.7.7.UU.1.s": [
+                    "alse-gui-max/1.7.7.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.7.uu1"
+                ]
+            },
+            {
+                "1.7.7.UU.1.v": [
+                    "alse-gui-adv/1.7.7.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.7.uu1"
+                ]
+            },
+            {
+                "1.7.7.UU.1.o": [
+                    "alse-gui-base/1.7.7.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.7.uu1"
+                ]
+            },
+            {
+                "1.7.7.UU.2.s": [
+                    "alse-gui-max/1.7.7.uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.7.uu2"
+                ]
+            },
+            {
+                "1.7.7.UU.2.v": [
+                    "alse-gui-adv/1.7.7.uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.7.uu2"
+                ]
+            },
+            {
+                "1.7.7.UU.2.o": [
+                    "alse-gui-base/1.7.7.uu2",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.7.uu2"
+                ]
+            },
+            {
+                "1.7.8.s": [
+                    "alse-gui-max/1.7.8",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.8"
+                ]
+            },
+            {
+                "1.7.8.v": [
+                    "alse-gui-adv/1.7.8",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.8"
+                ]
+            },
+            {
+                "1.7.8.o": [
+                    "alse-gui-base/1.7.8",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.8"
+                ]
+            },
+            {
+                "1.7.9.s": [
+                    "alse-gui-max/1.7.9",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.9"
+                ]
+            },
+            {
+                "1.7.9.v": [
+                    "alse-gui-adv/1.7.9",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.9"
+                ]
+            },
+            {
+                "1.7.9.o": [
+                    "alse-gui-base/1.7.9",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.9"
+                ]
+            },
+            {
+                "1.7.9.UU.1.s": [
+                    "alse-gui-max/1.7.9.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.9.uu1"
+                ]
+            },
+            {
+                "1.7.9.UU.1.v": [
+                    "alse-gui-adv/1.7.9.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.9.uu1"
+                ]
+            },
+            {
+                "1.7.9.UU.1.o": [
+                    "alse-gui-base/1.7.9.uu1",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.9.uu1"
+                ]
+            },
+            {
+                "1.7.10.s": [
+                    "alse-gui-max/1.7.10",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.10"
+                ]
+            },
+            {
+                "1.7.10.v": [
+                    "alse-gui-adv/1.7.10",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.10"
+                ]
+            },
+            {
+                "1.7.10.o": [
+                    "alse-gui-base/1.7.10",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.10"
+                ]
+            },
+            {
+                "1.7.11.s": [
+                    "alse-gui-max/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.11"
+                ]
+            },
+            {
+                "1.7.11.v": [
+                    "alse-gui-adv/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.11"
+                ]
+            },
+            {
+                "1.7.11.o": [
+                    "alse-gui-base/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.11"
+                ]
+            },
+            {
+                "1.7-testing.s": [
+                    "alse-gui-max/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.11"
+                ]
+            },
+            {
+                "1.7-testing.v": [
+                    "alse-gui-adv/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.11"
+                ]
+            },
+            {
+                "1.7-testing.o": [
+                    "alse-gui-base/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.11"
+                ]
+            },
+            {
+                "1.7-night.s": [
+                    "alse-gui-max/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-max%2F1.7.11"
+                ]
+            },
+            {
+                "1.7-night.v": [
+                    "alse-gui-adv/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-adv%2F1.7.11"
+                ]
+            },
+            {
+                "1.7-night.o": [
+                    "alse-gui-base/1.7.11",
+                    "https://registry.astralinux.ru/vagrant/alse-gui-base%2F1.7.11"
+                ]
+            },
+            {
+                "1.6.0": [
+                    "smolensk-vanilla-gui/1.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.0.json"
+                ]
+            },
+            {
+                "1.6.1": [
+                    "smolensk-vanilla-gui/1.6.1",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.1.json"
+                ]
+            },
+            {
+                "1.6.2": [
+                    "smolensk-vanilla-gui/1.6.2",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.2.json"
+                ]
+            },
+            {
+                "1.6.3": [
+                    "smolensk-vanilla-gui/1.6.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.3.json"
+                ]
+            },
+            {
+                "1.6.3": [
+                    "smolensk-vanilla-gui/1.6.3",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.3.json"
+                ]
+            },
+            {
+                "1.6.4": [
+                    "smolensk-vanilla-gui/1.6.4",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.4.json"
+                ]
+            },
+            {
+                "1.6.5": [
+                    "smolensk-vanilla-gui/1.6.5",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.5.json"
+                ]
+            },
+            {
+                "1.6.6": [
+                    "smolensk-vanilla-gui/1.6.6",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.6.json"
+                ]
+            },
+            {
+                "1.6.7": [
+                    "smolensk-vanilla-gui/1.6.7",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.7.json"
+                ]
+            },
+            {
+                "1.6.8": [
+                    "smolensk-vanilla-gui/1.6.8",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.8.json"
+                ]
+            },
+            {
+                "1.6.9": [
+                    "smolensk-vanilla-gui/1.6.9",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.9.json"
+                ]
+            },
+            {
+                "1.6.10": [
+                    "smolensk-vanilla-gui/1.6.10",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.10.json"
+                ]
+            },
+            {
+                "1.6.11": [
+                    "smolensk-vanilla-gui/1.6.11",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.11.json"
+                ]
+            },
+            {
+                "1.6.12": [
+                    "smolensk-vanilla-gui/1.6.12",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.12.json"
+                ]
+            },
+            {
+                "1.6.13": [
+                    "smolensk-vanilla-gui/1.6.13",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.13.json"
+                ]
+            },
+            {
+                "1.6.14": [
+                    "smolensk-vanilla-gui/1.6.14.1",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.14.json"
+                ]
+            },
+            {
+                "1.6-testing": [
+                    "smolensk-vanilla-gui/1.6.14.1",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/smolensk-vanilla-gui-1.6.14.json"
+                ]
+            },
+            {
+                "2.12.29": [
+                    "orel-vanilla-gui/2.12.29",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.29.json"
+                ]
+            },
+            {
+                "2.12.40": [
+                    "orel-vanilla-gui/2.12.40",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.40.json"
+                ]
+            },
+            {
+                "2.12.42": [
+                    "orel-vanilla-gui/2.12.42",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.42.json"
+                ]
+            },
+            {
+                "2.12.43": [
+                    "orel-vanilla-gui/2.12.43",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.43.json"
+                ]
+            },
+            {
+                "2.12.44": [
+                    "orel-vanilla-gui/2.12.43",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.43.json"
+                ]
+            },
+            {
+                "2.12.45": [
+                    "orel-vanilla-gui/2.12.45",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.45.json"
+                ]
+            },
+            {
+                "2.12.46": [
+                    "orel-vanilla-gui/2.12.45",
+                    "http://qa111.devos.astralinux.ru/vault/vagrant/orel-vanilla-gui-2.12.45.json"
+                ]
+            }
+        ]
+    }
+}

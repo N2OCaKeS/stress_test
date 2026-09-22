@@ -1,0 +1,39 @@
+statistics_conf = {
+    "Apache": {
+        "set_of_test_types": ['apache-rp']
+    },
+    "FreeIPA": {
+        "set_of_test_types": ['FreeIPA auth', 'FreeIPA c-users', 'FreeIPA plugin']
+    },
+    "Parsec": {
+        "set_of_test_types": ['parsec impact-fs', 'parsec impact-fs aud-off', 'raw-spin-lock', 'digsig-cdt'],
+        "comparison_list": [["parsec impact-fs", "parsec impact-fs aud-off"]]
+    },
+    "PostgreSQL": {
+        "set_of_test_types": ['postgresql', 'postgresql-sm', 'postgresql-aud-off', 'psql parsec', 'psql vanilla', 'tantor vanilla', 'psql balance', 'PSQL OLAP-hq', 'psql info-sys', 'psql info-sys-orel'],
+        "comparison_list": [['postgresql', 'postgresql-sm'], ['postgresql', 'postgresql-aud-off'], ['postgresql', 'psql parsec'], ['postgresql', 'psql vanilla'], ["psql vanilla", "postgresql-aud-off"], ['psql info-sys', 'psql info-sys-orel']],
+        "comparison_kernel_list": ['postgresql']
+    },
+    "Qemu/KVM/Libvirt": {
+        "set_of_test_types": ["FIO", "vPingPong", "vUnixBench", "steal time", "steal time-sm", "FIO large"],
+        "comparison_list": [["steal time", "steal time-sm"]]
+    },
+    "UnixBench": {
+        "set_of_test_types": ['unix', 'unix parsec'],
+        "comparison_list": [["unix", "unix parsec"]]
+    },
+    "Системные службы": {
+        "set_of_test_types": ['auditd-p', 'auditd-f', 'auditd-u', 'syslog-ng', 'AOpenVPNcc', 'Dovecot-IMAP', 'Exim4-SMTP', 'astraevents', 'astraevents-sm'],
+        "comparison_list": [['astraevents', 'astraevents-sm']]
+    },
+    "Файловые системы": {
+        "set_of_test_types": ['EXFAT', 'EXT2', 'EXT4', 'EXT4 parsec', 'FAT', 'NTFS', 'XFS', 'XFS parsec', 'OCFS2', 'CEPH', 'CEPH fio'],
+        "comparison_list": [['EXT4', 'XFS'], ['EXT4', 'EXT4 parsec']]
+    },
+    "Docker": {
+        "set_of_test_types": ['docker-wa']
+    },
+    "Network": {
+        "set_of_test_types": ['InitOnFree', 'DHCP']
+    }
+}

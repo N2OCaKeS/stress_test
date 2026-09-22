@@ -1,0 +1,12 @@
+[Unit]
+Description=Telegram bot ALLTA
+After=network.target
+ 
+[Service]
+User=u
+#Group=www-data
+WorkingDirectory=/home/u/git/stress_test/allta_app
+ExecStart=/home/u/python/Python-3.12.1/venv/bin/python3.12 alltabot.py
+ 
+[Install]
+WantedBy=multi-user.target

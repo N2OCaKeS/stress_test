@@ -1,0 +1,1909 @@
+allta_app - v2.76.1
+* Add 1.8.7.46
+
+
+
+
+
+allta_app - v2.76.0
+* Add OS usage test
+
+
+
+
+allta_app - v2.75.2
+* Add new ipmi ip
+
+
+
+
+
+allta_app - v2.75.1
+* add logging in workers
+
+
+
+
+
+allta_app - v2.75.0
+* Add single branch git clone
+
+
+
+
+
+allta_app - v2.74.0
+* Add apache-balance test
+
+
+
+
+
+allta_app - v2.73.4
+* Add 6.18 kernel
+
+
+
+
+
+allta_app - v2.73.3
+* added audit-u test 20 hours timeout
+
+
+
+
+
+allta_app - v2.73.2
+* Fix psql info-sys-orel test
+
+
+
+
+
+allta_app - v2.73.1
+* Fix psql info-sys-orel test for STP
+
+
+
+
+
+allta_app - v2.73.0
+* Add psql info-sys-orel test
+
+
+
+
+
+allta_app - v2.72.0
+* Add astraevets-sm test
+
+
+
+
+
+allta_app - v2.71.1
+* Add 1.7.11.45
+
+
+
+
+
+allta_app - v2.71.0
+* Add 1.7.11.44
+
+
+
+
+
+allta_app - v2.70.0
+* Add dhcp test
+
+
+
+
+
+allta_app - v2.69.2
+* Add 1.8.7.30
+
+
+
+
+
+allta_app - v2.69.1
+* Add sort images
+* Upd times templates
+
+
+
+
+allta_app - v2.69.0
+* Add astraevets test
+
+
+
+
+
+allta_app - v2.68.4
+* Fixed backup image, added stand14 in argument stand num
+
+
+
+
+
+allta_app - v2.68.3
+* Fixes backup stand14 for psql info test
+
+
+
+
+
+allta_app - v2.68.2
+* Add partimag dynamic list
+
+
+
+
+
+allta_app - v2.68.1
+* MiddleServer tests division
+
+
+
+
+
+allta_app - v2.68.0
+* Add psql info-sys test
+
+
+
+
+
+allta_app - v2.67.2
+* Add 1.7.11.42
+
+
+
+
+
+allta_app - v2.67.1
+* Add 1.7.11.39
+
+
+
+
+
+allta_app - v2.67.0
+* Add MiddleServer2
+
+
+
+
+
+allta_app - v2.66.3
+* Add 1.8.6.39
+
+
+
+
+
+allta_app - v2.66.2
+* Add 1.8.6.38
+
+
+
+
+
+allta_app - v2.66.1
+* Add 1.7.11.17
+
+
+
+
+
+allta_app - v2.66.0
+* Add test timeout
+* Refactoring allta_back
+
+
+
+
+allta_app - v2.65.1
+* Add 1.8.6.30
+
+
+
+
+
+allta_app - v2.65.0
+* Add raw-spin-lock test
+
+
+
+
+
+allta_app - v2.64.0
+* Add Apache BenchPam test
+
+
+
+
+
+allta_app - v2.63.0
+* Add XFS Memory leak test
+
+
+
+
+
+allta_app - v2.62.2
+* Add 1.8.6.23
+
+
+
+
+
+allta_app - v2.62.1
+* Add 1.7.10.69
+
+
+
+
+
+allta_app - v2.62.0
+* Add FreeIPA plugin test
+
+
+
+
+
+allta_app - v2.61.1
+* Add create snapshots
+  on all stands
+
+
+
+
+allta_app - v2.61.0
+* Add Queue Broker
+
+
+
+
+
+allta_app - v2.60.1
+* Add backend queue & workers
+
+
+
+
+
+allta_app - v2.60.0
+* Add back/frontend
+  TestrunManager
+
+
+  
+
+allta_app - v2.59.1
+* Add tesrunmanager & endpoints
+
+
+
+
+
+allta_app - v2.59.0
+* Add PSQL_OLAP-hq test
+
+
+
+
+
+allta_app - v2.58.1
+* Add 1.7.10.64
+
+
+
+
+
+allta_app - v2.58.0
+* Add tokens endpoints
+
+
+
+
+
+allta_app - v2.57.0
+* Add SegFault test
+
+
+
+
+
+allta_app - v2.56.3
+* Change testname from
+  FIO_large to FIO large
+
+
+  
+
+allta_app - v2.56.2
+* Add restart docker
+
+
+
+
+
+allta_app - v2.56.1
+* Fix daemon.json EOF
+
+
+
+
+
+allta_app - v2.56.0
+* Add InitOnFree test
+* Add FIO_large test
+* Add daemon.json in
+  starter
+* Add Docker Registry UI link
+
+allta_app - v2.55.2
+* Add 1.7.10.52
+
+
+
+
+
+allta_app - v2.55.1
+* Add 1.7.9.UU.1.1
+
+
+
+
+
+allta_app - v2.55.0
+* Add Exim4-SMTP test
+* Add Dovecot-IMAP test
+
+
+
+
+allta_app - v2.54.5
+* Add 1.8.5.46
+
+
+
+
+
+allta_app - v2.54.4
+* Add 1.8.5.45
+
+
+
+
+
+allta_app - v2.54.3
+* Add 1.8.5.39
+
+
+
+
+
+allta_app - v2.54.2
+* Add 1.8.5.37
+
+
+
+
+
+allta_app - v2.54.1
+* Add 1.8.5.27
+
+
+
+
+
+allta_app - v2.54.0
+* Add astra services status
+
+
+
+
+
+allta_app - v2.53.2
+* Add AOpenVPNcc statistics
+
+
+
+
+
+allta_app - v2.53.1
+* Add set boot order after
+  reboot hand
+
+
+
+
+allta_app - v2.53.0
+* Add CEPH parsec test
+* Add AOpenVPNcc test
+
+
+
+
+allta_app - v2.52.0
+* Add FreeIPA_c-users test
+
+
+
+
+
+allta_app - v2.51.3
+* Fix small errors in 
+  status services
+
+
+
+
+allta_app - v2.51.2
+* Fix update services bug
+
+
+
+
+
+allta_app - v2.51.1
+* Add 1.7.9.41
+
+
+
+
+
+allta_app - v2.51.0
+* Add services status 
+
+
+
+
+
+allta_app - v2.50.1
+* Add links in ALLTA to services
+  Auth
+  VMManager
+
+
+
+allta_app - v2.50.0
+* Add Auth
+* Add VM-Manager
+
+
+
+
+allta_app - v2.49.8
+* Add 1.7.9.38
+
+
+
+
+
+allta_app - v2.49.7
+* Add 1.8.4.48
+
+
+
+
+
+allta_app - v2.49.6
+* Add 1.8.4.46
+
+
+
+
+
+allta_app - v2.49.5
+* Add RC in confluence
+  comment
+
+
+  
+
+allta_app - v2.49.4
+* Add 1.8.4.46
+
+
+
+
+
+allta_app - v2.49.3
+* Fix url filesystems statistics
+* Add CEPH, CEPH fio in statistics config file
+
+
+
+
+
+allta_app - v2.49.2
+* Add 1.8.4.42
+
+
+
+
+
+allta_app - v2.49.1
+* Add 1.7.9.25
+
+
+
+
+
+allta_app - v2.49.0
+* Add tests CEPH, CEPH fio
+* Add calc all statisctics
+  after testrunner
+
+
+
+allta_app - v2.48.3
+* Remove create fail comment
+  in OS blog
+* Add debian12 cz_comm
+* Upd test time
+
+
+allta_app - v2.48.2
+* Add logout button
+
+
+
+
+
+allta_app - v2.48.1
+* Add 1.8.4.24
+
+
+
+
+
+allta_app - v2.48.0
+* Add new Auth service
+* Replace psql kernels to middle server
+* Add annotations
+
+
+
+allta_app - v2.47.2
+* Add clear docker dangling images
+* Fix critical kernel & mode setting
+  bags
+
+
+
+allta_app - v2.47.1
+* Add 1.7.8.6
+
+
+
+
+
+allta_app - v2.47.0
+* Replace tests between
+  stands
+* Fix critical pswd bag
+* Add testenv prepare
+
+
+allta_app - v2.46.2
+* Add IPMI link on new stands
+* Add new bootstrap links
+* Fix some errs
+
+
+
+allta_app - v2.46.1
+* Add 1.7.8.5
+
+
+
+
+
+allta_app - v2.46.0
+* Add 4 stands in TestRunner
+
+
+
+
+
+allta_app - v2.45.0
+* Upd login page colors
+* Upd some text colors
+  in main page
+
+
+
+allta_app - v2.44.0
+* Add allta server
+  diskspace info
+
+
+
+
+allta_app - v2.43.2
+* Add 1.7.8.4
+
+
+
+
+
+allta_app - v2.43.1
+* Upd dinamic kernel list 
+  by choose release
+
+
+
+
+allta_app - v2.43.0
+* Upd stands info
+* Add ssh timeout exception
+* Add upd kernels by start psql_balance
+* Add dinamic kernel list by choose release
+* Upd favicon
+
+allta_app - v2.42.1
+* Add 1.8.3.UU.1.1
+
+
+
+
+
+allta_app - v2.42.0
+* Add selection of multiple
+  kernels
+
+
+  
+
+allta_app - v2.41.20
+* Add gitclone scripts
+  in project
+* Add 1.8 snapshots to VMs  
+
+  
+
+allta_app - v2.41.19
+* Add 1.7.8.2
+* Add annotations
+
+
+
+
+allta_app - v2.41.18
+* Add 1.8.3.7
+
+
+
+
+
+allta_app - v2.41.17
+* Add monthly report
+
+
+
+
+
+allta_app - v2.41.16
+* Upd psql balance args
+
+
+
+
+
+allta_app - v2.41.15
+* Add 1.8.3.6
+
+
+
+
+
+allta_app - v2.41.14
+* Add 1.8.3.5
+
+
+
+
+
+allta_app - v2.41.13
+* Add 1.8.3.4
+
+
+
+
+
+allta_app - v2.41.12
+* Add updates check
+* Fix call VM numbers
+
+
+
+
+allta_app - v2.41.11
+* Upd virsh cmds
+* Upd VM ctrl cmds
+
+
+
+
+allta_app - v2.41.10
+* Add new VM control cmds
+* Add new freeipa test VM env
+
+
+
+
+allta_app - v2.41.9
+* Add 1.8.3.3
+
+
+
+
+
+allta_app - v2.41.8
+* upd days block
+
+
+
+
+
+allta_app - v2.41.7
+* Add traceback in backend
+
+
+
+
+
+allta_app - v2.41.6
+* Add 1.8.3.1
+
+
+
+
+
+allta_app - v2.41.5
+* Add vms config files in make
+
+
+
+
+
+allta_app - v2.41.4
+* Add alltabot description
+
+
+
+
+
+allta_app - v2.41.3
+* Add stand8 to testrun
+* Add IPMI links
+
+
+
+
+allta_app - v2.41.2
+* Change stand1 on stand8 to
+  Freeipa test
+* Change naming 1.8.2.8 to 1.8.2.UU.1.1  
+* upd ifelse block
+
+
+allta_app - v2.41.1
+* Add 1.8.2.8
+* Fix kernel block
+* Rename topic to Docker/Podman/LXC
+* fix BT folder id
+
+
+allta_app - v2.41.0
+* Add testrun cycle by
+  changelog service
+
+
+  
+
+allta_app - v2.40.0
+* Add new test Docker-WA
+* Upd backup version to 1.8.1.6
+
+
+
+
+allta_app - v2.39.8
+* Del old servers snapshots
+
+
+
+
+
+allta_app - v2.39.7
+* Upd bootorder cmds
+
+
+
+
+
+allta_app - v2.39.6
+* Upd response status
+
+
+
+
+
+allta_app - v2.39.5
+* Upd DB config
+
+
+
+
+
+allta_app - v2.39.4
+* Add devpi service
+
+
+
+
+
+allta_app - v2.39.3
+* Add "power on" VM button
+* Upd VMs prepare
+* Add params switch
+* Add func create snapshot
+* Add main server dashboard
+
+allta_app - v2.39.2
+* Add 1.8.2.7
+
+
+
+
+
+allta_app - v2.39.1
+* Replace cards by stand 
+  number
+
+
+
+
+allta_app - v2.39.0
+* Add new servers preset
+
+
+
+
+
+allta_app - v2.38.1
+* Add vms snapshots
+
+
+
+
+
+allta_app - v2.38.0
+* Add VM Workstations
+
+
+
+
+
+allta_app - v2.37.5
+* Add some make files
+* Add VM prepare
+* Add VMS hub
+
+
+
+allta_app - v2.37.4
+* Add 1.8.2.6
+
+
+
+
+
+allta_app - v2.37.3
+* Add days handler in 
+  tt_watchdog
+
+
+
+
+allta_app - v2.37.2
+* Upd install kernel commands
+
+
+
+
+
+allta_app - v2.37.1
+* Add 1.8.2.5
+
+
+
+
+
+allta_app - v2.37.0
+* Add new test DIGSIG-cdt
+
+
+
+
+
+allta_app - v2.36.0
+* Add new test Syslog-NG-cwl
+
+
+
+
+
+allta_app - v2.35.16
+* Add 1.7.7.6
+
+
+
+
+
+allta_app - v2.35.15
+* Add BT-69978 known bugs
+
+
+
+
+
+allta_app - v2.35.14
+* Add 1.7.7.5
+
+
+
+
+
+allta_app - v2.35.13
+* Add fix docker & lvirt
+  conflict
+* Add restart service
+
+ 
+
+allta_app - v2.35.12
+* Temp. comm. install dashboard
+  service
+
+
+
+
+allta_app - v2.35.11
+* Fixed API annotations response in utf-8 not global, but in one function
+
+
+
+
+
+allta_app - v2.35.10
+* Fixed annotations API response in utf-8
+
+
+
+
+
+allta_app - v2.35.9
+* Add annotations API
+
+
+
+
+
+allta_app - v2.35.8
+* Add exception 5.10 in
+  starter
+
+
+
+
+allta_app - v2.35.7
+* Add check & remove not 
+  actual kernels
+
+
+
+
+allta_app - v2.35.6
+* Add sec. reload interval
+
+
+
+
+
+allta_app - v2.35.5
+* Add 1.7.7.4
+
+
+
+
+
+allta_app - v2.35.4
+* Add noninteractive mode
+  to starter
+
+
+
+
+allta_app - v2.35.3
+* Add 1.8.2.3
+
+
+
+
+
+allta_app - v2.35.2
+* Update device name
+* Add restart infocollector
+  service
+
+
+
+allta_app - v2.35.1
+* Add 1.8.2.2
+
+
+
+
+
+allta_app - v2.35.0
+* Add infocollector microservice
+* Add grafana dashboards
+* Rebuild cards load metrics 
+  on node exporter
+
+
+allta_app - v2.34.3
+* Fix. Add OOM in starter
+
+
+
+
+
+allta_app - v2.34.2
+* Add 1.7.7.3
+
+
+
+
+
+allta_app - v2.34.1
+* Fix err in addrc
+
+
+
+
+
+allta_app - v2.34.0
+* Add new test
+  PSQL OOM
+
+
+
+
+allta_app - v2.33.1
+* Add new status members
+
+
+
+
+
+allta_app - v2.33.0
+* Change update version from
+  1.7.1 to 1.7.5
+* Del some snapshots
+
+
+
+allta_app - v2.32.5
+* Add full kernel check & install
+  before start test
+
+  
+
+
+allta_app - v2.32.4
+* Add lam install plus image
+
+
+
+
+
+allta_app - v2.32.3
+* Add new API to create folder
+* Fix snapshot name RC
+
+
+
+
+allta_app - v2.32.2
+* Add 1.7.7.2
+
+
+
+
+
+allta_app - v2.32.1
+* Upd readme & tasks answer
+
+
+
+
+
+allta_app - v2.32.0
+* Add separated recalculate 
+  statistics 
+
+
+
+
+allta_app - v2.31.15
+* Add Freeipa known bug
+
+
+
+
+
+allta_app - v2.31.14
+* Add 1.8.1.UU.2.4
+
+
+
+
+
+allta_app - v2.31.13
+* Add API 
+  available_kernels_from_rc
+
+
+
+
+allta_app - v2.31.12
+* Add 1.7.7.1
+
+
+
+
+
+allta_app - v2.31.11
+* Add 1.8.1.UU.2.3
+
+
+
+
+
+allta_app - v2.31.10
+* Add index in create 
+  testrun folder
+
+
+
+
+allta_app - v2.31.9
+* Add TestTimeWatchdog
+* Add RC in col3
+
+
+
+
+allta_app - v2.31.8
+* Fix err with IPMI reset in
+  FreeIPA test
+* Add preset to new test times
+  html
+
+
+allta_app - v2.31.7
+* Add known bugs API
+* Fix status errs in testrunner
+* Del balane test from middle group
+
+
+
+allta_app - v2.31.6
+* Add kernel in col3
+
+
+
+
+
+allta_app - v2.31.5
+* Add version in ACS col3
+
+
+
+
+
+allta_app - v2.31.4
+* Add work info in stands headers
+
+
+
+
+
+allta_app - v2.31.3
+* Add 1.8.1.UU.2.1
+
+
+
+
+
+allta_app - v2.31.2
+* Add finally block in paramiko
+  socket close
+
+
+
+
+allta_app - v2.31.1
+* Add ACS busy status
+  Add API busy status off
+
+
+
+
+allta_app - v2.31.0
+* Add switch to busy 
+  stand status
+
+
+
+
+allta_app - v2.30.3
+* Add 1.7.6.UU.2.1
+
+
+
+
+
+allta_app - v2.30.2
+* Upd storage info
+
+
+
+
+
+allta_app - v2.30.1
+* Upd gif fones
+
+
+
+
+
+allta_app - v2.30.0
+* Add new visual stands card
+
+
+
+
+
+allta_app - v2.29.7
+* Upd servers info
+  Add 1.7.6.3 releases
+
+
+
+
+allta_app - v2.29.6
+* Add 1.7.6.4 HighServer
+  snapshot
+  Add new set info to
+  HighServer
+  
+
+allta_app - v2.29.5
+* Add 1.7.6.UU.1.3
+
+
+
+
+
+allta_app - v2.29.4
+* Add ACS and statistics service
+
+
+
+
+
+allta_app - v2.29.3
+* Add idrac redfish API
+
+
+
+
+
+allta_app - v2.29.2
+* Add stand5 in ACS - tbot
+
+
+
+
+
+allta_app - v2.29.1
+* Add HighServer images
+  Del old remove images
+
+
+
+
+allta_app - v2.29.0
+* Add new test
+  Steel time smolensk
+
+
+
+
+allta_app - v2.28.6
+* Add new args to 
+  balance test starter
+
+
+
+
+allta_app - v2.28.5
+* Add Qemu/KVM/Libvirt
+  statistic page
+
+
+
+
+allta_app - v2.28.4
+* Add run all tests on 
+  all stands.
+  Alltabot (/runalltests)
+
+
+
+allta_app - v2.28.3
+* Add 1.7.6.UU.1.1
+
+
+
+
+
+allta_app - v2.28.2
+* Add allta-version
+
+
+
+
+
+allta_app - v2.28.1
+* Upd addrc to add uu rc
+
+
+
+
+
+allta_app - v2.28.0
+* Add SendCommentToConfluence
+  class
+
+
+
+
+allta_app - v2.27.4
+* Add new gradient to the
+  main ALLTA line
+
+
+
+
+allta_app - v2.27.3
+* Add 1.8.1.12
+
+
+
+
+
+allta_app - v2.27.2
+* Add 1.7.6.11
+
+
+
+
+
+allta_app - v2.27.1
+* Add 1.8.1.UU.1.4
+
+
+
+
+
+allta_app - v2.27.0
+* Add new method to the stop
+  test run ppid
+
+
+
+
+allta_app - v2.26.9
+* Add check kernel installation
+
+
+
+
+
+allta_app - v2.26.8
+* Add debug kernels:
+  6.1.90-1-debug
+  6.6.28-1-debug
+
+
+
+allta_app - v2.26.7
+* Add ipmi reset stands
+
+
+
+
+
+allta_app - v2.26.6
+* Add all statistics module
+
+
+
+
+
+allta_app - v2.26.5
+* Add ALLTA backup
+
+
+
+
+
+allta_app - v2.26.4
+* Add 1.7.6.8
+
+
+
+
+
+allta_app - v2.26.3
+* Add 1.8.1.6
+
+
+
+
+
+allta_app - v2.26.2
+* Add new box config
+
+
+
+
+
+allta_app - v2.26.1
+* Add 1.8.1.5
+
+
+
+
+
+allta_app - v2.26.0
+*  Add new test OCFS2
+
+
+
+
+
+allta_app - v2.25.2
+* Add 1.8.1.4
+
+
+
+
+
+allta_app - v2.25.1
+* Add NTFS in testrun
+
+
+
+
+
+allta_app - v2.25.0
+*  Add new test vPingPong
+
+
+
+
+
+allta_app - v2.24.5
+* Add run tests to bot
+
+
+
+
+
+allta_app - v2.24.4
+* Add 1.8.1.3
+
+
+
+
+
+allta_app - v2.24.3
+* Add testrun creater
+* Seporate create ACS snapshots
+
+
+
+
+allta_app - v2.24.2
+* Add update STP to bot
+
+
+
+
+
+allta_app - v2.24.1
+* Add 1.7.6.5
+
+
+
+
+
+allta_app - v2.24.0
+* Add ACS to bot
+
+
+
+
+
+allta_app - v2.23.0
+* Rename project
+
+
+
+
+
+allta_app - v2.22.2
+* Add dynamic update kernels
+
+
+
+
+
+allta_app - v2.22.1
+* Add dynamic update
+  test_run ID
+  "cycle_tree_index"
+
+
+
+allta_app - v2.22.0
+*  Add new test vUnixBench
+
+
+
+
+
+allta_app - v2.21.4
+* Add dynamic update repo path
+  to kernel shows
+
+
+  
+
+allta_app - v2.21.3
+* Add update releases.json
+* Add api releases as json
+
+
+
+
+allta_app - v2.21.2
+* Add stands info
+
+
+
+
+
+allta_app - v2.21.1
+* Add load backup snapshots
+
+
+
+
+
+allta_app - v2.21.0
+* Add dynamic config update
+  without reload services
+* Add t_bot command to add RC
+
+
+
+allta_app - v2.20.4
+* Add transpose to STP
+
+
+
+
+
+allta_app - v2.20.3
+* Add dynamic generate
+  kernel list in 
+  dropdown menu
+
+
+
+allta_app - v2.20.2
+* Add 1.8.1.2
+* Add 6.6.28-1-generic
+* Add dynamic kernek list
+
+
+
+allta_app - v2.20.1
+* Add filter to repo path
+* Add 6.6.12-1-generic,
+  6.1.82-1-generic no debug no trace
+  as 1.8.1.01
+
+
+allta_app - v2.20.0
+* Add reset by 2 hours wait
+  if load clonezilla snapshot 
+  not successful
+* Add rc version args in starter
+
+
+allta_app - v2.19.0
+* Add dynamic repo path API
+
+
+
+
+
+allta_app - v2.18.2
+*  Add 1.8.1.1
+
+
+
+
+
+allta_app - v2.18.1
+*  Add 1.8.0.15 - 6.6.12-1-generic
+
+
+
+
+
+allta_app - v2.18.0
+*  Add new test FIO
+*  Add testing kernel 6.6
+
+
+
+
+allta_app - v2.17.1
+*  Add 6.1.82-1-generic-flavour
+
+
+
+
+
+allta_app - v2.17.0
+*  Add sett jira, conf url in congif
+*  Add jira, confluence url API
+
+
+
+
+allta_app - v2.16.4
+*  Add setuptools
+*  Upd psql-balance host snapshot to 1.8.0.14
+*  Add new statistic pages
+
+
+
+allta_app - v2.16.3
+*  Add 6.1.82-1-generic
+
+
+
+
+
+allta_app - v2.16.2
+*  Add 1.7.6.3
+
+
+
+
+
+allta_app - v2.16.1
+*  Upd FS times
+
+
+
+
+
+allta_app - v2.16.0
+*  Add new test EXT2
+*  Add new test EXT3
+*  Add new test EXFAT
+*  Add new test FAT
+
+
+allta_app - v2.15.0
+*  Add new test Steal time
+
+
+
+
+
+allta_app - v2.14.1
+*  Add 1.7.6.1
+*  Del 1.8.0.x
+
+
+
+
+allta_app - v2.14.0
+*  Add new version logrotate
+*  Add load astra-config.json
+*  Add API to astra-config.json
+*  Add 1.8.0.14
+
+
+allta_app - v2.13.5
+*  Add rotate allta logging
+
+
+
+
+
+allta_app - v2.13.4
+*  Add 1.8.0.13
+
+
+
+
+
+allta_app - v2.13.3
+*  Add 1.8.0.12
+
+
+
+
+
+allta_app - v2.13.2
+* Add new tests in time table
+
+
+
+
+
+allta_app - v2.13.1
+* Change name apache_rp to apache-rp
+
+
+
+
+
+allta_app - v2.13.0
+*  Add new test Apache-RP
+*  Add start settings to new test
+
+
+
+
+allta_app - v2.12.4
+*  Add 1.8.0.11
+
+
+
+
+
+allta_app - v2.12.3
+*  Add 1.8.0.10
+
+
+
+
+
+allta_app - v2.12.2
+*  Add psql version prefix
+
+
+
+
+
+allta_app - v2.12.1
+*  Add 1.8.0.9
+
+
+
+
+
+allta_app - v2.12.0
+*  Add new test Parsec_imp-fs_aud-off
+*  Add start settings to new test
+
+
+
+
+allta_app - v2.11.0
+Add REST API to:
+* TestCase zefir names in STP
+* Times templates
+* Stands templates
+
+
+allta_app - v2.10.0
+* Add dinamic generator list STP
+
+
+
+
+
+allta_app - v2.9.2
+*  Add new README file
+
+
+
+
+
+allta_app - v2.9.1
+*  UU. Fix old stands call variables
+
+
+
+
+
+allta_app - v2.9.0
+*  Add new test parsec impact-fs
+*  Add start settings to new test
+
+
+
+
+allta_app - v2.8.2
+*  Add 1.7.5.UU.1.7
+
+
+
+
+
+allta_app - v2.8.1
+*  Replace FreeIPA_auth from low to middle server
+
+
+
+
+
+allta_app - v2.8.0
+*  Rebuild provision functional
+*  Add class TestRunProvision
+*  Add new test Freeipa Authentication
+*  Add start settings to new test
+
+
+allta_app - v2.7.15
+*  improved text some bot answer
+
+
+
+
+
+allta_app - v2.7.14
+*  fix bot answer to another user
+*  add choose server print
+
+
+
+
+allta_app - v2.7.13
+*  add changelog
+*  add bot notification
+
+

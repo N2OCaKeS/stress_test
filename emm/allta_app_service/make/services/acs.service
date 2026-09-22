@@ -1,0 +1,18 @@
+[Unit]
+Description=Gunicorn instance to serve acs_app
+Requires=docker.service
+After=docker.service
+ 
+[Service]
+User=u
+Group=www-data
+WorkingDirectory=/home/u/folder_git_for_acs/stress_test/ACS
+#ExecStart=gunicorn --workers 4 --bind 10.177.103.10 -m 007 wsgi:app --timeout 120
+ExecStart=/bin/sh -c 'git pull && sudo docker-compose build && sudo docker-compose up'
+ExecStop=sudo docker-compose down
+#ExecStart=gunicorn --workers 4 --bind 10.177.103.10 -m 007 -k uvicorn.workers.UvicornWorker asgi:app --timeout 120
+
+Restart=always
+RestartSec=10s 
+[Install]
+WantedBy=multi-user.target

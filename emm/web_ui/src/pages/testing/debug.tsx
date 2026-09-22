@@ -1,4 +1,4 @@
-/** Одиночные запуски и логи реальных попыток вне кампаний. */
+/** Разовые запуски и логи реальных попыток вне кампаний. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BarChart3, Bug, ChevronDown, ChevronUp, Play, Search } from "lucide-react";
 import { formatElapsedHMS, formatMsk } from "@/lib/datetime";
@@ -14,7 +14,7 @@ import {
 import { listOsVersions } from "@/api/server/osVersions";
 import { listTestDefinitions } from "@/api/testing/testDefinitions";
 import { listTestStands, getTestStand } from "@/api/testing/testStands";
-import { AttemptLogWorkzone } from "./AttemptLogWorkzone";
+import { AttemptLogViewer } from "./AttemptLogViewer";
 import { StandaloneLaunchModal } from "./StandaloneLaunchModal";
 import { type BadgeKind } from "./_shared";
 import { Badge } from "@/components/ui/Badge";
@@ -328,8 +328,6 @@ function AdhocListRow({ run, active, onSelect }: { run: AdhocRun; active: boolea
 // ── рабочая зона: заголовок запуска + живой/завершённый лог ────────────────
 
 export function AdhocWorkzone({ state }: { state: AdhocState }) {
-  const [logOpen, setLogOpen] = useState(false);
-  useEffect(() => setLogOpen(false), [state.selectedRun?.id]);
   const toast = useToast();
   const [retrying, setRetrying] = useState(false);
   const retryKeys = useRef<Record<string, string>>({});
@@ -349,51 +347,60 @@ export function AdhocWorkzone({ state }: { state: AdhocState }) {
     return <div className="surface border border-token rounded p-8 text-center text-dim">Нет выбранного запуска</div>;
   }
 
-  if (logOpen) return <AttemptLogWorkzone id={run.id} state={run.status} logStatus={run.logStatus}
-    title={`Лог · ${run.testCode}`} subtitle={`${run.standName} · ${run.rc} · ${run.kernel}`}
-    canRetry={run.canRetry} onClose={() => setLogOpen(false)} onRetried={state.refresh} />;
   const meta = ADHOC_STATUS_META[run.status];
   const startedMs = new Date(run.startedAt).getTime();
+  const logUnavailable = run.logStatus === "rotated" || run.logStatus === "missing";
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto grid gap-4 content-start">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-lg font-semibold mono">{run.id}</span>
-            <Badge kind={meta.badge}>{meta.label}</Badge>
-            {run.debugMode && <Badge kind="warn">Debug</Badge>}
-            {run.status === "running" && startedMs !== null && (
-              <span className="mono text-xs text-dim">прошло {formatElapsedHMS(now - startedMs)}</span>
-            )}
+    <div className="flex-1 min-h-0 flex flex-col gap-4">
+      <div className="shrink-0 grid gap-4 content-start">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-lg font-semibold mono">{run.id}</span>
+              <Badge kind={meta.badge}>{meta.label}</Badge>
+              {run.debugMode && <Badge kind="warn">Debug</Badge>}
+              {run.status === "running" && startedMs !== null && (
+                <span className="mono text-xs text-dim">прошло {formatElapsedHMS(now - startedMs)}</span>
+              )}
+            </div>
+            <div className="text-xs text-dim mt-1">
+              {run.testCode} · {run.testName} · {run.standName} · режим {run.mode} · запущен {formatMsk(run.startedAt)}
+            </div>
           </div>
-          <div className="text-xs text-dim mt-1">
-            {run.testCode} · {run.testName} · {run.standName} · режим {run.mode} · запущен {formatMsk(run.startedAt)}
-          </div>
+        </div>
+
+        <div className="alert-warn text-xs">
+          <Bug className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            {run.debugMode ? "Debug: результат не засчитывается в СТП и прогон." : "Разовый запуск: результат относится к выбранной СТП, вне счётчиков прогона."} РЦ {run.rc} · ядро {run.kernel}
+          </span>
+        </div>
+
+        <div className="surface border border-token rounded p-4 grid gap-2">
+          <h2 className="font-semibold">Результат разового теста</h2>
+          <div>Результат: <Badge kind={meta.badge}>{meta.label}</Badge></div>
+          <div className="text-sm">Начат: {formatMsk(run.startedAt)}</div>
+          <div className="text-sm">Завершён: {formatMsk(run.finishedAt)}</div>
+          <div className="text-sm">Длительность: {run.finishedAt ? formatElapsedHMS(new Date(run.finishedAt).getTime() - startedMs) : run.status === "running" ? formatElapsedHMS(now - startedMs) : "—"}</div>
+        </div>
+        {run.error && <div role="alert" className="text-xs text-danger">{run.error}</div>}
+        <div className="flex items-center gap-2 flex-wrap">
+          {run.canRetry && <Button disabled={retrying} onClick={() => retry(run.id)}>Повторить тест</Button>}
+          <a className="text-accent text-sm" href={`/testing/logs?kind=standalone&attempt_id=${encodeURIComponent(run.id)}`}>Открыть в истории логов</a>
         </div>
       </div>
 
-      <div className="alert-warn text-xs">
-        <Bug className="w-3.5 h-3.5 shrink-0" />
-        <span>
-          {run.debugMode ? "Debug: результат не засчитывается в СТП и прогон." : "Одиночный запуск: результат относится к выбранной СТП, вне счётчиков прогона."} РЦ {run.rc} · ядро {run.kernel}
-        </span>
+      <div className="flex-1 min-h-0 flex flex-col gap-2">
+        <h2 className="font-semibold shrink-0">Лог</h2>
+        {logUnavailable ? (
+          <div className="surface border border-token rounded p-6 text-sm text-dim">
+            {run.logStatus === "rotated" ? "Лог удалён по сроку хранения (ротирован). Результат теста сохранён." : "Текст лога этой попытки отсутствует. Результат теста сохранён."}
+          </div>
+        ) : (
+          <AttemptLogViewer key={run.id} queueItemId={run.id} state={run.status} />
+        )}
       </div>
-
-      <div className="surface border border-token rounded p-4 grid gap-2">
-        <h2 className="font-semibold">Результат одиночного теста</h2>
-        <div>Результат: <Badge kind={meta.badge}>{meta.label}</Badge></div>
-        <div className="text-sm">Начат: {formatMsk(run.startedAt)}</div>
-        <div className="text-sm">Завершён: {formatMsk(run.finishedAt)}</div>
-        <div className="text-sm">Длительность: {run.finishedAt ? formatElapsedHMS(new Date(run.finishedAt).getTime() - startedMs) : run.status === "running" ? formatElapsedHMS(now - startedMs) : "—"}</div>
-      </div>
-      {run.error && <div role="alert" className="text-xs text-danger">{run.error}</div>}
-      <div className="flex items-center gap-2">
-      {run.canRetry && <Button disabled={retrying} onClick={() => retry(run.id)}>Повторить тест</Button>}
-      <Button disabled={run.logStatus === "rotated" || run.logStatus === "missing"} onClick={() => setLogOpen(true)}>Лог</Button>
-      </div>
-      <a className="text-accent text-sm" href={`/testing/logs?kind=standalone&attempt_id=${encodeURIComponent(run.id)}`}>Открыть в истории логов</a>
-      {run.logStatus === "rotated" && <p className="text-xs text-dim">Лог ротирован. Результат сохранён.</p>}
     </div>
   );
 }

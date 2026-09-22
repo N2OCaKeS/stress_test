@@ -7,7 +7,9 @@
   - заводит 4 новых юзера: loging_admin1 / dep_admin1 / loging_reader1 / user1,
   - создаёт отдел «Нагрузочное тестирование»,
   - выдаёт отделу доступ ко всем платформенным сервисам,
-  - сидит каталог OS-версий (`os_versions`),
+  - сидит каталог OS-версий (`os_versions`): debian-плейсхолдер под
+    test-server-01 + весь реальный каталог сборок Astra из allta_app
+    (`allta_app_service/releases.json`, см. `seed_astra_catalog`),
   - создаёт один сервер test-server-01, указывающий на контейнер test_server
     (ssh_port=2222, привязан к debian OS-record),
   - заводит OS-аккаунт `tester` (пароль `tester1234`) на этом сервере с
@@ -57,6 +59,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import psycopg
 
@@ -109,9 +112,21 @@ TEST_SERVER_IP = "10.99.0.10"
 # Отдел каждый прогон `make seed` создаётся заново, так что 1 всегда свободен.
 TEST_SERVER_NUMBER = 1
 
-# Каталог OS-версий — пока одна запись под debian-образ тестового сервера.
-# Когда заведём реальную Astra/Ubuntu — добавим рядом.
+# Каталог OS-версий — одна запись под debian-образ тестового сервера
+# (на неё же указывает test-server-01 через os_version_id) плюс весь реальный
+# каталог Astra из allta_app (см. `seed_astra_catalog` ниже).
 OS_VERSION_NAME = "debian-stable"
+
+# Каталог сборок Astra, портированный из легаси allta_app
+# (`ReleaseToRepo.generate_releases_file` в allta_app_full/libs/liballta.py) —
+# ключ это build-версия (`1.8.5.46`, легаси `1.7.3.UU.1`), значение — уже
+# готовые строки sources.list для неё. server_service использует тот же
+# формат в проде (см. `os_version_repo_resolver.resolve_repository_urls`),
+# только резолвит его на лету по сети; тут — статический снапшот на момент
+# написания seed'а.
+ASTRA_RELEASES_JSON = (
+    Path(__file__).resolve().parent.parent / "allta_app_service" / "releases.json"
+)
 
 # Реальный ACS (clonezilla/DRBL) сервера, тот же, что зашит в легаси
 # allta_app_full/alltabot.py (SERVER_ACS_IP_OR_NAME/SERVER_ACS_PORT). URL —
@@ -401,6 +416,44 @@ def seed_os_version() -> str:
             )
     ok(f"os_version {OS_VERSION_NAME} ({os_id})")
     return os_id
+
+
+def seed_astra_catalog() -> int:
+    """Сидим весь реальный каталог сборок Astra из `ASTRA_RELEASES_JSON`.
+
+    Рядом с placeholder'ом `debian-stable` (`seed_os_version`) — не заменяет
+    его, тестовый сервер как был привязан к debian-записи, так и остаётся.
+    Каждая строка `releases.json` — уже готовый список `deb https://...`
+    репозиториев для этой сборки, брать их и резолвить самим не нужно.
+
+    Идемпотентно: по UNIQUE(name) обновляет repositories у существующей
+    записи (id не переиспользуется, только апдейтится), иначе вставляет новую.
+    """
+    section("server_service: каталог сборок Astra (allta_app)")
+    with open(ASTRA_RELEASES_JSON, encoding="utf-8") as f:
+        releases = json.load(f)
+
+    with conn(PG_HOST, PG_PORT, "dev_server") as c, c.cursor() as cur:
+        for build_version, repo_lines in sorted(releases.items()):
+            is_urgent = "UU" in build_version.split(".")
+            description = f"Astra Linux SE {build_version} (allta_app releases.json)"
+            cur.execute("SELECT id FROM os_versions WHERE name = %s", (build_version,))
+            row = cur.fetchone()
+            if row:
+                cur.execute(
+                    "UPDATE os_versions SET description = %s, repositories = %s, "
+                    "is_urgent_update = %s, updated_at = now() WHERE id = %s",
+                    (description, repo_lines, is_urgent, row[0]),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO os_versions "
+                    "(id, name, description, repositories, is_urgent_update) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (gen_id("osv"), build_version, description, repo_lines, is_urgent),
+                )
+    ok(f"каталог Astra: {len(releases)} версий (allta_app releases.json)")
+    return len(releases)
 
 
 def seed_server(dept_id: str, created_by: str, os_version_id: str | None) -> str:
@@ -862,6 +915,7 @@ def full_seed() -> None:
     seed_service_role_defs(dept_id, admin_id=user_ids["admin"])
     seed_service_role_assignments(dept_admin_id=user_ids["dep_admin1"])
     os_version_id = seed_os_version()
+    astra_count = seed_astra_catalog()
     server_id = seed_server(
         dept_id, created_by=user_ids["admin"], os_version_id=os_version_id,
     )
@@ -887,6 +941,7 @@ def full_seed() -> None:
 
   Server:     test-server-01 → {TEST_SERVER_HOSTNAME}:{TEST_SERVER_SSH_PORT} (контейнер test_server)
               OS-version: {OS_VERSION_NAME}, account: tester (sudo, пароль зашифрован)
+  OS-каталог: {astra_count} сборок Astra (allta_app releases.json) + {OS_VERSION_NAME}
   ACS:        {"enabled=true, url=" + ACS_URL if os.environ.get("ACS_PASS") else "выключен (ACS_PASS не был задан при запуске seed)"}
   Worker bot: server_worker (системный отдел «DBOS System») — заведён
               auth_service'ом на старте из WORKER_BOT_TOKEN, не этим seed'ом.

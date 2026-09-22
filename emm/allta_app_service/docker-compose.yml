@@ -1,0 +1,19 @@
+services:
+  allta_app:
+    build: .
+    image: allta_app_service:latest
+    container_name: allta_app_service
+    # DRBL сам работает с multicast/broadcast к стендам — ему нужен настоящий
+    # сетевой стек хоста, не docker-мост.
+    network_mode: host
+    environment:
+      - ALLTA_AUTH_API_KEY=${ALLTA_AUTH_API_KEY:-}
+    volumes:
+      # Реальные пути и полный список DRBL-бинарей/библиотек сверяются на
+      # 103.10 (dpkg -L drbl, ldd $(which drbl-ocs)) — см. drbl_stub/README.md.
+      # По умолчанию — пустые заглушки, чтобы контейнер поднимался локально
+      # без установленного DRBL.
+      - ${DRBL_USR_SBIN:-./drbl_stub/usr_sbin}:/usr/sbin:ro
+      - ${DRBL_SHARE:-./drbl_stub/usr_share_drbl}:/usr/share/drbl:ro
+      - ${DRBL_ETC:-./drbl_stub/etc_drbl}:/etc/drbl:ro
+    restart: unless-stopped

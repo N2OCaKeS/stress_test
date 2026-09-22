@@ -4,12 +4,10 @@
  * (`test_definitions`/`test_command_args`/`global_variables`), включая
  * UI-конструктор команды теста.
  *
- * `TEST_CATALOG`/`CatalogTest`/`TestCategory`/`TestReadiness` ниже —
- * оставлены как есть (тот же демо-набор, что был в мокапе) исключительно ради
- * обратной совместимости: их всё ещё импортируют `runs.tsx`/`debug.tsx`
- * (другая волна той же миграции, редактируется параллельно). `TestsWorkzone`
- * их больше не использует. Как только оба файла перейдут на реальный
- * `listTestDefinitions`, этот блок можно удалить целиком.
+ * `TEST_CATALOG`/`CatalogTest`/`TestCategory`/`TestReadiness` ниже — демо-набор
+ * из старого мокапа. `runs.tsx`/`debug.tsx` на него больше не завязаны (оба
+ * перешли на `listTestDefinitions`/`getTestDefinition`), `TestsWorkzone` его
+ * тоже не использует — мёртвый код, можно удалить целиком отдельной правкой.
  */
 import { useMemo, useState } from "react";
 import {

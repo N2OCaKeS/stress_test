@@ -1,7 +1,7 @@
 """Вычисляемая часть `launch_context` и полнота данных импортированного каталога.
 
 Главный тест здесь — `TestAlltaCatalogResolves`: он импортирует НАСТОЯЩИЙ
-`scripts/import_catalog.allta.yaml` и резолвит команду каждого из 61 теста.
+`scripts/import_catalog.allta.yaml` и резолвит команду каждого из 62 тестов.
 Синтетический слот такую дыру не ловит: до этого все тесты очереди собирали
 `launch_context` руками под свой единственный слот, а в реальном каталоге
 переменных впятеро больше и половине из них неоткуда было взять значение.
@@ -148,12 +148,12 @@ class TestAlltaCatalogResolves:
     ):
         """Регрессия на P0 «`launch_context` не несёт половины переменных».
 
-        До правки любой из 61 теста падал в `claim_next` с
+        До правки любой из 62 тестов падал в `claim_next` с
         `LAUNCH_CONTEXT_VARIABLE_MISSING` ещё до SSH.
         """
         data = yaml.safe_load(ALLTA_CATALOG.read_text(encoding="utf-8"))
         codes = [t["code"] for t in data["tests"]]
-        assert len(codes) == 61
+        assert len(codes) == 62
 
         failures: list[str] = []
         async with AsyncSessionLocal() as db:
@@ -204,7 +204,7 @@ class TestAlltaCatalogResolves:
     ):
         """Сокращения строк СТП-матрицы (`testname_columns`) и компоненты
         changelog-фильтра (`tests_list`) — из `allta_image_conf.py`. Обе
-        колонки заполнены у всех 61 теста: пустое сокращение печатало бы в
+        колонки заполнены у всех 62 тестов: пустое сокращение печатало бы в
         матрице полное имя, а пустой компонент выкидывал бы тест из
         changelog-объёма."""
         data = yaml.safe_load(ALLTA_CATALOG.read_text(encoding="utf-8"))
@@ -249,8 +249,8 @@ class TestAlltaCatalogResolves:
                 else:
                     assert test.pinned_stand_id is None, t["code"]
 
-    async def test_catalog_carries_legacy_pinning_for_57_of_61(self):
-        """Сами данные привязки: 57 тестов из 61 имеют легаси-стенд.
+    async def test_catalog_carries_legacy_pinning_for_58_of_62(self):
+        """Сами данные привязки: 58 тестов из 62 имеют легаси-стенд.
 
         Четыре исключения — tantor vanilla/kernels и оба overflow: их нет в
         `stands_groups` allta_app, то есть привязки не было и в легаси.
@@ -258,7 +258,7 @@ class TestAlltaCatalogResolves:
         data = yaml.safe_load(ALLTA_CATALOG.read_text(encoding="utf-8"))
         with_token = [t["code"] for t in data["tests"] if t.get("pinned_stand_token")]
         without = sorted(t["code"] for t in data["tests"] if not t.get("pinned_stand_token"))
-        assert len(with_token) == 57
+        assert len(with_token) == 58
         assert without == [
             "overflow.ram", "overflow.storage_drive",
             "postgresql.tantor_kernels", "postgresql.tantor_vanilla",

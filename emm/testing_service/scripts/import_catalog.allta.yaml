@@ -3827,6 +3827,76 @@ tests:
       - kind: literal
         literal_value: "xfs_memory_leak"
 
+  - code: kernel.os_usage
+    full_name: "OS usage"
+    matrix_label: "OS_usage"
+    changelog_component: "Системные службы"
+    category: kernel
+    owner: null
+    readiness: draft
+    department_id: null
+    pinned_stand_token: stand10
+    starter_suffix: null
+    command:
+      # source: kernel:kernel/test_run.py:170 (`elif args.TESTNAME == 'usage_os':`).
+      # Третий литерал `-testname`-развилки той же ветки — пропущен в первых
+      # волнах импорта (были прочитаны только строки 106/138 test_run.py).
+      # Стенд по allta_image_conf.py:421,444 — stand10 (`orel_stand10`/
+      # `stand10_group`), НЕ stand12, где сидят segfault/xfs_memleak.
+      - kind: literal
+        literal_value: "--username"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--token"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-space"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "--confluence-parent-page"
+      - kind: variable
+        variable_code: PARENT_PAGE
+      - kind: literal
+        literal_value: "--confluence-new-page"
+      - kind: variable
+        variable_code: CONFLUENCE_NEW_PAGE
+      - kind: literal
+        literal_value: "-fti"
+      - kind: variable
+        variable_code: FOLDER_TREE_ID
+        override_value: "none"
+      - kind: literal
+        literal_value: "-tcyc"
+      - kind: variable
+        variable_code: TEST_CYCLE_NAME
+      - kind: literal
+        literal_value: "-tcas"
+      - kind: variable
+        variable_code: TEST_CASE_NAME
+      - kind: literal
+        literal_value: "-ba"
+      - kind: literal
+        literal_value: "none"
+      - kind: literal
+        literal_value: "-sn"
+      - kind: variable
+        variable_code: STAND
+      - kind: literal
+        literal_value: "-tcv"
+      - kind: variable
+        variable_code: RC
+      - kind: literal
+        literal_value: "-vbox"
+      - kind: variable
+        variable_code: RC
+      - kind: literal
+        literal_value: "-testname"
+      - kind: literal
+        literal_value: "usage_os"
+
   # --- freeipa (branch: freeipa, script: ipa_run.py, НЕСТАНДАРТНЫЙ ПУТЬ) ---------
 
   - code: freeipa.auth

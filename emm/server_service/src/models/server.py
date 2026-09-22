@@ -30,10 +30,10 @@ class Server(Base):
         INET, unique=True, nullable=False, index=True
     )
     mgmt_ip_address: Mapped[IPv4Address | IPv6Address | None] = mapped_column(INET, nullable=True)
-    # Опциональный человекочитаемый номер стенда. Глобально уникален в паре
-    # servers+vm (один номер = одна сущность) → lookup по номеру однозначен.
-    # UNIQUE автоматически создаёт b-tree, отдельный index=True не пишем.
-    number: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
+    # Номер стенда. Обязателен, уникален в рамках отдела (composite index
+    # `uq_servers_dept_stand_number` в __table_args__, не глобальный UNIQUE) —
+    # два отдела могут занимать один и тот же номер независимо друг от друга.
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
     ssh_port: Mapped[int] = mapped_column(Integer, default=22, nullable=False)
     os_version_id: Mapped[str | None] = mapped_column(
         String(64),
@@ -207,6 +207,10 @@ class Server(Base):
         Index("ix_servers_department_status", "department_id", "status"),
         # Для быстрого «кто что занял» — busy-dashboard.
         Index("ix_servers_busy_state_user", "busy_state", "busy_user_id"),
+        # Номер стенда уникален в рамках отдела, не глобально.
+        Index(
+            "uq_servers_dept_stand_number", "department_id", "number", unique=True,
+        ),
     )
 
     os_version: Mapped["OsVersion | None"] = relationship(  # noqa: F821

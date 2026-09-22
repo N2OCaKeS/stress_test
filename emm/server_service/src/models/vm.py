@@ -52,8 +52,9 @@ class Vm(Base):
     # имя ВМ (`name`). Отдельно от `name`, т.к. имя ВМ уникально в пределах
     # hub'а, а hostname внутри гостя может отличаться/повторяться.
     hostname: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    # Опциональный номер стенда — глобально уникален в паре servers+vm.
-    number: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
+    # Номер стенда. Обязателен, уникален в рамках отдела (composite index
+    # `uq_vms_dept_stand_number` в __table_args__, не глобальный UNIQUE).
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
     hub_server_id: Mapped[str] = mapped_column(
         String(64),
         ForeignKey("servers.id", ondelete="RESTRICT"),
@@ -163,6 +164,8 @@ class Vm(Base):
         Index("uq_vms_hub_name", "hub_server_id", "name", unique=True),
         # Типовой list — «все ВМ отдела в статусе X».
         Index("ix_vms_department_status", "department_id", "status"),
+        # Номер стенда уникален в рамках отдела, не глобально.
+        Index("uq_vms_dept_stand_number", "department_id", "number", unique=True),
     )
 
     hub_server: Mapped["Server"] = relationship("Server")  # noqa: F821

@@ -9,9 +9,8 @@
   поэтому такую ВМ можно поднять на нескольких hub'ах отдела).
 
 `fixed_ip`/`number` — «желаемые» значения bridge-станции; при развёртывании они
-переносятся в карточку ВМ (номер глобально уникален в паре servers+vm, поэтому
-конфликт всплывёт на create). Пресеты редактируются в UI под правом
-`vm_preset_manage`.
+переносятся в карточку ВМ (номер уникален в рамках отдела, поэтому конфликт
+всплывёт на create). Пресеты редактируются в UI под правом `vm_preset_manage`.
 """
 
 from datetime import datetime
@@ -47,8 +46,8 @@ class VmPreset(Base):
     fixed_ip: Mapped[IPv4Address | IPv6Address | None] = mapped_column(
         INET, nullable=True
     )
-    # Желаемый номер стенда (глобально уникален в паре servers+vm — конфликт
-    # всплывёт при create ВМ).
+    # Желаемый номер стенда (уникален в рамках отдела — конфликт всплывёт при
+    # create ВМ).
     number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

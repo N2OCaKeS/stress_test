@@ -660,6 +660,8 @@ services:
         condition: service_healthy
       testing_service:
         condition: service_healthy
+      allta_app:
+        condition: service_healthy
       web_ui:
         condition: service_healthy
       swagger_ui:
@@ -669,6 +671,30 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+    restart: unless-stopped
+
+  # ── allta_app_service: временный контейнер легаси allta_app (обрезан от
+  # фронтенда/бота) на период тестирования, пока testing_service не заменит
+  # его полностью. Порт наружу НЕ публикуется — единственная точка входа
+  # снаружи — reverse_proxy, location /api/allta/. DRBL-бинарии — read-only
+  # bind-mount с хоста (владелец выставляет реальные пути в .env.prod;
+  # без них контейнер всё равно стартует, просто сами drbl-ocs вызовы
+  # будут падать в рантайме, а не при старте).
+  allta_app:
+    build: ./allta_app_service
+    env_file: [.env.prod]
+    environment:
+      ALLTA_PORT: "8000"
+      ALLTA_AUTH_API_KEY: ${ALLTA_AUTH_API_KEY:-}
+    volumes:
+      - ${DRBL_USR_SBIN:-./allta_app_service/drbl_stub/usr_sbin}:/usr/sbin:ro
+      - ${DRBL_SHARE:-./allta_app_service/drbl_stub/usr_share_drbl}:/usr/share/drbl:ro
+      - ${DRBL_ETC:-./allta_app_service/drbl_stub/etc_drbl}:/etc/drbl:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf --max-time 3 http://localhost:8000/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
     restart: unless-stopped
 
   # ── Swagger UI: агрегированный /docs для 4 сервисов ──────────────────────────

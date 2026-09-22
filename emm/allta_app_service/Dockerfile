@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         sudo \
         sshpass \
         openssh-client \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Приложение и логика деплоя на стенды хардкодят абсолютный путь

@@ -32,7 +32,7 @@ import {
   Server,
 } from "lucide-react";
 import { listOsVersions } from "@/api/server/osVersions";
-import { formatMsk, formatMskShort, formatElapsedHMS } from "@/lib/datetime";
+import { formatMsk, formatMskShort, formatElapsedHMS, formatRunStartedAt } from "@/lib/datetime";
 import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
 import { useQuery } from "@/api/auth/useQuery";
@@ -81,6 +81,10 @@ const QUEUE_ITEM_STATE_META: Record<string, { label: string; badge: BadgeKind }>
   running: { label: "Выполняется", badge: "accent" },
   succeeded: { label: "Выполнено", badge: "ok" },
   failed: { label: "Провалено", badge: "danger" },
+  // Отдельно от generic "Провалено": SSH-команда не уложилась в
+  // `command_timeout`, а не завершилась ненулевым кодом/обрывом соединения.
+  // Бейдж намеренно другого цвета (не "danger"), чтобы отличать в таблице.
+  timed_out: { label: "Провалено по таймауту", badge: "warn" },
   // Пропуск — решение оператора, а не провал: бейдж намеренно нейтральный,
   // и на агрегатный статус кампании пропуск тоже не влияет.
   skipped: { label: "Пропущено", badge: "info" },
@@ -363,7 +367,7 @@ export function RunsWorkzone({ state }: { state: RunsState }) {
   );
 }
 
-type RunQueueColumn = "testLabel" | "standLabel" | "state" | "startedAt";
+type RunQueueColumn = "testLabel" | "standLabel" | "state" | "kernel" | "startedAt";
 
 interface RunQueueRow extends TestRunQueueItem {
   testLabel: string;
@@ -372,6 +376,7 @@ interface RunQueueRow extends TestRunQueueItem {
 
 function runQueueValue(row: RunQueueRow, column: RunQueueColumn): string | number {
   if (column === "startedAt") return row.started_at ? new Date(row.started_at).getTime() : -1;
+  if (column === "kernel") return row.kernel ?? "";
   return row[column];
 }
 
@@ -480,6 +485,7 @@ function RunDetailPanel({ run, onOpenLog, onChanged }: { run: TestRun; onOpenLog
                 <SortableTh label="Тест" column="testLabel" sort={sort} onSort={onSort} />
                 <SortableTh label="Стенд" column="standLabel" sort={sort} onSort={onSort} />
                 <SortableTh label="Статус" column="state" sort={sort} onSort={onSort} />
+                <SortableTh label="Ядро" column="kernel" sort={sort} onSort={onSort} />
                 <th>Попытка</th>
                 <SortableTh label="Начат" column="startedAt" sort={sort} onSort={onSort} />
                 <th>Время</th>
@@ -499,14 +505,15 @@ function RunDetailPanel({ run, onOpenLog, onChanged }: { run: TestRun; onOpenLog
                       : "—";
                 return (
                   <tr key={row.queue_item_id}>
-                    <td>{row.testLabel}<div className="text-xs text-dim">{row.kernel}</div></td>
+                    <td>{row.testLabel}</td>
                     <td className="mono text-xs" title={row.stand_id}>{row.standLabel}</td>
                     <td>
                       <Badge kind={meta.badge}>{meta.label}</Badge>
                       {row.error && <div className="text-[10px] text-danger mt-0.5 max-w-[220px] truncate" title={row.error}>{row.error}</div>}
                     </td>
+                    <td className="mono text-xs">{row.kernel || "—"}</td>
                     <td className="text-xs">{row.is_current === false ? "предыдущая" : row.is_retry ? "повтор" : "первая"}</td>
-                    <td className="mono text-xs">{formatMskShort(row.started_at)}</td>
+                    <td className="mono text-xs">{formatRunStartedAt(row.started_at)}</td>
                     <td className="mono text-xs">{elapsed}</td>
                     <td>
                       <div className="flex items-center gap-2 whitespace-nowrap">
@@ -521,7 +528,7 @@ function RunDetailPanel({ run, onOpenLog, onChanged }: { run: TestRun; onOpenLog
                         <ExternalLink className="w-3.5 h-3.5" />
                         Лог
                       </Button>
-                      {row.is_current !== false && ["succeeded", "failed"].includes(row.state) && <Button size="sm" disabled={retrying !== null} onClick={() => retry(row.queue_item_id)}>Повторить тест</Button>}
+                      {row.is_current !== false && ["succeeded", "failed", "timed_out"].includes(row.state) && <Button size="sm" disabled={retrying !== null} onClick={() => retry(row.queue_item_id)}>Повторить тест</Button>}
                       </div>
                     </td>
                   </tr>
@@ -529,7 +536,7 @@ function RunDetailPanel({ run, onOpenLog, onChanged }: { run: TestRun; onOpenLog
               })}
               {sorted.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center text-dim text-xs py-6">Очередь этого прогона пуста</td>
+                  <td colSpan={8} className="text-center text-dim text-xs py-6">Очередь этого прогона пуста</td>
                 </tr>
               )}
             </tbody>

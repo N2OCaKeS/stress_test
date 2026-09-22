@@ -325,12 +325,13 @@ describe("RunsMiddlePanel + RunsWorkzone — реальные кампании",
     if (!row) throw new Error("строка стенда не найдена");
 
     const callsBefore = getTestRunMock.mock.calls.length;
-    const timeCellBefore = within(row).getAllByRole("cell")[5];
+    // Колонки: Тест/Стенд/Статус/Ядро/Попытка/Начат/Время/Лог — «Время» шестая (индекс 6).
+    const timeCellBefore = within(row).getAllByRole("cell")[6];
     const firstValue = timeCellBefore.textContent;
 
     await new Promise((resolve) => setTimeout(resolve, 1200));
 
-    const timeCellAfter = within(row).getAllByRole("cell")[5];
+    const timeCellAfter = within(row).getAllByRole("cell")[6];
     expect(timeCellAfter.textContent).not.toBe(firstValue);
     // таймер тикает на клиенте — детали прогона за это время повторно не запрашивались
     expect(getTestRunMock.mock.calls.length).toBe(callsBefore);

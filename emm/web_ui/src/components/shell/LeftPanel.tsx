@@ -125,7 +125,7 @@ const TESTING_CHIP: ServiceChip = {
   subItems: [
     { to: "/testing/tests", icon: FileText, label: "Тесты" },
     { to: "/testing/runs", icon: ListChecks, label: "Прогоны" },
-    { to: "/testing/debug", icon: Bug, label: "Одиночные запуски" },
+    { to: "/testing/debug", icon: Bug, label: "Все запуски" },
     { to: "/testing/logs", icon: FileText, label: "Логи" },
     { to: "/testing/stp", icon: Cog, label: "СТП" },
   ],
@@ -526,7 +526,7 @@ const STATISTICS_STATUS_META: Record<
  * идёт в фоне — эта панель только отображает его текущее/последнее
  * состояние (`GET /statistics/status`), не запускает его сама. Запуск — либо
  * автоматически в конце прогона (`services/queue.py`), либо кнопкой
- * «Пересчитать статистику» на странице одиночных тестов (`/testing/debug`).
+ * «Пересчитать статистику» на странице всех запусков (`/testing/debug`).
  */
 function StatisticsRecalcPanel({ collapsed }: { collapsed: boolean }) {
   const [status, setStatus] = useState<StatisticsRecalcStatus | null>(null);

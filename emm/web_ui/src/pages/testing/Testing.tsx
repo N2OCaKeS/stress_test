@@ -34,7 +34,7 @@ import { StpMiddlePanel, StpWorkzone, useStpVersionState } from "./stp";
 const SUBSECTIONS = [
   { id: "tests", label: "Тесты", icon: FileText },
   { id: "runs", label: "Прогоны", icon: ListChecks },
-  { id: "debug", label: "Одиночные запуски", icon: Bug },
+  { id: "debug", label: "Все запуски", icon: Bug },
   { id: "logs", label: "Логи", icon: FileText },
   { id: "stp", label: "СТП", icon: Cog },
 ] as const;

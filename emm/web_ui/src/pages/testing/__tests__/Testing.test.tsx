@@ -37,8 +37,8 @@ describe("Testing shell", () => {
     expect(screen.getAllByText("Прогоны").length).toBeGreaterThan(0);
   });
 
-  it("переключается на вкладку «Одиночные запуски»", () => {
+  it("переключается на вкладку «Все запуски»", () => {
     renderTesting("/testing/debug");
-    expect(screen.getAllByText("Одиночные запуски").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Все запуски").length).toBeGreaterThan(0);
   });
 });

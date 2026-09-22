@@ -88,6 +88,24 @@ export function formatMskShort(
 }
 
 /**
+ * Формат таблицы прогонов (§14 бэклога): время начала попытки — российский
+ * порядок `"ЧЧ:ММ:СС ДД.ММ.ГГ"` (время сначала, потом дата день.месяц.год).
+ * Намеренно ОТДЕЛЬНАЯ функция, а не правка `formatMsk`/`formatMskShort` —
+ * у тех ISO-подобный порядок нужен во множестве других мест интерфейса
+ * (шапки карточек, списки, аудит), где российский порядок был бы неуместен.
+ * Используется только колонкой "Начат" детальной таблицы прогона
+ * (`pages/testing/runs.tsx`).
+ */
+export function formatRunStartedAt(value: string | number | Date | null | undefined): string {
+  if (value === null || value === undefined || value === "") return EMPTY_DT;
+  const d = toDate(value);
+  if (!d) return typeof value === "string" ? value : EMPTY_DT;
+  const p = parts(DATETIME_FMT, d);
+  const yy = p.year.slice(-2);
+  return `${p.hour}:${p.minute}:${p.second} ${p.day}.${p.month}.${yy}`;
+}
+
+/**
  * Только дата (по московскому календарю): `"YYYY-MM-DD"`.
  * Важно для полей вроде `expires_at`, где день в UTC и в MSK может различаться.
  */

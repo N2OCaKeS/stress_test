@@ -362,7 +362,10 @@ class TestRotation:
         assert first_log is not None
 
         async with AsyncSessionLocal() as db:
-            await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+            await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX,
+                on_active_queue="append",
+            )
 
         async with AsyncSessionLocal() as db:
             gone = await test_log_repo.get_by_id(db, first_log.id)
@@ -393,7 +396,10 @@ class TestRotation:
             await db.commit()
 
         async with AsyncSessionLocal() as db:
-            await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+            await queue_svc.enqueue(
+                db, _identity(), test_id, launch_context=LAUNCH_CTX,
+                on_active_queue="append",
+            )
 
         async with AsyncSessionLocal() as db:
             still_there = await test_log_repo.get_by_id(db, first_log_id)

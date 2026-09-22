@@ -166,7 +166,8 @@ async def test_changed_queued_test_does_not_restore_and_next_test_continues(
         async with AsyncSessionLocal() as db:
             items.append(
                 await queue_svc.enqueue(
-                    db, _identity(), test_id, launch_context=LAUNCH_CTX
+                    db, _identity(), test_id, launch_context=LAUNCH_CTX,
+                    on_active_queue="append",
                 )
             )
     await change_status(client, admin_token, ids[1], "broken")

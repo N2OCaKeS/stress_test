@@ -20,7 +20,7 @@ export interface PublicQueueItem {
   log_status?: "available" | "rotated" | "pending" | "missing";
   test_code?: string | null; test_name?: string | null; is_current?: boolean;
   id: string; test_id: string; stand_id: string; test_run_id: string | null;
-  retry_of_id: string | null; debug_mode: boolean; state: string;
+  retry_of_id: string | null; debug_mode: boolean; prepare_only?: boolean; state: string;
   interrupt_action?: QueueInterruptAction | null;
   rc: string | null; kernel: string | null; mode: string | null;
   created_at: string; started_at: string | null; finished_at: string | null; error: string | null;
@@ -28,6 +28,12 @@ export interface PublicQueueItem {
 export interface QueueLaunchRequest {
   request_id: string; test_id: string; stand_id: string; os_version_id: string;
   kernel: string; debug_mode: boolean;
+  /**
+   * Легаси testenv-режим: только откатить/подготовить стенд, не запускать
+   * тест. Вместо результата воркер оставляет на стенде `command.txt` с
+   * командой, которая была бы запущена.
+   */
+  prepare_only?: boolean;
   /**
    * Забрать стенд у текущего держателя (`busy`/`testing_done`). Без роли
    * department_admin/`admin` testing_service своего отдела сервер отклоняет

@@ -38,6 +38,7 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
   const [detected, setDetected] = useState<Record<string, string[]>>({});
   const [kernel, setKernel] = useState("");
   const [debug, setDebug] = useState(false);
+  const [prepareOnly, setPrepareOnly] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [stpPrompt, setStpPrompt] = useState<StpPrompt | null>(null);
@@ -64,6 +65,7 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
   async function attemptLaunch(options: { force?: boolean; onActiveQueue?: ActiveQueueMode } = {}) {
     const body = {
       test_id: testId, stand_id: resolvedStand, os_version_id: rc.trim(), kernel: kernel.trim(), debug_mode: debug,
+      prepare_only: prepareOnly,
       force: options.force ?? false,
       ...(options.onActiveQueue ? { on_active_queue: options.onActiveQueue } : {}),
     };
@@ -114,6 +116,9 @@ export function StandaloneLaunchModal({ onClose, onLaunched }: { onClose: () => 
         <Dropdown mode="single" placeholder="Выберите тест" value={testId} onChange={setTestId} options={(testsQ.data?.items ?? []).map((item) => ({ value: item.id, label: `${item.full_name} · ${item.code}` }))} />
       </label>
       <label className="flex items-center gap-2 text-sm"><Checkbox checked={debug} onChange={(event) => setDebug(event.target.checked)} />Debug</label>
+      {debug && <div className="text-xs text-warn">Debug-запуск всё равно встанет в очередь стенда — если стенд занят другим тестом, придётся дождаться своей очереди.</div>}
+      <label className="flex items-center gap-2 text-sm"><Checkbox checked={prepareOnly} onChange={(event) => setPrepareOnly(event.target.checked)} />Testenv (только подготовка стенда)</label>
+      {prepareOnly && <div className="text-xs text-dim">Стенд будет откатан и подготовлен как для обычного запуска, но тест не выполняется — вместо результата на стенде остаётся команда, которой он был бы запущен.</div>}
       <label className="grid gap-1 text-sm">Стенд
         <Dropdown mode="single" placeholder="Выберите стенд" value={resolvedStand} onChange={setStandId} disabled={!debug} options={(standsQ.data ?? []).map((item) => {
           const server = item.server as { display_name?: string; hostname?: string } | undefined;

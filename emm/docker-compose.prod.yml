@@ -686,6 +686,11 @@ services:
     environment:
       ALLTA_PORT: "8000"
       ALLTA_AUTH_API_KEY: ${ALLTA_AUTH_API_KEY:-}
+      # Резолв iLO/BMC-кред по номеру стенда через server_service (см.
+      # libs/libilo.py) вместо чтения /home/u/ilo.py. Токен заводится
+      # auth_service на старте по этому же значению из .env.prod.
+      SERVER_SERVICE_URL: http://server_service:8002
+      ALLTA_APP_SERVICE_BOT_TOKEN: ${ALLTA_APP_SERVICE_BOT_TOKEN:-}
     volumes:
       - ${DRBL_USR_SBIN:-./allta_app_service/drbl_stub/usr_sbin}:/usr/sbin:ro
       - ${DRBL_SHARE:-./allta_app_service/drbl_stub/usr_share_drbl}:/usr/share/drbl:ro

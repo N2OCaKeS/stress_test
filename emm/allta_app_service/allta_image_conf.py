@@ -733,16 +733,27 @@ SERVER_API_BASE = "https://allta.devos.astralinux.ru:21501/api/server/v1"
 load_dotenv(dotenv_path='/var/allta_services/config/env.allta')
 TOKEN = getenv("ALLTA_AUTH_API_KEY")
 HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+# Дефолты гарантируют все ключи, которые дальше читаются напрямую
+# (tokens['...']) — не только когда config_api совсем недоступен
+# (requests.RequestException), но и когда он ответил чем-то, что не
+# распарсилось в ожидаемую форму (пустое тело, урезанный JSON, HTML от
+# промежуточного прокси) — .json() в таком случае либо кинет ValueError,
+# либо просто вернёт не тот набор ключей.
+tokens = {'conf_token': '', 'username': '', 'jira_token': '', 'git_token': '', 'srv_pass': '', 'pass': ''}
 try:
-    tokens = requests.get(f"{CONFIG_API_BASE}/config/tokens", headers=HEADERS, timeout=30, verify=False).json()
-except requests.RequestException:
-    # config_api недоступен (например, локальный запуск вне сети 103.10) —
-    # держим приложение живым с пустыми токенами вместо падения на старте
-    tokens = {'conf_token': '', 'username': '', 'jira_token': '', 'git_token': '', 'srv_pass': '', 'pass': ''}
+    fetched_tokens = requests.get(f"{CONFIG_API_BASE}/config/tokens", headers=HEADERS, timeout=30, verify=False).json()
+    if isinstance(fetched_tokens, dict):
+        tokens.update(fetched_tokens)
+except (requests.RequestException, ValueError):
+    pass
+
+ilo = {}
 try:
-    ilo = requests.get(f"{SERVER_API_BASE}/ilo/", headers=HEADERS, timeout=30, verify=False).json()
-except requests.RequestException:
-    ilo = {}
+    fetched_ilo = requests.get(f"{SERVER_API_BASE}/ilo/", headers=HEADERS, timeout=30, verify=False).json()
+    if isinstance(fetched_ilo, dict):
+        ilo.update(fetched_ilo)
+except (requests.RequestException, ValueError):
+    pass
 
 
 

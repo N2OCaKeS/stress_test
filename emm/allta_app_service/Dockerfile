@@ -44,6 +44,10 @@ RUN mkdir -p telegrambot logs \
 
 USER u
 
-EXPOSE 8000
+# Порт задаётся снаружи (ALLTA_PORT), не зашит в образ — на хосте он делит
+# адресное пространство портов с остальными сервисами, конкретное значение
+# назначает владелец при деплое.
+ENV ALLTA_PORT=8000
+EXPOSE ${ALLTA_PORT}
 
-CMD ["gunicorn", "--workers", "4", "-b", "0.0.0.0:8000", "wsgi:app", "--timeout", "3600"]
+CMD gunicorn --workers 4 -b 0.0.0.0:${ALLTA_PORT} wsgi:app --timeout 3600

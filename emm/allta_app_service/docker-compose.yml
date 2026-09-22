@@ -3,10 +3,14 @@ services:
     build: .
     image: allta_app_service:latest
     container_name: allta_app_service
-    # DRBL сам работает с multicast/broadcast к стендам — ему нужен настоящий
-    # сетевой стек хоста, не docker-мост.
-    network_mode: host
+    # Обычная сеть compose, как у остальных сервисов стека — порт наружу
+    # (на хост/интернет) НЕ публикуется. Единственная внешняя точка входа —
+    # nginx, который достаёт этот контейнер по имени сервиса внутри сети
+    # compose (ALLTA_PORT — тот порт, на котором его там и найдёт).
+    expose:
+      - "${ALLTA_PORT:-8000}"
     environment:
+      - ALLTA_PORT=${ALLTA_PORT:-8000}
       - ALLTA_AUTH_API_KEY=${ALLTA_AUTH_API_KEY:-}
     volumes:
       # Реальные пути и полный список DRBL-бинарей/библиотек сверяются на

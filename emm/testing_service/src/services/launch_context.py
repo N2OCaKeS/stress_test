@@ -83,8 +83,11 @@ def stand_number(stand: TestStand) -> str | None:
     return digits or None
 
 
+_DEBUG_CONFLUENCE_PREFIX = "DEBUG_"
+
+
 def computed_values(
-    test: TestDefinition, stand: TestStand, ctx: dict[str, str],
+    test: TestDefinition, stand: TestStand, ctx: dict[str, str], *, debug_mode: bool = False,
 ) -> dict[str, str]:
     """Значения переменных, которые сервис считает сам, а не получает снаружи.
 
@@ -92,21 +95,28 @@ def computed_values(
     предназначен для наложения поверх `ctx`: вычисляемое поле всегда сильнее
     одноимённого входного, иначе постановщик задания мог бы подделать,
     например, заголовок страницы Confluence.
+
+    `debug_mode=True` — результат отладочного запуска не должен попасть на ту
+    же страницу Confluence, что боевой прогон (иначе он либо перезапишет
+    боевой отчёт, либо сломает его добавлением незапланированных данных).
+    Отсюда префикс `DEBUG_` у `CONFLUENCE_NEW_PAGE` и `PARENT_PAGE` — отдельное
+    отладочное пространство страниц вместо реального рубрикатора отчётов.
     """
     rc = ctx.get("RC", "")
     mode = ctx.get("MODE", "")
     kernel = ctx.get("KERNEL", "")
     token = stand_token(stand)
+    prefix = _DEBUG_CONFLUENCE_PREFIX if debug_mode else ""
 
     values = {
-        "CONFLUENCE_NEW_PAGE": f"{test.full_name}_{rc}_{mode}_{kernel}_{token}",
+        "CONFLUENCE_NEW_PAGE": f"{prefix}{test.full_name}_{rc}_{mode}_{kernel}_{token}",
         "TEST_CYCLE_NAME": f"{rc}_{mode}_{kernel}_{token}",
         "TEST_CASE_NAME": test.full_name,
     }
 
     topic = _TOPIC_BY_CATEGORY.get(test.category or "")
     if topic:
-        values["PARENT_PAGE"] = f"STRESS_report {rc} ⬝ {topic}"
+        values["PARENT_PAGE"] = f"{prefix}STRESS_report {rc} ⬝ {topic}"
 
     number = stand_number(stand)
     if number:

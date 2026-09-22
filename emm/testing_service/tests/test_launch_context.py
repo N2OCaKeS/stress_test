@@ -91,6 +91,20 @@ class TestComputedValues:
         values = lc.computed_values(_test(), _stand(), ctx)
         assert values["TEST_CASE_NAME"] == "postgresql benchmark"
 
+    def test_debug_mode_prefixes_confluence_targets(self):
+        """Owner п.11: результат debug-запуска не должен попасть на боевую
+        страницу Confluence обычного прогона — отдельный `DEBUG_`-префикс у
+        `CONFLUENCE_NEW_PAGE`/`PARENT_PAGE`."""
+        normal = lc.computed_values(_test(), _stand("stand3"), LAUNCH_CTX, debug_mode=False)
+        debug = lc.computed_values(_test(), _stand("stand3"), LAUNCH_CTX, debug_mode=True)
+
+        assert debug["CONFLUENCE_NEW_PAGE"] == "DEBUG_" + normal["CONFLUENCE_NEW_PAGE"]
+        assert debug["PARENT_PAGE"] == "DEBUG_" + normal["PARENT_PAGE"]
+        # Остальные переменные не завязаны на Confluence — debug их не трогает.
+        assert debug["TEST_CYCLE_NAME"] == normal["TEST_CYCLE_NAME"]
+        assert debug["TEST_CASE_NAME"] == normal["TEST_CASE_NAME"]
+        assert debug["STAND"] == normal["STAND"]
+
 
 class TestStandToken:
     def test_prefers_alias(self):

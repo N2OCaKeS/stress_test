@@ -1031,7 +1031,7 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
     # значения возьмёт общий резолвер слотов (см. services/launch_context.py).
     # Наложение поверх ctx, а не под ним: вычисляемое поле не должно
     # подделываться постановщиком задания.
-    ctx.update(launch_context_svc.computed_values(test, stand, ctx))
+    ctx.update(launch_context_svc.computed_values(test, stand, ctx, debug_mode=item.debug_mode))
     busy_note = f"{test.code}|{ctx.get('RC', '')}|{ctx.get('KERNEL', '')}"
     try:
         await server_client.set_service_status(stand.server_id, busy_state="testing", busy_note=busy_note)

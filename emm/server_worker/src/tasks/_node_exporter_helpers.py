@@ -18,6 +18,7 @@ INSTALL_SCRIPT = r"""set -euo pipefail
 
 NE_PATH=/home/node_exporter
 sudo mkdir -p "$NE_PATH"
+sudo mkdir -p /etc/docker
 sudo tee /etc/docker/daemon.json >/dev/null <<'EOF'
 {
   "insecure-registries": ["allta.devos.astralinux.ru:21503"]

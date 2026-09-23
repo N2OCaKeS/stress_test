@@ -125,6 +125,7 @@ from src.schemas.server_account import (
     AccountVmProvisionDispatchResponse,
 )
 from src.services import (
+    account_nopasswd_sudo_settings as nopasswd_sudo_svc,
     acs_client,
     acs_settings as acs_settings_svc,
     audit_service,
@@ -151,8 +152,9 @@ router_ipmi = APIRouter(prefix="/ipmi-controllers/{controller_id}")
 # ── helpers ─────────────────────────────────────────────────────────────────
 
 
-def _build_account_task_payload(
+async def _build_account_task_payload(
     *,
+    db: AsyncSession,
     server,
     account,
     include_attrs: bool,
@@ -177,6 +179,12 @@ def _build_account_task_payload(
     чтобы не ломать существующих caller'ов; provision-вызов берёт дефолт,
     update/deprovision передают `False` явно.
 
+    `nopasswd_sudo` едет вместе с `has_sudo` (`include_attrs=True`): worker
+    кладёт per-user NOPASSWD sudoers-правило (`/etc/sudoers.d/<login>-nopasswd`)
+    только когда аккаунт sudo-привилегированный И отдел сервера явно включил
+    `/settings/account-nopasswd-sudo` — резолвим оба условия здесь, worker сам
+    про department-настройки ничего не знает.
+
     Caller дополняет результат своими ключами (`extra_payload`) через `.update`.
     """
     payload: dict = {
@@ -200,6 +208,9 @@ def _build_account_task_payload(
         payload["has_sudo"] = account.has_sudo
         payload["unix_groups"] = list(account.unix_groups)
         payload["shell"] = account.shell
+        payload["nopasswd_sudo"] = bool(account.has_sudo) and await nopasswd_sudo_svc.is_enabled_for_department(
+            db, server.department_id,
+        )
         if include_home_dir is None or include_home_dir:
             payload["home_dir"] = account.home_dir
     return payload
@@ -550,8 +561,8 @@ async def _dispatch_account_on_host(
     reservation.ensure_not_acs_locked(identity, server)
 
     idempotency_key = read_idempotency_key(request)
-    payload = _build_account_task_payload(
-        server=server, account=account, include_attrs=True,
+    payload = await _build_account_task_payload(
+        db=db, server=server, account=account, include_attrs=True,
         include_home_dir=include_home_dir,
     )
     if extra_payload:
@@ -748,8 +759,8 @@ async def _dispatch_account_provision(
             ),
         )
 
-    payload = _build_account_task_payload(
-        server=server, account=account, include_attrs=True,
+    payload = await _build_account_task_payload(
+        db=db, server=server, account=account, include_attrs=True,
     )
     # `force_password=true` для discovered'а: сбрасываем сохранённое до ensure,
     # чтобы получить свежий пароль и force_replace=True. Managed-аккаунты
@@ -1000,8 +1011,8 @@ async def fanout_update_on_host(
             )
             continue
         per_server_key = f"{idempotency_key}:{server.id}" if idempotency_key else None
-        payload = _build_account_task_payload(
-            server=server, account=account, include_attrs=True,
+        payload = await _build_account_task_payload(
+            db=db, server=server, account=account, include_attrs=True,
             # update_on_host через usermod не двигает home — параллель с
             # точечным dispatch'ем (`account_update_on_host_dispatch`).
             include_home_dir=False,
@@ -1261,12 +1272,14 @@ async def recreate_login_orchestrate(
 # deprovision), что и у серверного пути.
 
 
-def _build_vm_account_task_payload(
+async def _build_vm_account_task_payload(
     *,
+    db: AsyncSession,
     hub,
     vm,
     account,
     include_attrs: bool,
+    include_nopasswd_sudo: bool | None = None,
     remove_home: bool | None = None,
 ) -> dict:
     """Payload для account-task'ов в гостя ВМ (provision / update / deprovision).
@@ -1275,6 +1288,15 @@ def _build_vm_account_task_payload(
     `vm_id`/`vm_name`/`guest_ip` для входа в гостя и identity учётки. Секрет
     (пароль) в payload не кладём — воркер резолвит его через internal по
     `account_id`; `ssh_public_key` не секрет и едет как есть.
+
+    `nopasswd_sudo` — зеркало серверного `_build_account_task_payload`: едет
+    только если аккаунт sudo-привилегированный И отдел ВМ (`vm.department_id`)
+    явно включил `/settings/account-nopasswd-sudo`. По умолчанию следует за
+    `include_attrs` (provision/update несут его вместе с has_sudo/unix_groups),
+    но deprovision — `include_attrs=False` (userdel не нуждается в groups/shell)
+    — явно просит `include_nopasswd_sudo=True` отдельно: worker должен знать,
+    снимать ли `/etc/sudoers.d/<login>-nopasswd` при userdel, не тратя лишний
+    SSH-вызов на аккаунты, которых эта настройка вообще не касалась.
     """
     payload: dict = {
         # target_server_id dispatch'а — hub; в payload дублируем ключи адресации,
@@ -1296,6 +1318,11 @@ def _build_vm_account_task_payload(
         payload["has_sudo"] = account.has_sudo
         payload["unix_groups"] = list(account.unix_groups)
         payload["ssh_public_key"] = account.ssh_public_key
+    want_nopasswd_sudo = include_attrs if include_nopasswd_sudo is None else include_nopasswd_sudo
+    if want_nopasswd_sudo:
+        payload["nopasswd_sudo"] = bool(account.has_sudo) and await nopasswd_sudo_svc.is_enabled_for_department(
+            db, vm.department_id,
+        )
     if remove_home is not None:
         payload["remove_home"] = remove_home
     return payload
@@ -1402,12 +1429,14 @@ async def _dispatch_vm_account_task(
     audit_action: str,
     operation: str,
     include_attrs: bool,
+    include_nopasswd_sudo: bool | None = None,
     remove_home: bool | None = None,
 ) -> dict:
     """Поставить одну account-task'у в гостя ВМ. target_server_id — hub, resource — учётка."""
-    payload = _build_vm_account_task_payload(
-        hub=hub, vm=vm, account=account,
-        include_attrs=include_attrs, remove_home=remove_home,
+    payload = await _build_vm_account_task_payload(
+        db=db, hub=hub, vm=vm, account=account,
+        include_attrs=include_attrs, include_nopasswd_sudo=include_nopasswd_sudo,
+        remove_home=remove_home,
     )
     # Managed-ВМ: воркер заходит в гостя по управляющему ключу (базовой учётки
     # `u` нет) — расшифровываем сохранённый mgmt-материал и кладём в Redis-stash.
@@ -1531,6 +1560,12 @@ async def fanout_vm_deprovision(
     """
     audit_action = "server_account.vm_deprovision"
     request_id = getattr(request.state, "request_id", None)
+    # Один lookup на весь fanout (все целевые ВМ уже отфильтрованы на department
+    # аккаунта ниже) — worker должен знать, снимать ли per-user NOPASSWD sudoers
+    # при userdel, зеркало `_build_vm_account_task_payload`'s `nopasswd_sudo`.
+    nopasswd_sudo = bool(account.has_sudo) and await nopasswd_sudo_svc.is_enabled_for_department(
+        db, account.department_id,
+    )
     for vid in vm_ids:
         vm = await vm_repo.get_by_id(db, vid)
         if vm is None or vm.department_id != account.department_id:
@@ -1560,6 +1595,7 @@ async def fanout_vm_deprovision(
             "login": login,
             "account_id": account.id,
             "remove_home": False,
+            "nopasswd_sudo": nopasswd_sudo,
         }
         stash_key = None
         try:
@@ -2926,6 +2962,11 @@ async def _prepare_resolve_and_dispatch(
     # заводим с ключом и без chpasswd.
     linked_accounts_payload: list[dict] = []
     linked_accounts = await account_repo.list_for_server(db, server_id)
+    # Один lookup на весь bootstrap (все linked_accounts делят department сервера),
+    # а не по одному на аккаунт — зеркало `_build_account_task_payload`.
+    dept_nopasswd_sudo_enabled = await nopasswd_sudo_svc.is_enabled_for_department(
+        db, server.department_id,
+    )
     for acc in linked_accounts:
         # Discovered-аккаунт без пароля (password_encrypted IS NULL) едет в
         # stash без пароля: worker заведёт его useradd + ключ, без chpasswd.
@@ -2952,6 +2993,7 @@ async def _prepare_resolve_and_dispatch(
             "unix_groups": list(acc.unix_groups),
             "shell": acc.shell,
             "home_dir": acc.home_dir,
+            "nopasswd_sudo": bool(acc.has_sudo) and dept_nopasswd_sudo_enabled,
         })
     if linked_accounts_payload:
         bootstrap_creds["linked_accounts"] = linked_accounts_payload
@@ -4521,8 +4563,8 @@ async def account_rotate_password_dispatch(
         # массовую ротацию схлопнул бы все серверы в одну задачу.
         per_server_key = f"{idempotency_key}:{server.id}" if idempotency_key else None
         # Для chpasswd не нужны управляемые атрибуты (sudo/groups/shell/home).
-        payload = _build_account_task_payload(
-            server=server, account=account, include_attrs=False,
+        payload = await _build_account_task_payload(
+            db=db, server=server, account=account, include_attrs=False,
         )
         try:
             task_id, idempotent_hit = await worker_client.dispatch_task_with_hit(
@@ -5011,7 +5053,8 @@ async def account_vm_deprovision_dispatch(
         account=account, vm=vm, hub=hub,
         task_kind="vm.account_deprovision",
         audit_action="server_account.vm_deprovision",
-        operation="deprovision", include_attrs=False, remove_home=remove_home,
+        operation="deprovision", include_attrs=False,
+        include_nopasswd_sudo=True, remove_home=remove_home,
     )
     # Снос учётки поставлен — сразу снимаем связку учётка ↔ ВМ в БД (симметрия
     # с серверным deprovision: он и есть полная отвязка от ВМ).

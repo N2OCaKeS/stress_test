@@ -16,6 +16,9 @@ User-facing endpoints, требующие user identity, защищены гар
 
 from fastapi import APIRouter
 
+from src.api.v1.endpoints.account_nopasswd_sudo_settings import (
+    router as account_nopasswd_sudo_settings_router,
+)
 from src.api.v1.endpoints.acs_settings import (
     internal_router as acs_settings_internal_router,
     router as acs_settings_router,
@@ -186,3 +189,7 @@ router.include_router(acs_settings_internal_router)
 # Настройки SSH-доступа к хосту для host-service control (ALLTA-юниты) —
 # платформенный singleton под account_admin, тот же паттерн, что у ACS.
 router.include_router(host_services_settings_router)
+# NOPASSWD sudo для тестовых учёток (has_sudo) — self-service per-department
+# (department_admin/service admin своего отдела) + оверсайт account_admin
+# (/departments), тот же паттерн, что у ACS department-access.
+router.include_router(account_nopasswd_sudo_settings_router)

@@ -236,6 +236,17 @@ def build_sudoers_line(management_user: str) -> str:
     return f"{management_user} ALL=(ALL) NOPASSWD: ALL"
 
 
+def build_account_sudoers_line(login: str) -> str:
+    """NOPASSWD-строка sudoers для ОДНОГО OS-аккаунта (per-user, не per-group).
+
+    Та же форма правила, что и `build_sudoers_line` для управляющего
+    пользователя, но применяется к конкретному `server_account.login`, а не к
+    группе `sudo` целиком — остальные члены группы (если такие есть) свой
+    пароль на sudo продолжают вводить как обычно.
+    """
+    return f"{login} ALL=(ALL) NOPASSWD: ALL"
+
+
 def build_detect_management_mode_probe() -> str:
     """Probe-команда детекта редакции ОС: печатает ``ASTRA=`` и ``LEVEL=``.
 

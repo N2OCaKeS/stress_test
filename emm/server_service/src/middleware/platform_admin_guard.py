@@ -197,6 +197,13 @@ _SETTINGS_PREFIX = "/api/server/v1/settings"
 # `_is_settings_path` ниже, никакого отдельного allow для него нет.
 _HOST_SERVICES_SETTINGS_PREFIX = "/api/server/v1/settings/host-services"
 
+# Self-service NOPASSWD sudo флаг своего отдела (`/settings/account-nopasswd-sudo`,
+# GET/PUT). Per-department бизнес-данные — account_admin сюда не должен попадать;
+# оверсайт-путь для account_admin живёт отдельно, точным сиблингом-суффиксом
+# `/settings/account-nopasswd-sudo/departments` (см. `_is_settings_path` ниже —
+# вычитается только этот ровный путь, не его `/departments`-хвост).
+_ACCOUNT_NOPASSWD_SUDO_SELF_SERVICE_PATH = "/api/server/v1/settings/account-nopasswd-sudo"
+
 # Статус ASTRA-сервисов + статус/control per-department systemd-юнитов на
 # хосте. Разделено по методу+пути, а не одним префиксом, как раньше:
 #
@@ -304,16 +311,28 @@ def _is_host_services_settings_path(path: str) -> bool:
     return path == _HOST_SERVICES_SETTINGS_PREFIX or path.startswith(_HOST_SERVICES_SETTINGS_PREFIX + "/")
 
 
+def _is_account_nopasswd_sudo_self_service_path(path: str) -> bool:
+    """True только для точного self-service пути (`/settings/account-nopasswd-sudo`).
+
+    Не матчит `/settings/account-nopasswd-sudo/departments` — тот остаётся
+    account_admin-оверсайтом и не вычитается из `_is_settings_path`.
+    """
+    return path == _ACCOUNT_NOPASSWD_SUDO_SELF_SERVICE_PATH
+
+
 def _is_settings_path(path: str) -> bool:
     """True для платформенных настроек проб статуса (`/settings*`).
 
     Сервисная настройка под `account_admin` — исключение из business-data-блока.
     Точная проверка роли — в `require_account_admin`; middleware путь просто не
     блокирует. Матч по префиксу + границе сегмента. `/settings/host-services*`
-    вычитается явно — это per-department бизнес-данные, не платформенная
-    настройка (см. `_is_host_services_settings_path`).
+    и точный self-service `/settings/account-nopasswd-sudo` вычитаются явно —
+    это per-department бизнес-данные, не платформенная настройка (см.
+    `_is_host_services_settings_path` / `_is_account_nopasswd_sudo_self_service_path`).
     """
     if _is_host_services_settings_path(path):
+        return False
+    if _is_account_nopasswd_sudo_self_service_path(path):
         return False
     return path == _SETTINGS_PREFIX or path.startswith(_SETTINGS_PREFIX + "/")
 

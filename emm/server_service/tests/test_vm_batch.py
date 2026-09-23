@@ -101,6 +101,7 @@ async def test_create_with_accounts_and_hostname(
     assert payload["accounts"] == [{
         "account_id": acc.id, "login": "alice",
         "has_sudo": False, "unix_groups": [], "ssh_public_key": None,
+        "nopasswd_sudo": False,
     }]
 
 

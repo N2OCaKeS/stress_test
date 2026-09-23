@@ -399,6 +399,43 @@ async def require_host_service_action(
     )
 
 
+async def require_department_nopasswd_sudo_action(
+    db: AsyncSession,
+    identity: IdentityContext,
+    department_id: str,
+) -> None:
+    """Бросает AuthorizationError, если caller не может править NOPASSWD sudo
+    настройку своего отдела (`/settings/account-nopasswd-sudo`).
+
+    Тот же bypass-паттерн, что и `require_host_service_action`:
+    `department_admin` своего отдела проходит без матрицы, иначе — обычная
+    проверка `has_action(EntityType.SERVER_ACCOUNT, GRANT_SUDO)`. `GRANT_SUDO`
+    переиспользован намеренно: тумблер «класть ли NOPASSWD sudo-аккаунтам при
+    provision» — тот же уровень privilege-эскалации, что и сам грант sudo
+    (`create_account`/`update_account`), заводить для него отдельный action
+    ролевой матрицы ради одного тумблера избыточно.
+
+    `account_admin`-оверсайт (любой отдел) живёт отдельно —
+    `/settings/account-nopasswd-sudo/departments`, под `AccountAdminIdentity`,
+    эта функция туда не зовётся.
+    """
+    if (
+        identity.platform_role == PlatformRole.DEPARTMENT_ADMIN
+        and identity.department_id is not None
+        and identity.department_id == department_id
+    ):
+        return
+    if identity.department_id == department_id and await has_action(
+        db, identity, EntityType.SERVER_ACCOUNT, Action.GRANT_SUDO
+    ):
+        return
+    raise AuthorizationError(
+        error_code="PERMISSION_DENIED",
+        message="No access to action 'grant_sudo' on server_account for this department",
+        details={"entity_type": EntityType.SERVER_ACCOUNT, "action": Action.GRANT_SUDO},
+    )
+
+
 async def effective_actions(
     db: AsyncSession,
     identity: IdentityContext,

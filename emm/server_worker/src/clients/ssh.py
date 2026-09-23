@@ -746,6 +746,7 @@ class SshClient:
         home_dir: str | None = None,
         public_key: str | None = None,
         force_replace: bool = False,
+        nopasswd_sudo: bool = False,
     ) -> None:
         """Завести OS-пользователя через `useradd` + опционально задать пароль.
 
@@ -759,6 +760,15 @@ class SshClient:
         `force_replace=True` затирает файл целиком (re-provision после
         переустановки ОС), иначе ключ добавляется idempotent'но (`grep -qxF`).
 
+        `nopasswd_sudo=True` (server_service резолвит это заранее из per-department
+        настройки `/settings/account-nopasswd-sudo`) вдобавок кладёт per-user
+        NOPASSWD sudoers-правило (`install_account_sudoers`) — членство в
+        группе `sudo` из `has_sudo` этот пароль не отменяет, отдельная запись
+        нужна именно чтобы прицельно снять запрос пароля с одной учётки, не
+        трогая остальных членов группы. `nopasswd_sudo=False` (дефолт, и весь
+        существующий трафик, где отдел настройку не включал) — ни одной лишней
+        SSH-команды: no-op, sudoers не трогаем вовсе.
+
         Безопасность: все аргументы (login/shell/home/groups) валидируются
         regex'ами до подстановки в команду — это защита от shell-инъекции.
         `new_password` идёт только на stdin chpasswd, в командную строку и в
@@ -770,6 +780,7 @@ class SshClient:
             # синхронизируем их (как usermod), чтобы повтор был осмысленным.
             await self.modify_user(
                 login, groups=groups, has_sudo=has_sudo, shell=shell,
+                nopasswd_sudo=nopasswd_sudo,
             )
             # Пустой/None пароль = «не ставить пароль»: chpasswd на пустом
             # payload'е (`login:\n`) падает с 'missing new password'.
@@ -816,6 +827,8 @@ class SshClient:
                 force_replace=force_replace,
                 target_home=home_dir,
             )
+        if nopasswd_sudo:
+            await self.install_account_sudoers(login)
 
     async def _write_authorized_key(
         self, login: str, public_key: str, *, force_replace: bool,
@@ -978,13 +991,23 @@ class SshClient:
         groups: list[str] | None = None,
         has_sudo: bool = False,
         shell: str | None = None,
+        nopasswd_sudo: bool = False,
     ) -> None:
         """Синхронизировать атрибуты пользователя через `usermod`.
 
         Меняет login shell (`-s`) и состав дополнительных групп (`-G`, с
         перезаписью — флаг без `-a`, чтобы убрать выпавшие из аккаунта группы).
         Пароль здесь не трогаем — для пароля есть `set_password`. Если нечего
-        менять (нет ни shell, ни групп, ни sudo) — no-op.
+        менять (ни shell, ни групп, ни sudo) — no-op.
+
+        `nopasswd_sudo=True` дополнительно кладёт per-user NOPASSWD sudoers-
+        правило (`install_account_sudoers`), как и `create_user`.
+        `nopasswd_sudo=False` (дефолт) sudoers вообще не трогает — самой
+        настройки может не быть в игре для этого вызова, лишняя SSH-команда на
+        каждый usermod (в т.ч. под капотом `bootstrap_management_user`, где
+        `nopasswd_sudo` никогда не передаётся) была бы чистым накладным
+        расходом. Снятие уже поставленного правила при выключении настройки —
+        отдельный явный путь через `remove_account_sudoers`, не эта функция.
         """
         self._validate_login(login)
         safe_shell = self._safe_path(shell, "shell") if shell is not None else None
@@ -994,29 +1017,91 @@ class SshClient:
             shell=safe_shell, groups=group_set,
         )
         # Нечего менять (ни shell, ни групп) — билдер вернул None, no-op.
-        if command is None:
-            return
-        rc, _out, stderr = await self.run(command, sudo=True)
+        if command is not None:
+            rc, _out, stderr = await self.run(command, sudo=True)
+            if rc != 0:
+                raise SshError(
+                    error_code="SSH_USERMOD_FAILED",
+                    host=self.host,
+                    cmd_sanitized=f"usermod <{login}>",
+                    returncode=rc,
+                    stderr=stderr.strip(),
+                    message=f"usermod exit code {rc}",
+                )
+        if nopasswd_sudo:
+            await self.install_account_sudoers(login)
+
+    async def install_account_sudoers(self, login: str) -> bool:
+        """Положить per-user NOPASSWD sudoers-правило для одной учётки.
+
+        Отдельный drop-in `/etc/sudoers.d/<login>-nopasswd` — НЕ трогает
+        группу `sudo` целиком и НЕ эскалирует привилегии прочих её членов.
+        По образцу `bootstrap_management_user`'овского шага 2: правило идёт на
+        stdin, сначала во временный файл, `visudo -cf` валидирует его ДО
+        перемещения на место (`build_sudoers_install`) — битый sudoers никогда
+        не долетает до `/etc/sudoers.d/`.
+
+        Fail-safe, не fail-open: если валидация не прошла (`visudo` вернул
+        non-zero — испорченный login/окружение на боксе), НЕ поднимаем
+        `SshError` — логируем предупреждение и возвращаем `False`. Аккаунт
+        остаётся в обычной парольно-запрашивающей группе `sudo` (уже
+        применённой `has_sudo`-веткой выше), провижн в целом не проваливается.
+        """
+        self._validate_login(login)
+        sudoers_path = f"/etc/sudoers.d/{login}-nopasswd"
+        sudoers_line = cmd_builders.build_account_sudoers_line(login)
+        rc, _out, stderr = await self.run(
+            cmd_builders.build_sudoers_install(sudoers_path),
+            sudo=True,
+            stdin_payload=f"{sudoers_line}\n",
+        )
         if rc != 0:
-            raise SshError(
-                error_code="SSH_USERMOD_FAILED",
-                host=self.host,
-                cmd_sanitized=f"usermod <{login}>",
-                returncode=rc,
-                stderr=stderr.strip(),
-                message=f"usermod exit code {rc}",
+            logger.warning(
+                "nopasswd sudoers for %s on %s rejected by visudo (rc=%s): %s",
+                login, self.host, rc, stderr.strip(),
+            )
+            return False
+        return True
+
+    async def remove_account_sudoers(self, login: str) -> None:
+        """Снести `/etc/sudoers.d/<login>-nopasswd`, если он был поставлен.
+
+        Idempotent (`rm -f`) — зовётся из `delete_user` только когда caller
+        (server_service, через `nopasswd_sudo` в payload) подтвердил, что файл
+        мог существовать. Не должен ронять caller'а: неудачный `rm` —
+        предупреждение в лог, не исключение (осиротевший файл ссылается на
+        снесённого пользователя и сам по себе привилегий не даёт).
+        """
+        self._validate_login(login)
+        sudoers_path = f"/etc/sudoers.d/{login}-nopasswd"
+        rc, _out, stderr = await self.run(f"rm -f {sudoers_path}", sudo=True)
+        if rc != 0:
+            logger.warning(
+                "failed to remove nopasswd sudoers for %s on %s (rc=%s): %s",
+                login, self.host, rc, stderr.strip(),
             )
 
-    async def delete_user(self, login: str, *, remove_home: bool = False) -> None:
+    async def delete_user(
+        self, login: str, *, remove_home: bool = False, nopasswd_sudo: bool = False,
+    ) -> None:
         """Удалить OS-пользователя через `userdel`.
 
-        Idempotent: если пользователя нет — выходим без ошибки (deprovision
+        Idempotent: если пользователя нет — не падаем на userdel'е (deprovision
         повторяемо). `remove_home=True` добавляет `--remove` (снести home +
         mail spool). userdel может вернуть rc=6 «user does not exist» при гонке
         — трактуем как успех.
+
+        `nopasswd_sudo=True` — server_service подтверждает, что у аккаунта
+        мог стоять per-user NOPASSWD sudoers (`has_sudo=True` и отдел на момент
+        deprovision держал настройку включённой): подчищаем
+        `/etc/sudoers.d/<login>-nopasswd`. `False` (дефолт — аккаунт никогда не
+        был sudo, либо настройка отделу не касается) — sudoers не трогаем
+        вовсе, лишней SSH-команды на каждый userdel нет.
         """
         self._validate_login(login)
         if not await self.user_exists(login):
+            if nopasswd_sudo:
+                await self.remove_account_sudoers(login)
             return
         rc, _out, stderr = await self.run(
             cmd_builders.build_userdel(
@@ -1034,6 +1119,8 @@ class SshClient:
                 stderr=stderr.strip(),
                 message=f"userdel exit code {rc}",
             )
+        if nopasswd_sudo:
+            await self.remove_account_sudoers(login)
 
     async def remove_management_sudoers(self, management_user: str) -> None:
         """Снести `/etc/sudoers.d/<user>-management` управляющей учётки.

@@ -22,6 +22,7 @@ import {
   ScanSearch,
   ServerIcon,
   ShieldCheck,
+  ShieldOff,
   Terminal,
   Unplug,
   UserCog,
@@ -52,6 +53,7 @@ import { ServicesIgnoredLogins } from "./services/ServicesIgnoredLogins";
 import { ServicesManagementUser } from "./services/ServicesManagementUser";
 import { ServicesProbeSettings } from "./services/ServicesProbeSettings";
 import { ServicesAcsSettings } from "./services/ServicesAcsSettings";
+import { ServicesAccountNopasswdSudo } from "./services/ServicesAccountNopasswdSudo";
 import { ServicesHostControl } from "./services/ServicesHostControl";
 import { ServicesPasswordPolicy } from "./services/ServicesPasswordPolicy";
 import { ServicesNavLink } from "./services/ServicesNavLink";
@@ -332,6 +334,19 @@ const STATIC_ITEMS: AdminItem[] = [
     // сшивается на фронте с каталогом отделов auth_service. Остальным
     // backend ответит 403.
     visibleFor: (p) => isAccountAdmin(p),
+  },
+  {
+    id: "services.server.account_nopasswd_sudo",
+    label: "NOPASSWD sudo тестовых учёток",
+    hint: "не спрашивать пароль sudo у has_sudo-аккаунтов при provision/prepare",
+    icon: ShieldOff,
+    block: "services",
+    group: "server",
+    content: ServicesAccountNopasswdSudo,
+    // Два входа: account_admin — оверсайт всех отделов; department_admin
+    // своего отдела или server_service.admin (`canManageHostServices`) —
+    // self-service свой отдел. Компонент сам разводит контент по роли.
+    visibleFor: (p) => isAccountAdmin(p) || canManageHostServices(p),
   },
   {
     id: "services.server.host_control",

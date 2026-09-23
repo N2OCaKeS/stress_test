@@ -361,6 +361,7 @@ async def provision_user(
     home_dir: str | None = None,
     public_key: str | None = None,
     force_replace: bool = False,
+    nopasswd_sudo: bool = False,
 ) -> dict:
     """Завести OS-пользователя `login` на удалённом хосте (`useradd`).
 
@@ -390,6 +391,7 @@ async def provision_user(
             home_dir=home_dir,
             public_key=public_key,
             force_replace=force_replace,
+            nopasswd_sudo=nopasswd_sudo,
         )
     return {"provisioned": True}
 
@@ -434,11 +436,14 @@ async def modify_user(
     groups: list[str] | None = None,
     has_sudo: bool = False,
     shell: str | None = None,
+    nopasswd_sudo: bool = False,
 ) -> dict:
     """Синхронизировать атрибуты пользователя `login` (`usermod`).
 
     Меняет shell и состав групп (sudo доклеивается при `has_sudo`). Пароль не
-    трогает. На управляемом сервере (`credentials['is_managed']`) сессия идёт
+    трогает. `nopasswd_sudo` реконсилит per-user NOPASSWD sudoers-правило
+    независимо от того, поменялись ли groups/shell (см. `SshClient.modify_user`).
+    На управляемом сервере (`credentials['is_managed']`) сессия идёт
     под управляющим пользователем по ключу с sudo; иначе — под самим аккаунтом.
     Возврат — `{modified: True}`. Ошибки — `SshError`.
     """
@@ -447,6 +452,7 @@ async def modify_user(
     async with _build_session(credentials, server_id) as ssh:
         await ssh.modify_user(
             login, groups=groups, has_sudo=has_sudo, shell=shell,
+            nopasswd_sudo=nopasswd_sudo,
         )
     return {"modified": True}
 
@@ -457,19 +463,23 @@ async def delete_user(
     *,
     login: str,
     remove_home: bool = False,
+    nopasswd_sudo: bool = False,
 ) -> dict:
     """Удалить пользователя `login` на удалённом хосте (`userdel`).
 
     Idempotent: отсутствующий пользователь — не ошибка. `remove_home=True`
-    сносит home. На управляемом сервере (`credentials['is_managed']`) сессия
-    идёт под управляющим пользователем по ключу с sudo; иначе — под самим
-    аккаунтом (нельзя удалить юзера, под которым залогинен — для этого и нужен
+    сносит home. `nopasswd_sudo=True` дополнительно подчищает per-user
+    NOPASSWD sudoers-правило (`/etc/sudoers.d/<login>-nopasswd`), если оно
+    могло быть поставлено (server_service подтверждает это в payload). На
+    управляемом сервере (`credentials['is_managed']`) сессия идёт под
+    управляющим пользователем по ключу с sudo; иначе — под самим аккаунтом
+    (нельзя удалить юзера, под которым залогинен — для этого и нужен
     управляющий пользователь). Возврат — `{deleted: True}`. Ошибки — `SshError`.
     """
     logger.info("ssh userdel %s on %s", login, _extract_host(credentials, server_id))
     await attach_management_creds(credentials, server_id)
     async with _build_session(credentials, server_id) as ssh:
-        await ssh.delete_user(login, remove_home=remove_home)
+        await ssh.delete_user(login, remove_home=remove_home, nopasswd_sudo=nopasswd_sudo)
     return {"deleted": True}
 
 

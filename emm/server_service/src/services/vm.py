@@ -67,6 +67,7 @@ from src.schemas.vm import (
     VmCredStrategyRequest,
     VmUpdateRequest,
 )
+from src.services import account_nopasswd_sudo_settings as nopasswd_sudo_svc
 from src.services import audit_service, console_token, permissions, reservation, secrets_service, worker_client
 from src.services import box_service
 from src.services import management_user_config
@@ -381,6 +382,12 @@ async def create_vm(
     accounts = await _resolve_vm_accounts(
         db, identity, payload.department_id, payload.accounts
     )
+    # Один lookup на всю ВМ (все привязанные учётки делят department ВМ) —
+    # sudo-аккаунты получат per-user NOPASSWD sudoers-правило только если
+    # отдел явно включил `/settings/account-nopasswd-sudo`.
+    dept_nopasswd_sudo_enabled = await nopasswd_sudo_svc.is_enabled_for_department(
+        db, payload.department_id,
+    )
 
     # Резолв box→box_url из каталога образов ДО INSERT'а: воркеру нужен URL,
     # откуда скачивать образ. Нет записи в каталоге → 400 (карточку не заводим).
@@ -520,6 +527,7 @@ async def create_vm(
                 "has_sudo": a.has_sudo,
                 "unix_groups": list(a.unix_groups or []),
                 "ssh_public_key": a.ssh_public_key,
+                "nopasswd_sudo": bool(a.has_sudo) and dept_nopasswd_sudo_enabled,
             }
             for a in accounts
         ],

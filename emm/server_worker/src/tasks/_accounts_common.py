@@ -179,16 +179,67 @@ async def _apply_guest_key(
     )
 
 
+async def _install_account_nopasswd_sudo(
+    runner, login: str, *, host_label: str,
+) -> None:
+    """Положить per-user NOPASSWD sudoers-правило гостя (`/etc/sudoers.d/<login>-nopasswd`).
+
+    Зеркало серверного `SshClient.install_account_sudoers`, но по нестрогому
+    guest-раннеру (`_guest_step` тут не годится — он raise'ит на non-zero rc, а
+    установка sudoers обязана быть fail-safe, не fail-open): битая
+    визуда-проверка не должна ронять provision, просто оставляет учётку без
+    NOPASSWD (`has_sudo`-группа уже применена отдельно). Caller зовёт эту
+    функцию только когда `nopasswd_sudo` желаемо — иначе (дефолт, весь
+    трафик, где отдел настройку не включал) sudoers вообще не трогаем, ни
+    одной лишней команды.
+    """
+    sudoers_path = f"/etc/sudoers.d/{login}-nopasswd"
+    rc, _out, stderr = await runner.run(
+        cmd_builders.build_sudoers_install(sudoers_path),
+        sudo=True,
+        stdin=f"{cmd_builders.build_account_sudoers_line(login)}\n",
+    )
+    if rc != 0:
+        logger.warning(
+            "vm nopasswd sudoers for %s on %s rejected by visudo (rc=%s): %s",
+            login, host_label, rc, (stderr or "").strip(),
+        )
+
+
+async def _remove_account_nopasswd_sudo(
+    runner, login: str, *, host_label: str,
+) -> None:
+    """Снести `/etc/sudoers.d/<login>-nopasswd` гостя, если он был поставлен.
+
+    Idempotent (`rm -f`) — зовётся только когда caller (server_service, через
+    `nopasswd_sudo` в payload deprovision-задачи) подтвердил, что файл мог
+    существовать. Best-effort: неудачный `rm` — предупреждение в лог, не
+    исключение.
+    """
+    sudoers_path = f"/etc/sudoers.d/{login}-nopasswd"
+    rc, _out, stderr = await runner.run(f"rm -f {sudoers_path}", sudo=True)
+    if rc != 0:
+        logger.warning(
+            "vm: failed to remove nopasswd sudoers for %s on %s (rc=%s): %s",
+            login, host_label, rc, (stderr or "").strip(),
+        )
+
+
 async def provision_account(
     runner, acc: dict, *, host_label: str, target_dept: str | None,
 ) -> str | None:
     """Завести одну привязанную к ВМ учётку в госте (useradd + группы/пароль/ключ).
 
     `acc` — dict привязанного `server_account`: `{login, password?,
-    ssh_public_key?, has_sudo?, unix_groups?, account_id?/id?, server_id?}`.
-    Пароль берём из `password` (если server_service положил его в dispatch),
-    иначе тянем best-effort через internal. useradd идемпотентен (id-guard),
-    группы добиваем `usermod -aG`; их фейл критичен (`VM_CREATE_FAILED`).
+    ssh_public_key?, has_sudo?, unix_groups?, nopasswd_sudo?, account_id?/id?,
+    server_id?}`. Пароль берём из `password` (если server_service положил его в
+    dispatch), иначе тянем best-effort через internal. useradd идемпотентен
+    (id-guard), группы добиваем `usermod -aG`; их фейл критичен (`VM_CREATE_FAILED`).
+
+    `nopasswd_sudo` — server_service уже резолвил has_sudo AND department-
+    настройку `/settings/account-nopasswd-sudo`; `True` кладёт per-user
+    sudoers-файл гостя (`_install_account_nopasswd_sudo`), `False` (дефолт)
+    sudoers вообще не трогает.
 
     Не-dict элемент пропускается (возвращает `None`); иначе возвращает
     заведённый login.
@@ -225,17 +276,24 @@ async def provision_account(
     public_key = acc.get("ssh_public_key")
     if public_key:
         await _apply_guest_key(runner, login, public_key, host_label=host_label)
+    if bool(acc.get("has_sudo")) and bool(acc.get("nopasswd_sudo")):
+        await _install_account_nopasswd_sudo(runner, login, host_label=host_label)
     return login
 
 
 async def update_account_on_host(
     runner, login: str, groups: list[str], *,
     error_code: str = "VM_UPDATE_FAILED",
+    has_sudo: bool = False,
+    nopasswd_sudo: bool = False,
+    host_label: str = "",
 ) -> None:
     """Синхронизировать группы/sudo учётки в госте (`usermod -aG`, аддитивно).
 
     Аддитивно к текущим группам — как серверный `account.update_on_host`.
-    Пустой список групп — no-op (пароль здесь не трогаем).
+    Пустой список групп — no-op. `nopasswd_sudo=True` дополнительно кладёт
+    per-user NOPASSWD sudoers-правило; `False` (дефолт) sudoers не трогает —
+    пароль здесь не трогаем в любом случае.
     """
     usermod_cmd = cmd_builders.build_usermod(
         login, flavor=cmd_builders.VM, groups=groups,
@@ -247,15 +305,25 @@ async def update_account_on_host(
             error_code,
             f"не удалось обновить группы пользователю {login} в госте",
         )
+    if bool(has_sudo) and bool(nopasswd_sudo):
+        await _install_account_nopasswd_sudo(
+            runner, login, host_label=host_label or runner.host,
+        )
 
 
 async def deprovision_account(
     runner, login: str, *, remove_home: bool = False,
     error_code: str = "VM_DEPROVISION_FAILED",
+    host_label: str = "",
+    nopasswd_sudo: bool = False,
 ) -> None:
     """Удалить учётку из гостя (`userdel`, опц. `-r`).
 
     Идемпотентно: если пользователя в госте нет — не падает (`id ... || true`).
+    `nopasswd_sudo=True` — server_service подтверждает, что per-user NOPASSWD
+    sudoers мог быть поставлен (`has_sudo=True` и отдел на момент deprovision
+    держал настройку включённой): подчищаем `/etc/sudoers.d/<login>-nopasswd`.
+    `False` (дефолт) — sudoers не трогаем, лишней команды на каждый userdel нет.
     """
     await _guest_step(
         runner,
@@ -265,3 +333,7 @@ async def deprovision_account(
         error_code,
         f"не удалось удалить пользователя {login} в госте",
     )
+    if nopasswd_sudo:
+        await _remove_account_nopasswd_sudo(
+            runner, login, host_label=host_label or runner.host,
+        )

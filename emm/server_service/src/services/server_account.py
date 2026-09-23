@@ -57,6 +57,7 @@ from src.schemas.server_account import (
     ServerAccountVmsUpdate,
 )
 from src.services import (
+    account_nopasswd_sudo_settings as nopasswd_sudo_svc,
     audit_context,
     audit_service,
     permissions,
@@ -1639,18 +1640,27 @@ async def _dispatch_deprovision_after_unlink(
     login: str,
     server_ids: list[str],
     request_id: str | None,
+    *,
+    has_sudo: bool = False,
 ) -> None:
     """Снять OS-учётку с боксов, к которым аккаунт только что отвязали.
 
     Связки в БД уже удалены, поэтому payload собираем из server-row'ов напрямую
     (не из M2M-линка). Best-effort fan-out: фейл диспатча на один сервер не
     мешает остальным и не откатывает отвязку — фиксируем audit-warning'ом.
+
+    `has_sudo` — снимок аккаунта на момент отвязки (сама строка уже могла
+    измениться): нужен, чтобы решить, снимать ли per-user NOPASSWD sudoers
+    (`nopasswd_sudo` в payload) — зеркало `_build_account_task_payload`.
     """
     servers = await load_visible_servers(db, identity, server_ids)
     for sid in server_ids:
         server = servers.get(sid)
         if server is None:
             continue
+        nopasswd_sudo = has_sudo and await nopasswd_sudo_svc.is_enabled_for_department(
+            db, server.department_id,
+        )
         payload = {
             "server_id": server.id,
             "account_id": account_id,
@@ -1662,6 +1672,7 @@ async def _dispatch_deprovision_after_unlink(
             "is_managed": server.is_managed,
             "management_user": server.management_user,
             "remove_home": False,
+            "nopasswd_sudo": nopasswd_sudo,
         }
         try:
             task_id, _ = await worker_client.dispatch_task_with_hit(
@@ -1804,6 +1815,7 @@ async def unlink_servers(
     if present_targets:
         await _dispatch_deprovision_after_unlink(
             db, identity, account_id, login, sorted(present_targets), request_id,
+            has_sudo=obj.has_sudo,
         )
     return obj
 

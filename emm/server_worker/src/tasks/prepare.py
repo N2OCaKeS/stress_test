@@ -293,7 +293,9 @@ async def _provision_linked_accounts(
     Каждый элемент `linked_accounts` — это креды одного server_account'а,
     сложенные server_service'ом в bootstrap-stash рядом с bootstrap-кредами:
     `{login, password?, ssh_public_key?, ssh_private_key?, has_sudo,
-    unix_groups, shell, home_dir}`. Провизионим под управляющей сессией по
+    unix_groups, shell, home_dir, nopasswd_sudo}`. `nopasswd_sudo` —
+    server_service уже резолвил has_sudo AND department-настройку, здесь
+    просто прокидываем bool дальше. Провизионим под управляющей сессией по
     ключу (сервер уже managed), переиспользуя обычный `ssh_client.provision_user`
     — useradd + chpasswd (если есть пароль) + authorized_keys (ключ; нет ключа
     — provision_user/create_user отрабатывает без него, как в discovered-флоу).
@@ -350,6 +352,7 @@ async def _provision_linked_accounts(
             home_dir=account.get("home_dir"),
             public_key=account.get("ssh_public_key"),
             force_replace=True,
+            nopasswd_sudo=bool(account.get("nopasswd_sudo")),
         )
 
 

@@ -436,7 +436,9 @@ async def account_provision(task_id: str) -> None:
     пароля. На не управляемом сервере пароль обязателен (self-сессия).
 
     Параметры: `task_id`. Payload — `server_id`, `account_id`, `login`,
-    `has_sudo`, `unix_groups`, `shell`, `home_dir`, опц. `target_department_id`,
+    `has_sudo`, `unix_groups`, `shell`, `home_dir`, опц. `nopasswd_sudo`
+    (per-user NOPASSWD sudoers, server_service резолвит из department-настройки),
+    опц. `target_department_id`,
     `is_managed`, `management_user`.
 
     Idempotent: уже существующий пользователь синхронизируется, не падает.
@@ -561,6 +563,7 @@ async def account_provision(task_id: str) -> None:
                 home_dir=payload.get("home_dir"),
                 public_key=inline_public_key,
                 force_replace=force_replace,
+                nopasswd_sudo=bool(payload.get("nopasswd_sudo")),
             )
             await server_service_client.submit_provision_status(
                 server_id, account_id, "provision", True, target_dept,
@@ -665,6 +668,7 @@ async def account_update_on_host(task_id: str) -> None:
             groups=payload.get("unix_groups") or [],
             has_sudo=bool(payload.get("has_sudo")),
             shell=payload.get("shell"),
+            nopasswd_sudo=bool(payload.get("nopasswd_sudo")),
         )
 
         # Пароль. Прописываем текущий хранимый пароль на боксе, когда
@@ -729,7 +733,8 @@ async def account_deprovision(task_id: str) -> None:
     берётся из payload.
 
     Параметры: `task_id`. Payload — `server_id`, `account_id`, `login`,
-    опц. `remove_home`, `target_department_id`.
+    опц. `remove_home`, `target_department_id`, `nopasswd_sudo` (подчистить
+    per-user NOPASSWD sudoers, если он мог быть поставлен).
 
     Idempotent: отсутствующий пользователь — не ошибка.
 
@@ -751,6 +756,7 @@ async def account_deprovision(task_id: str) -> None:
         creds = await _account_creds(payload, server_id, account_id, target_dept)
         await ssh_client.delete_user(
             creds, server_id, login=creds["login"], remove_home=remove_home,
+            nopasswd_sudo=bool(payload.get("nopasswd_sudo")),
         )
         await server_service_client.submit_provision_status(
             server_id, account_id, "deprovision", False, target_dept,

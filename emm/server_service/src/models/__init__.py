@@ -1,5 +1,6 @@
 """Пакет ORM-моделей — импортируем все модели, чтобы Alembic их видел."""
 
+from src.models.account_nopasswd_sudo_settings import AccountNopasswdSudoSettings
 from src.models.acs_department_access import AcsDepartmentAccess
 from src.models.acs_settings import AcsSettings
 from src.models.box import Box
@@ -39,6 +40,7 @@ from src.models.vm_preset import VmPreset
 from src.models.vm_snapshot import VmSnapshot
 
 __all__ = [
+    "AccountNopasswdSudoSettings",
     "AcsDepartmentAccess",
     "AcsSettings",
     "Box",

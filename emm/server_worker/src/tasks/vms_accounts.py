@@ -49,7 +49,8 @@ async def vm_account_provision(task_id: str) -> None:
     через internal по `account_id`; публичный ключ и группы — из payload).
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`, hub-блок, `guest_ip`,
-    `login`, `account_id`, опц. `has_sudo`/`unix_groups`/`ssh_public_key`.
+    `login`, `account_id`, опц. `has_sudo`/`unix_groups`/`ssh_public_key`/
+    `nopasswd_sudo` (per-user NOPASSWD sudoers, резолвит server_service).
 
     Возвращает: `{vm_id, vm_name, login, present, provisioned}`.
     """
@@ -67,6 +68,7 @@ async def vm_account_provision(task_id: str) -> None:
             "has_sudo": payload.get("has_sudo"),
             "unix_groups": payload.get("unix_groups") or [],
             "ssh_public_key": payload.get("ssh_public_key"),
+            "nopasswd_sudo": payload.get("nopasswd_sudo"),
         }
         session, host = await open_hub_session(payload)
         async with session as ssh:
@@ -107,7 +109,7 @@ async def vm_account_update_on_host(task_id: str) -> None:
     Аддитивно к текущим группам — как серверный `account.update_on_host`.
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`, hub-блок, `guest_ip`,
-    `login`, опц. `has_sudo`/`unix_groups`.
+    `login`, опц. `has_sudo`/`unix_groups`/`nopasswd_sudo`.
 
     Возвращает: `{vm_id, vm_name, login, present, operation}`.
     """
@@ -126,7 +128,12 @@ async def vm_account_update_on_host(task_id: str) -> None:
             connect = choose_guest_connector(guest_ip, mgmt_user, key_path)
             runner = GuestHopRunner(ssh, connect, host=host)
             try:
-                await accounts_common.update_account_on_host(runner, login, groups)
+                await accounts_common.update_account_on_host(
+                    runner, login, groups,
+                    has_sudo=bool(payload.get("has_sudo")),
+                    nopasswd_sudo=bool(payload.get("nopasswd_sudo")),
+                    host_label=host_label,
+                )
             finally:
                 if key_path:
                     await _shred_temp_key(ssh, key_path)
@@ -156,7 +163,8 @@ async def vm_account_deprovision(task_id: str) -> None:
     пользователя в госте нет — не падает.
 
     Параметры: `task_id`. Payload — `vm_id`, `vm_name`, hub-блок, `guest_ip`,
-    `login`, опц. `remove_home`.
+    `login`, опц. `remove_home`, `nopasswd_sudo` (подчистить per-user NOPASSWD
+    sudoers, если он мог быть поставлен).
 
     Возвращает: `{vm_id, vm_name, login, present, operation}`.
     """
@@ -177,6 +185,8 @@ async def vm_account_deprovision(task_id: str) -> None:
             try:
                 await accounts_common.deprovision_account(
                     runner, login, remove_home=remove_home,
+                    nopasswd_sudo=bool(payload.get("nopasswd_sudo")),
+                    host_label=host_label,
                 )
             finally:
                 if key_path:

@@ -40,7 +40,7 @@ from src.dependencies.auth import Identity
 from src.models import TestStand
 from src.repositories import test_stand as repo
 from src.schemas.test_stand import TestStandCreate, TestStandUpdate
-from src.services import audit_service, permissions, server_client
+from src.services import audit_service, permissions, server_client, stand_metrics
 from src.utils.ids import test_stand_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -214,6 +214,18 @@ async def list_test_stands(
         server_id=server_id,
     )
     return items, total
+
+
+async def get_pool_metrics(
+    db: AsyncSession, identity: Identity,
+) -> dict[str, stand_metrics.StandMetrics]:
+    """Живые CPU/RAM всех активных стендов отдела вызывающего (см. `services/stand_metrics.py`).
+
+    Только свой отдел — та же изоляция, что и у обзора пула, без отдельного
+    `department_id`-параметра: карточке нужны только стенды текущего юзера.
+    """
+    stands = await repo.list_all(db, limit=1000, department_id=identity.department_id or "", is_active=True)
+    return await stand_metrics.get_pool_metrics(stands)
 
 
 async def get_stand_or_404(

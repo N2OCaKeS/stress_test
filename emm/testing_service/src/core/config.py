@@ -181,6 +181,34 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Живые CPU/RAM стенда (замена placeholder-метрик фронтенда) ──────────
+    stand_metrics_port: int = Field(
+        default=9100,
+        alias="STAND_METRICS_PORT",
+        description="Порт node_exporter на стенде, куда сервис ходит напрямую HTTP-скрейпом.",
+    )
+    stand_metrics_scrape_timeout_seconds: float = Field(
+        default=2.0,
+        gt=0,
+        alias="STAND_METRICS_SCRAPE_TIMEOUT_SECONDS",
+        description=(
+            "Таймаут одного HTTP-запроса к `/metrics` node_exporter'а. Стенд "
+            "без node_exporter'а или недоступный по сети не должен подвешивать "
+            "обзор пула — таймаут короткий, недобор данных отдаётся как 0."
+        ),
+    )
+    stand_metrics_cache_seconds: float = Field(
+        default=10.0,
+        ge=0,
+        alias="STAND_METRICS_CACHE_SECONDS",
+        description=(
+            "TTL in-memory кэша последнего замера на стенд. Карточка на "
+            "фронтенде обновляется раз в 15с — кэш короче этого интервала, "
+            "чтобы не гонять двойной скрейп на каждый polling-тик, если "
+            "открыто несколько вкладок/пользователей одновременно."
+        ),
+    )
+
     # ── Secret service (reveal Jira/Zephyr/Confluence-кред department_integration_settings, §6) ─
 
     secret_service_url: str = Field(

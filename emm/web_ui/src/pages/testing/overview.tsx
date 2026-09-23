@@ -81,7 +81,7 @@ import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { useMockMode, useQuery } from "@/api/auth/useQuery";
 import { useToast } from "@/contexts/ToastContext";
 import { apiErrMsg } from "@/api/client";
-import { getTestStand, listTestStands } from "@/api/testing/testStands";
+import { getTestStand, listTestStandMetrics, listTestStands } from "@/api/testing/testStands";
 import {
   launchQueueItem,
   listQueueItems,
@@ -141,35 +141,24 @@ function asServerCard(server: Record<string, unknown> | null): LiveServerCard | 
   return server as LiveServerCard | null;
 }
 
-function hashSeed(id: string): number {
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return hash;
-}
-
-function clampPct(value: number): number {
-  return Math.max(0, Math.min(100, Math.round(value)));
-}
-
 /**
- * `testing_service`/`server_service` пока не отдают отдельную live-метрику
- * загрузки стенда (CPU/RAM/температура) — только идентичность и `busy_state`.
- * Значения ниже — детерминированная (по id стенда) заглушка, чтобы дашборд
- * не пустовал визуально до появления реального телеметрического эндпоинта.
+ * Живые CPU/RAM стенда — `GET /test-stands/metrics` (`testing_service`,
+ * прямой скрейп node_exporter'а на порту 9100, см.
+ * `testing_service/src/services/stand_metrics.py`). Заменяет прежнюю
+ * детерминированную заглушку по хэшу id. Backend отдаёт суммарный
+ * `cpu_percent`, не разбивку user/system — вся величина кладётся в `cpuUser`,
+ * `cpuSystem` остаётся 0 (не выдумываем деление, которого нет). Температура
+ * CPU и диски (NVMe/SDA) тоже не берутся — надёжного универсального
+ * источника для них на стенде нет. Когда данных о стенде нет вовсе (не
+ * ответил/нет в карте) — везде 0, не заглушка.
  */
-function placeholderMetrics(seed: number, status: StandStatus): StandMetrics {
-  if (status === "offline") {
-    return { cpuUser: 0, cpuSystem: 0, cpuTemp: 0, ram: 0, diskNvme: 0, diskSda: 0, history: Array(12).fill(0) };
-  }
-  const base = status === "idle" ? 6 + (seed % 12) : status === "manual" ? 18 + (seed % 30) : 28 + (seed % 60);
-  const cpuUser = clampPct(base * 0.65);
-  const cpuSystem = clampPct(Math.max(base - cpuUser, 2));
-  const ram = status === "idle" ? 20 + (seed % 20) : status === "manual" ? 30 + (seed % 35) : 38 + (seed % 50);
-  const cpuTemp = 38 + (seed % 30);
-  const diskNvme = 20 + (seed % 55);
-  const diskSda = 10 + (seed % 40);
-  const history = Array.from({ length: 12 }, (_, i) => clampPct(base + Math.sin(i * 1.3 + seed) * 12));
-  return { cpuUser, cpuSystem, cpuTemp, ram, diskNvme, diskSda, history };
+function liveMetrics(entry: { cpu_percent: number; ram_percent: number } | undefined): StandMetrics {
+  const cpu = entry?.cpu_percent ?? 0;
+  const ram = entry?.ram_percent ?? 0;
+  return {
+    cpuUser: cpu, cpuSystem: 0, cpuTemp: 0, ram, diskNvme: 0, diskSda: 0,
+    history: Array(12).fill(0),
+  };
 }
 
 function mapQueueItemState(state: string): QueueState {
@@ -289,6 +278,7 @@ function mapLiveStands(
   data: TestStand[],
   queues: Map<string, StandQueue>,
   osNameById: Map<string, string>,
+  metricsById: Map<string, { cpu_percent: number; ram_percent: number }>,
 ): Stand[] {
   return data.map((stand, index) => {
     const server = asServerCard(stand.server);
@@ -330,7 +320,7 @@ function mapLiveStands(
       kernel: primary?.kernel || "—",
       currentTitle,
       currentMeta,
-      metrics: placeholderMetrics(hashSeed(stand.id), status),
+      metrics: liveMetrics(metricsById.get(stand.id)),
       queue,
       live: {
         standId: stand.id,
@@ -475,6 +465,7 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
   const queuesQuery = useQuery(fetchStandQueues, [], { enabled: !mockMode, keepPreviousDataOnError: true });
   const osVersionsQuery = useQuery(() => listOsVersions({ limit: 200 }), [], { enabled: !mockMode });
   const testsQuery = useQuery(() => listTestDefinitions({ limit: 500 }), [], { enabled: !mockMode });
+  const metricsQuery = useQuery(listTestStandMetrics, [], { enabled: !mockMode, keepPreviousDataOnError: true });
 
   // Очередь меняет не только эта страница: прерывание подтверждает воркер,
   // следующий item подхватывает сам сервис — состояние опрашивается.
@@ -484,6 +475,15 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
     const timer = setInterval(refetchQueues, 5000);
     return () => clearInterval(timer);
   }, [mockMode, refetchQueues]);
+
+  // CPU/RAM живые, но недёшевые (скрейп node_exporter'а по сети) — раз в 15с
+  // тем же ритмом, что и «Обзор пула», без нужды дёргать чаще.
+  const refetchMetrics = metricsQuery.refetch;
+  useEffect(() => {
+    if (mockMode) return;
+    const timer = setInterval(refetchMetrics, 15000);
+    return () => clearInterval(timer);
+  }, [mockMode, refetchMetrics]);
 
   const osNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -515,12 +515,18 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
     [mockMode, testsQuery.data],
   );
 
+  const metricsById = useMemo(() => {
+    const map = new Map<string, { cpu_percent: number; ram_percent: number }>();
+    for (const item of metricsQuery.data?.items ?? []) map.set(item.stand_id, item);
+    return map;
+  }, [metricsQuery.data]);
+
   const stands = useMemo<Stand[]>(
     () =>
       mockMode
         ? STANDS
-        : mapLiveStands(liveStandsQuery.data ?? [], queuesQuery.data ?? new Map<string, StandQueue>(), osNameById),
-    [mockMode, liveStandsQuery.data, queuesQuery.data, osNameById],
+        : mapLiveStands(liveStandsQuery.data ?? [], queuesQuery.data ?? new Map<string, StandQueue>(), osNameById, metricsById),
+    [mockMode, liveStandsQuery.data, queuesQuery.data, osNameById, metricsById],
   );
 
   const filteredStands = useMemo(() => {

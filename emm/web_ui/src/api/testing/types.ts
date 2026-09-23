@@ -1062,3 +1062,15 @@ export interface PoolOverviewResponse {
   stand_status_counts: Record<PoolStandStatus, number>;
   generated_at: Iso8601;
 }
+
+/** Один стенд в `GET /test-stands/metrics` — живые CPU/RAM с node_exporter'а. */
+export interface TestStandMetricsItem {
+  stand_id: string;
+  cpu_percent: number;
+  ram_percent: number;
+}
+
+/** `GET /test-stands/metrics` — батч живых CPU/RAM по активным стендам отдела. */
+export interface TestStandMetricsResponse {
+  items: TestStandMetricsItem[];
+}

@@ -26,6 +26,8 @@ from src.schemas.queue import QueueItemSummaryResponse
 from src.schemas.queue_orchestration_event import QueueOrchestrationEventResponse
 from src.schemas.test_stand import (
     TestStandCreate,
+    TestStandMetricsItem,
+    TestStandMetricsResponse,
     TestStandResponse,
     TestStandTestCredentialsResponse,
     TestStandUpdate,
@@ -110,6 +112,33 @@ async def create_test_stand(
     """Create стенда. Доступ: `(test_stand, *, create)`."""
     obj = await svc.create_test_stand(db, identity, bearer_token, body)
     return TestStandResponse.model_validate(obj)
+
+
+@router.get(
+    "/metrics",
+    response_model=TestStandMetricsResponse,
+    summary="Живые CPU/RAM активных стендов отдела",
+    description=(
+        "Прямой HTTP-скрейп node_exporter'а стенда (порт 9100), не Prometheus "
+        "— готового агрегирующего сервиса перед ним сегодня нет (см. "
+        "`services/stand_metrics.py`). Недоступный стенд/exporter — 0, не "
+        "ошибка на весь батч. Объявлен раньше `/{stand_id}`, иначе FastAPI "
+        "принял бы `metrics` за id стенда."
+    ),
+    responses={
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+    },
+)
+async def get_pool_metrics(
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> TestStandMetricsResponse:
+    """Get живых CPU/RAM по всем активным стендам своего отдела."""
+    metrics = await svc.get_pool_metrics(db, identity)
+    return TestStandMetricsResponse(items=[
+        TestStandMetricsItem(stand_id=stand_id, cpu_percent=m.cpu_percent, ram_percent=m.ram_percent)
+        for stand_id, m in metrics.items()
+    ])
 
 
 @router.get(

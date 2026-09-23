@@ -99,3 +99,21 @@ class TestStandResponse(BaseModel):
             "недоступна) — карточка стенда отдана без server-блока."
         ),
     )
+
+
+class TestStandMetricsItem(BaseModel):
+    """Живые CPU/RAM одного стенда — прямой скрейп node_exporter'а (см. `services/stand_metrics.py`).
+
+    Недоступный стенд/порт/exporter — нули, не ошибка: карточка не должна
+    гаснуть целиком из-за одного нерабочего стенда в пуле.
+    """
+
+    stand_id: str = Field(description="test_stands.id")
+    cpu_percent: float = Field(description="Утилизация CPU, % — rate между двумя снятиями node_cpu_seconds_total.")
+    ram_percent: float = Field(description="Занятая RAM, % — 1 - MemAvailable/MemTotal.")
+
+
+class TestStandMetricsResponse(BaseModel):
+    """Ответ GET /test-stands/metrics — батч живых CPU/RAM по всем активным стендам отдела."""
+
+    items: list[TestStandMetricsItem]

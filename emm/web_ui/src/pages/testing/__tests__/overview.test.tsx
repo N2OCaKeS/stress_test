@@ -14,6 +14,7 @@ const createTestStandMock = vi.fn();
 const updateTestStandMock = vi.fn();
 const deleteTestStandMock = vi.fn();
 const getTestStandCredentialsMock = vi.fn();
+const listTestStandMetricsMock = vi.fn();
 vi.mock("@/api/testing/testStands", () => ({
   listTestStands: (...a: unknown[]) => listTestStandsMock(...a),
   getTestStand: (...a: unknown[]) => getTestStandMock(...a),
@@ -22,6 +23,7 @@ vi.mock("@/api/testing/testStands", () => ({
   updateTestStand: (...a: unknown[]) => updateTestStandMock(...a),
   deleteTestStand: (...a: unknown[]) => deleteTestStandMock(...a),
   getTestStandCredentials: (...a: unknown[]) => getTestStandCredentialsMock(...a),
+  listTestStandMetrics: (...a: unknown[]) => listTestStandMetricsMock(...a),
 }));
 
 const listOsVersionsMock = vi.fn();
@@ -205,6 +207,7 @@ describe("TestingOverview — live mode (testing_service)", () => {
     updateTestStandMock.mockReset();
     deleteTestStandMock.mockReset();
     getTestStandCredentialsMock.mockReset();
+    listTestStandMetricsMock.mockReset();
     listOsVersionsMock.mockReset();
     listServersMock.mockReset();
     getPoolOverviewMock.mockReset();
@@ -227,6 +230,7 @@ describe("TestingOverview — live mode (testing_service)", () => {
       total: 1, limit: 500, offset: 0,
     });
     getPoolOverviewMock.mockResolvedValue(emptyPoolOverview());
+    listTestStandMetricsMock.mockResolvedValue({ items: [] });
     listServersMock.mockResolvedValue({
       items: [{ id: "srv_2", hostname: "stand-02", display_name: "stand-02", ip_address: "10.177.103.202" }],
       total: 1,
@@ -496,6 +500,25 @@ describe("TestingOverview — live mode (testing_service)", () => {
     expect(skipQueueItemMock).not.toHaveBeenCalled();
     await clickInConfirm(/Пропустить/);
     await waitFor(() => expect(skipQueueItemMock).toHaveBeenCalledWith("qi_61"));
+  });
+
+  it("CPU/RAM берутся из GET /test-stands/metrics, не из заглушки", async () => {
+    listTestStandMetricsMock.mockResolvedValue({
+      items: [{ stand_id: "ts_1", cpu_percent: 63, ram_percent: 41 }],
+    });
+    renderOverview();
+    await screen.findAllByText("stand-live-01");
+    // "63%" рендерится и в компактном метре, и в развёрнутой детальной сетке
+    // (cpuUser несёт всё значение, cpuSystem — 0) — оба вхождения законны.
+    expect((await screen.findAllByText("63%")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("41%").length).toBeGreaterThan(0);
+  });
+
+  it("стенд без записи в /test-stands/metrics показывает CPU/RAM как 0, не выдумку", async () => {
+    listTestStandMetricsMock.mockResolvedValue({ items: [] });
+    renderOverview();
+    await screen.findAllByText("stand-live-01");
+    expect((await screen.findAllByText("0%")).length).toBeGreaterThan(0);
   });
 
   it("если сервер недоступен — стенд показывается offline", async () => {

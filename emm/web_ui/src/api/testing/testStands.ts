@@ -16,6 +16,7 @@ import type {
   TestingPaginatedResponse,
   TestStand,
   TestStandCreateRequest,
+  TestStandMetricsResponse,
   TestStandSummary,
   TestStandTestCredentials,
   TestStandUpdateRequest,
@@ -107,6 +108,16 @@ export async function findStandByServerId(
     { query: { server_id: serverId, limit: 1 } },
   );
   return resp.items[0] ?? null;
+}
+
+/**
+ * `GET /test-stands/metrics` — живые CPU/RAM активных стендов отдела, прямым
+ * скрейпом node_exporter'а (`testing_service/src/services/stand_metrics.py`).
+ * Недоступный стенд/exporter отдаёт 0, не ошибку — карточка не гаснет из-за
+ * одного нерабочего стенда в пуле.
+ */
+export function listTestStandMetrics(): Promise<TestStandMetricsResponse> {
+  return apiGet<TestStandMetricsResponse>(`${BASE}/test-stands/metrics`);
 }
 
 /** Активный элемент очереди стенда, если есть (`null` — очередь сейчас пуста). */

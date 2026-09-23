@@ -5,10 +5,11 @@ SYS_KERNEL="${SYS_KERNEL:-$(uname -r)}"
 HOSTNAME="${HOSTNAME:-$(hostname)}"
 
 sudo install -d -m 0755 /etc
-printf '%s\n' \
-    '[global]' \
-    'index-url = http://allta.devos.astralinux.ru:3141/root/release' \
-    'trusted-host = allta.devos.astralinux.ru' | sudo tee /etc/pip.conf >/dev/null
+sudo tee /etc/pip.conf >/dev/null <<'EOF'
+[global]
+index-url = http://allta.devos.astralinux.ru:3141/root/release
+trusted-host = allta.devos.astralinux.ru
+EOF
 sudo chmod 0644 /etc/pip.conf
 
 sudo DEBIAN_FRONTEND=noninteractive apt-get update

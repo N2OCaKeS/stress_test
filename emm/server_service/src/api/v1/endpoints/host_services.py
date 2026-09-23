@@ -12,6 +12,12 @@ department/service-access гейта — как и раньше). `allta` теп
 роли (`department_id is None`) получают пустой список — им попросту нечего
 резолвить, не потому что мы их прячем. Обе категории гоняются конкурентно.
 
+Обе категории идут через TTL-кэш со stale-while-revalidate
+(`astra_health.check_all_cached`, `host_control.get_allta_status_cached`) —
+страница открывается мгновенно из последнего известного результата, живой
+поход (HTTP к внешним сервисам / SSH на хост отдела) происходит в фоне,
+когда кэш протухает, а не на каждый рендер.
+
 `POST /host/services/{unit_id}/{action}` — теперь под
 `require_host_service_action(..., Action.HOST_SERVICE_CONTROL)`:
 `department_admin` своего отдела или носитель `admin` service-роли
@@ -64,12 +70,12 @@ async def get_host_services(
         # путь, который `platform_admin_guard` для них не блокирует (см.
         # middleware docstring). У них нет department_id, юниты резолвить
         # не из чего — `allta` пуст без единого SSH-вызова.
-        astra_items = await astra_health.check_all()
+        astra_items = await astra_health.check_all_cached()
         allta_items = []
     else:
         astra_items, allta_items = await asyncio.gather(
-            astra_health.check_all(),
-            host_control.get_allta_status(db, identity.department_id),
+            astra_health.check_all_cached(),
+            host_control.get_allta_status_cached(db, identity.department_id),
         )
     return HostServicesStatusResponse(astra=astra_items, allta=allta_items)
 

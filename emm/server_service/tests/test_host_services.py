@@ -9,6 +9,11 @@
 12-юнитовый allowlist: каждый тест сам заводит SSH-конфиг + юниты для нужного
 отдела через `/settings/host-services*`, ровно как это будет делать
 department_admin/service admin через UI.
+
+`GET /host/services` ходит через TTL-кэш (`astra_health.check_all_cached`,
+`host_control.get_allta_status_cached`) — оба сбрасываются автофикстурой
+перед/после каждого теста, иначе результат одного теста (dep_a переиспользуется
+почти во всех тестах файла) просачивался бы в следующий в пределах TTL.
 """
 
 from __future__ import annotations
@@ -16,10 +21,20 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import asyncssh
+import pytest
 
 from tests._helpers import assert_error, auth_hdr as _hdr
 
 from src.api.v1.endpoints import host_services as host_services_endpoint
+
+
+@pytest.fixture(autouse=True)
+def _reset_host_services_caches():
+    host_services_endpoint.astra_health.clear_cache()
+    host_services_endpoint.host_control.clear_status_cache()
+    yield
+    host_services_endpoint.astra_health.clear_cache()
+    host_services_endpoint.host_control.clear_status_cache()
 
 STATUS_URL = "/api/server/v1/host/services"
 SETTINGS_URL = "/api/server/v1/settings/host-services"

@@ -18,17 +18,28 @@ sudoers-allowlist — независимая вторая линия защит�
 не больше, чем себе, но control здесь всё равно сначала резолвит `unit_id` в
 строку, принадлежащую вызывающему отделу, ПЕРЕД тем, как что-либо ещё
 происходит — это и есть первая линия, и заодно cross-department ownership-check.
+
+`get_allta_status()` — живая SSH-проверка (используется напрямую фоновым
+рефрешем и тестами). Эндпоинт `/host/services` ходит через
+`get_allta_status_cached()` — per-department TTL-кэш со
+stale-while-revalidate, инвалидируемый явно из `control_unit()` после
+успешной control-операции.
 """
 
 import asyncio
+import logging
+import time
 from datetime import datetime, timezone
 
 import asyncssh
 
 from src.core.exceptions import AppException, DomainValidationError, NotFoundError, ServiceUnavailableError
+from src.db.session import AsyncSessionLocal
 from src.models.host_service_unit import HostServiceUnit
 from src.schemas.host_services import AlltaServiceStatus
 from src.services import host_services_settings as settings_svc
+
+logger = logging.getLogger("server_service.host_control")
 
 _ALLOWED_ACTIONS = frozenset({"start", "stop", "restart"})
 
@@ -96,6 +107,79 @@ async def get_allta_status(db, department_id: str) -> list[AlltaServiceStatus]:
     return items
 
 
+# ── Кэш для GET /host/services (stale-while-revalidate, per-department) ─────
+#
+# Отдельный слот на department_id — результат SSH-похода к хосту одного
+# отдела не годится для другого. 30 секунд короче, чем кэш `astra_health`
+# (45с): здесь есть живая control-операция (`control_unit`), после которой
+# кэш инвалидируется явно, так что TTL — только страховка на случай, если
+# юнит поменял состояние снаружи (руками на хосте, cron и т.п.), не через
+# нашу control-ручку.
+_STATUS_CACHE_TTL_SECONDS = 30.0
+
+_status_cache: dict[str, tuple[list[AlltaServiceStatus], float]] = {}
+_refreshing_departments: set[str] = set()
+
+
+def invalidate_status_cache(department_id: str) -> None:
+    """Сбросить кэш статуса юнитов отдела — после успешного control-действия,
+    чтобы следующий GET сразу показал актуальное состояние, не дожидаясь TTL.
+    """
+    _status_cache.pop(department_id, None)
+
+
+def clear_status_cache() -> None:
+    """Сбросить весь кэш (используется в тестах между прогонами)."""
+    _status_cache.clear()
+    _refreshing_departments.clear()
+
+
+def _entry_is_fresh(fetched_at: float) -> bool:
+    return time.monotonic() - fetched_at < _STATUS_CACHE_TTL_SECONDS
+
+
+def _schedule_background_refresh(department_id: str) -> None:
+    if department_id in _refreshing_departments:
+        return
+    _refreshing_departments.add(department_id)
+
+    async def _run() -> None:
+        try:
+            # Своя, не request-scoped сессия: запрос, на котором мы решили
+            # обновить кэш, к моменту выполнения этой таски уже мог закрыть
+            # свою сессию через Depends(get_db) — использовать её здесь
+            # небезопасно.
+            async with AsyncSessionLocal() as session:
+                data = await get_allta_status(session, department_id)
+            _status_cache[department_id] = (data, time.monotonic())
+        except Exception:  # noqa: BLE001 — фоновый рефреш не должен ронять процесс
+            logger.exception("background allta status refresh failed for department %s", department_id)
+        finally:
+            _refreshing_departments.discard(department_id)
+
+    asyncio.create_task(_run())
+
+
+async def get_allta_status_cached(db, department_id: str) -> list[AlltaServiceStatus]:
+    """Статус ALLTA-юнитов отдела для `/host/services`: мгновенно из кэша,
+    обновление — в фоне (см. модульный docstring и `astra_health.check_all_cached`
+    для той же схемы на глобальных ASTRA-сервисах).
+
+    Кэша для этого отдела ещё нет — ждём живую SSH-проверку один раз.
+    Дальше отдаём последний известный результат немедленно; протухший кэш
+    триггерит фоновый рефреш, не блокируя текущий запрос.
+    """
+    entry = _status_cache.get(department_id)
+    if entry is None:
+        data = await get_allta_status(db, department_id)
+        _status_cache[department_id] = (data, time.monotonic())
+        return data
+    data, fetched_at = entry
+    if not _entry_is_fresh(fetched_at):
+        _schedule_background_refresh(department_id)
+    return data
+
+
 async def control_unit(db, department_id: str, unit_id: str, action: str) -> dict:
     """Start/stop/restart одного юнита отдела `department_id` по SSH через forced-command guard.
 
@@ -150,4 +234,7 @@ async def control_unit(db, department_id: str, unit_id: str, action: str) -> dic
             http_status=502,
         )
 
+    # Успешный control — состояние юнита только что реально изменилось,
+    # следующий GET должен увидеть это сразу, а не ждать TTL кэша.
+    invalidate_status_cache(department_id)
     return {"ok": True, "unit_id": unit_id, "action": action, "output": (result.stdout or "").strip()}

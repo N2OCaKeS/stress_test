@@ -1,5 +1,12 @@
 #!/bin/bash
 
+sudo tee /etc/pip.conf >/dev/null <<'EOF'
+[global]
+index-url = http://allta.devos.astralinux.ru:3141/root/release
+trusted-host = allta.devos.astralinux.ru
+EOF
+sudo chmod 0644 /etc/pip.conf
+
 18repo() {
 cat << EOF > /etc/apt/sources.list
 deb https://releases.devos.astralinux.ru/frozen/1.8/1.8.0/1.8.0.14/installation 1.8_x86-64 main contrib non-free
@@ -53,9 +60,7 @@ sudo make altinstall
 
 python3.12 -m venv venv
 source venv/bin/activate
-sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
-sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
-pip install -i http://10.177.103.10:3141/root/release --trusted-host 10.177.103.10:3141 allta==1.2.1
+pip install allta==1.2.1
 
 cd /home/u/git/stress_test/$1
 python3.12 -m pip install --upgrade pip

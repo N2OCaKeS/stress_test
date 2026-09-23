@@ -2,6 +2,13 @@
 
 set -vx
 
+sudo tee /etc/pip.conf >/dev/null <<'EOF'
+[global]
+index-url = http://allta.devos.astralinux.ru:3141/root/release
+trusted-host = allta.devos.astralinux.ru
+EOF
+sudo chmod 0644 /etc/pip.conf
+
 PACKAGES=(
   sysstat 
   netcat
@@ -15,8 +22,6 @@ for pkg in "${PACKAGES[@]}"; do
 done
 
 sudo apt install -y python3-pip
-sudo python3 -m pip config --global set global.index-url http://allta.devos.astralinux.ru:3141/root/release
-sudo python3 -m pip config --global set global.trusted-host allta.devos.astralinux.ru
 
 wget ftp://10.177.103.10/allta_*_amd64.deb
 sudo dpkg -i allta_*_amd64.deb

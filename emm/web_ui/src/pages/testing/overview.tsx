@@ -47,7 +47,7 @@ import {
   Thermometer,
 } from "lucide-react";
 import { LaunchRunModal, type RunsState } from "./runs";
-import { Dropdown, type DropdownOption } from "@/components/ui/Dropdown";
+import { Dropdown } from "@/components/ui/Dropdown";
 import {
   Counter,
   EmptySearch,
@@ -93,11 +93,10 @@ import {
   type QueueInterruptAction,
 } from "@/api/testing/queueItems";
 import { listTestDefinitions } from "@/api/testing/testDefinitions";
-import type { TestDefinition, TestRun, TestStand } from "@/api/testing/types";
+import type { TestDefinition, TestStand } from "@/api/testing/types";
 import { listOsVersions } from "@/api/server/osVersions";
 import { getPoolOverview } from "@/api/testing/poolOverview";
 import type {
-  PoolOverviewContext,
   PoolOverviewResponse,
   PoolStandStatus,
 } from "@/api/testing/types";
@@ -200,6 +199,17 @@ const QUEUE_STATE_NOTE: Record<string, string> = {
 const ACTIVE_QUEUE_STATES = ["queued", "preparing", "ready", "running"];
 
 const TERMINAL_QUEUE_STATES = ["succeeded", "failed", "timed_out", "skipped"];
+
+/**
+ * Что показывает очередь стенда в модалке (§ «Очередь стенда» доработки
+ * 2026-09-23): текущий выполняющийся/готовящийся, ожидающие своей очереди,
+ * остановленный — и последний непогашенный провал. `succeeded`/`skipped` в
+ * список не идут вовсе — законченная история стенда тут не нужна, для неё
+ * есть отдельный лог попытки; `failed`, у которого уже есть retry
+ * (`is_current === false`), тоже отфильтровывается ниже — это старая,
+ * перекрытая попытка, а не то, что реально ждёт внимания оператора.
+ */
+const QUEUE_MODAL_FETCH_STATES = [...ACTIVE_QUEUE_STATES, "paused", "failed"];
 
 function itemTitle(item: PublicQueueItem): string {
   return item.test_code || item.test_name || item.test_id;
@@ -653,7 +663,6 @@ export function TestingOverview({ runsState }: { runsState: RunsState }) {
       <PoolOverviewPanel
         mockMode={mockMode}
         demoStands={mockMode ? stands : undefined}
-        runs={runsState.runs}
         open={dashboardOpen}
         onToggle={() => setDashboardOpen((v) => !v)}
       />
@@ -817,25 +826,22 @@ function demoPoolOverview(stands: Stand[]): PoolOverviewResponse {
     };
   });
   return {
-    context: "all", test_run_id: null, test_run: null,
+    mode: "rolling_24h", test_run_id: null, test_run: null,
     remaining, running, succeeded, failed,
     stands: standRows, stand_status_counts: counts, generated_at: now,
   };
 }
 
-const POOL_CONTEXTS: { id: PoolOverviewContext; label: string }[] = [
-  { id: "all", label: "Все задания" },
-  { id: "run", label: "Выбранный прогон" },
-  { id: "standalone", label: "Одиночное тестирование" },
-];
-
 /**
- * Обзор пула с нуля (§F плана 2026-09-11) — реальные агрегаты `testing_service`
- * (`GET /pool-overview`), не синтетические CPU/RAM-заглушки прежнего
- * `FleetDashboard`. Три независимых блока: общая очередь (осталось/выполняется),
- * исходы по последней попытке логического теста (успех/провал), и статусы
- * стендов с приоритетом восстановление → недоступен → тест идёт → готов
- * («нет данных» — когда ping не измерялся или устарел, не выдуманный offline).
+ * Обзор пула с нуля (§F плана 2026-09-11, доработка 2026-09-23) — реальные
+ * агрегаты `testing_service` (`GET /pool-overview`), не синтетические
+ * CPU/RAM-заглушки прежнего `FleetDashboard`. Три независимых блока: общая
+ * очередь (осталось/выполняется, всегда по всему отделу), исходы по
+ * последней попытке логического теста (успех/провал — backend сам решает,
+ * считать их по активной кампании или за последние сутки, без переключателя
+ * контекста на UI, см. `PoolOverviewMode`), и статусы стендов с приоритетом
+ * восстановление → недоступен → тест идёт → готов («нет данных» — когда
+ * ping не измерялся или устарел, не выдуманный offline).
  *
  * Поллинг раз в 15с держит числа свежими без ручного обновления после
  * старта/завершения/отмены/retry задания; ручная кнопка «Обновить» — для
@@ -844,23 +850,18 @@ const POOL_CONTEXTS: { id: PoolOverviewContext; label: string }[] = [
 function PoolOverviewPanel({
   mockMode,
   demoStands,
-  runs,
   open,
   onToggle,
 }: {
   mockMode: boolean;
   demoStands?: Stand[];
-  runs: TestRun[];
   open: boolean;
   onToggle: () => void;
 }) {
-  const [context, setContext] = useState<PoolOverviewContext>("all");
-  const [testRunId, setTestRunId] = useState<string>("");
-
   const overviewQuery = useQuery(
-    () => getPoolOverview({ context, test_run_id: context === "run" ? testRunId : undefined }),
-    [context, testRunId],
-    { enabled: !mockMode && (context !== "run" || !!testRunId), keepPreviousDataOnError: true },
+    () => getPoolOverview(),
+    [],
+    { enabled: !mockMode, keepPreviousDataOnError: true },
   );
 
   useEffect(() => {
@@ -868,16 +869,11 @@ function PoolOverviewPanel({
     const timer = setInterval(overviewQuery.refetch, 15000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mockMode, open, context, testRunId]);
+  }, [mockMode, open]);
 
   const overview: PoolOverviewResponse | undefined = mockMode
     ? demoPoolOverview(demoStands ?? [])
     : overviewQuery.data;
-
-  const runOptions: DropdownOption[] = runs.map((r) => ({
-    value: r.id,
-    label: `${r.os_version_id} · ${r.kernel} · ${r.mode ?? "смешанный режим"} · ${r.id.slice(0, 10)}`,
-  }));
 
   return (
     <div className="surface border border-token rounded overflow-hidden">
@@ -892,30 +888,12 @@ function PoolOverviewPanel({
       {open && (
         <div className="border-t border-token p-4 grid gap-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="surface-2 border border-token rounded p-1 flex items-center gap-1 flex-wrap">
-              {POOL_CONTEXTS.map((item) => (
-                <Button
-                  key={item.id}
-                  type="button"
-                  size="sm"
-                  variant={context === item.id ? "primary" : "default"}
-                  onClick={() => setContext(item.id)}
-                >
-                  {item.label}
-                </Button>
-              ))}
+            <div className="text-xs text-dim">
+              {overview?.mode === "active_run"
+                ? "Успешно/упало — по текущему незавершённому прогону"
+                : "Успешно/упало — за последние 24 часа"}
             </div>
             <div className="flex items-center gap-3 flex-wrap">
-              {context === "run" && (
-                <Dropdown
-                  mode="single"
-                  label="Прогон"
-                  options={runOptions}
-                  value={testRunId}
-                  onChange={setTestRunId}
-                  placeholder="Выберите прогон…"
-                />
-              )}
               {!mockMode && (
                 <>
                   {overview && (
@@ -931,9 +909,6 @@ function PoolOverviewPanel({
             </div>
           </div>
 
-          {!mockMode && context === "run" && !testRunId && (
-            <div className="text-sm text-dim">Выберите прогон, чтобы увидеть его очередь и исходы.</div>
-          )}
           {!mockMode && overviewQuery.error && (
             <div role="alert" className="alert alert-danger flex items-center gap-3 text-sm">
               <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -942,7 +917,7 @@ function PoolOverviewPanel({
             </div>
           )}
 
-          {overview && context === "run" && overview.test_run && (
+          {overview && overview.mode === "active_run" && overview.test_run && (
             <div className="text-xs text-dim">
               РЦ {overview.test_run.os_version_id} · ядро {overview.test_run.kernel} · режим {overview.test_run.mode ?? "смешанный"} ·
               статус {overview.test_run.status} · id {overview.test_run.id}
@@ -1424,15 +1399,20 @@ function QueueModal({
   const itemsQuery = useQuery(
     () =>
       standId
-        ? listQueueItems({ kind: "all", stand_id: standId, order: "desc", limit: 200 })
+        ? listQueueItems({
+            kind: "all", stand_id: standId, states: QUEUE_MODAL_FETCH_STATES, order: "desc", limit: 200,
+          })
         : Promise.resolve(null),
     [standId],
     { enabled: !!standId },
   );
 
-  const rows: QueueItem[] = live
-    ? (itemsQuery.data?.items ?? []).slice().reverse().map(toQueueItem)
-    : stand.queue;
+  // `failed` без активного retry сверху — иначе перекрытая попытка (уже
+  // перезапущенная) висела бы в очереди рядом с реальной текущей работой.
+  const liveItems = (itemsQuery.data?.items ?? []).filter(
+    (item) => item.state !== "failed" || item.is_current !== false,
+  );
+  const rows: QueueItem[] = live ? liveItems.slice().reverse().map(toQueueItem) : stand.queue;
 
   async function retry(itemId: string) {
     if (retryingId) return;

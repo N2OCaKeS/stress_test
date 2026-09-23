@@ -1012,15 +1012,21 @@ export interface StatisticsCategoriesResponse {
   items: StatisticsCategory[];
 }
 
-// ── pool overview (§F плана 2026-09-11) ─────────────────────────────────────
+// ── pool overview (§F плана 2026-09-11, доработка 2026-09-23) ───────────────
 
-/** Контекст обзора пула — переключатель «Все задания / прогон / одиночные». */
-export type PoolOverviewContext = "all" | "run" | "standalone";
+/**
+ * Режим агрегации succeeded/failed, выбранный backend'ом сам (без
+ * переключателя на UI — см. `testing_service/src/services/pool_overview.py`):
+ * `active_run` — по незавершённой кампании отдела (пока не закончится,
+ * сколько бы дней ни шла), `rolling_24h` — за последние сутки, если активных
+ * кампаний нет.
+ */
+export type PoolOverviewMode = "active_run" | "rolling_24h";
 
 /** Статус стенда в обзоре пула, приоритет — §F плана 2026-09-11. */
 export type PoolStandStatus = "recovering" | "unreachable" | "testing" | "testing_done" | "ready" | "no_data";
 
-/** Заголовок кампании в обзоре пула — только при `context=run`. */
+/** Заголовок кампании в обзоре пула — только при `mode=active_run` и ровно одной активной кампании. */
 export interface PoolOverviewTestRun {
   id: string;
   os_version_id: string;
@@ -1045,7 +1051,7 @@ export interface PoolOverviewStand {
 
 /** `GET /pool-overview` — очередь/исходы + статусы стендов одним запросом. */
 export interface PoolOverviewResponse {
-  context: PoolOverviewContext;
+  mode: PoolOverviewMode;
   test_run_id: string | null;
   test_run: PoolOverviewTestRun | null;
   remaining: number;

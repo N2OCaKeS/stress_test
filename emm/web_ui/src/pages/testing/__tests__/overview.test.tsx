@@ -86,7 +86,7 @@ function mockQueues(active: unknown[], paused: unknown[] = []) {
 
 function emptyPoolOverview() {
   return {
-    context: "all" as const,
+    mode: "rolling_24h" as const,
     test_run_id: null,
     test_run: null,
     remaining: 0,
@@ -287,7 +287,7 @@ describe("TestingOverview — live mode (testing_service)", () => {
 
   it("показывает реальные агрегаты обзора пула из GET /pool-overview", async () => {
     getPoolOverviewMock.mockResolvedValue({
-      context: "all",
+      mode: "rolling_24h",
       test_run_id: null,
       test_run: null,
       remaining: 3,
@@ -306,11 +306,32 @@ describe("TestingOverview — live mode (testing_service)", () => {
     });
     renderOverview();
     await screen.findAllByText("stand-live-01");
-    await waitFor(() => expect(getPoolOverviewMock).toHaveBeenCalledWith({ context: "all", test_run_id: undefined }));
+    await waitFor(() => expect(getPoolOverviewMock).toHaveBeenCalledWith(undefined));
     expect(await screen.findByText("3")).toBeInTheDocument();
     expect(screen.getByText("2")).toBeInTheDocument();
     expect(screen.getByText("5")).toBeInTheDocument();
     expect(screen.getAllByText("Восстанавливается").length).toBeGreaterThan(0);
+    // Переключателя контекста («Все задания»/«Выбранный прогон»/«Одиночное
+    // тестирование») больше нет — «Прогоны» и «Одиночные запуски» это уже
+    // отдельные вкладки верхнего уровня.
+    expect(screen.queryByRole("button", { name: "Выбранный прогон" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Все задания" })).not.toBeInTheDocument();
+  });
+
+  it("режим «active_run» показывает заголовок текущей кампании вместо переключателя", async () => {
+    getPoolOverviewMock.mockResolvedValue({
+      ...emptyPoolOverview(),
+      mode: "active_run",
+      test_run_id: "run_abc123",
+      test_run: {
+        id: "run_abc123", os_version_id: "1.8.5.46", kernel: "6.1.0",
+        mode: "orel", status: "running", final: false, created_at: "2026-09-15T00:00:00Z",
+      },
+    });
+    renderOverview();
+    await screen.findAllByText("stand-live-01");
+    expect(await screen.findByText(/id run_abc123/)).toBeInTheDocument();
+    expect(screen.getByText(/по текущему незавершённому прогону/)).toBeInTheDocument();
   });
 
   it("панель «Обзор пула» показывает счётчик статуса «Тестирование завершено»", async () => {
@@ -331,23 +352,6 @@ describe("TestingOverview — live mode (testing_service)", () => {
     const label = await screen.findByText("Тестирование завершено");
     const card = label.parentElement as HTMLElement;
     expect(within(card).getByText("9")).toBeInTheDocument();
-  });
-
-  it("переключение на «Выбранный прогон» запрашивает выбранный test_run_id", async () => {
-    renderOverview(fakeRunsState({
-      runs: [{
-        id: "run_abc123", os_version_id: "1.8.5.46", mode: "orel", kernel: "6.1.0",
-        department_id: "dep_1", test_run_stands: [], status: "running", final: false,
-        created_at: "2026-09-15T00:00:00Z", updated_at: "2026-09-15T00:00:00Z", created_by: null,
-      }],
-    }));
-    await screen.findAllByText("stand-live-01");
-    fireEvent.click(screen.getByRole("button", { name: "Выбранный прогон" }));
-    fireEvent.click(screen.getByRole("button", { name: /Прогон/ }));
-    fireEvent.click(screen.getByText(/run_abc123/));
-    await waitFor(() =>
-      expect(getPoolOverviewMock).toHaveBeenCalledWith({ context: "run", test_run_id: "run_abc123" }),
-    );
   });
 
   it("у стенда с активным item'ом есть «Пропустить»/«Остановить», но нет «Продолжить»", async () => {
@@ -448,6 +452,38 @@ describe("TestingOverview — live mode (testing_service)", () => {
     );
     expect(await screen.findByText("qi_60")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Удалить/ })).not.toBeInTheDocument();
+  });
+
+  it("очередь стенда запрашивает только активные/остановленные/проваленные состояния — не всю историю", async () => {
+    mockQueues([queueItem({ id: "qi_60" })], []);
+    renderOverview();
+    fireEvent.click((await screen.findAllByRole("button", { name: /Очередь/ }))[0]);
+    await waitFor(() => expect(listQueueItemsMock).toHaveBeenCalledWith(expect.objectContaining({ stand_id: "ts_1" })));
+    const call = listQueueItemsMock.mock.calls.find((args) => (args[0] as { stand_id?: string })?.stand_id === "ts_1");
+    const states = (call?.[0] as { states?: string[] })?.states ?? [];
+    expect(states).toEqual(expect.arrayContaining(["running", "queued", "paused", "failed"]));
+    expect(states).not.toContain("succeeded");
+    expect(states).not.toContain("skipped");
+  });
+
+  it("проваленный тест, у которого уже есть retry, не висит в очереди рядом с текущей работой", async () => {
+    listQueueItemsMock.mockImplementation((query: { stand_id?: string; states?: string[] }) => {
+      if (query?.stand_id) {
+        return Promise.resolve({
+          items: [
+            queueItem({ id: "qi_old_failed", state: "failed", is_current: false }),
+            queueItem({ id: "qi_running", state: "running", is_current: true }),
+          ],
+          total: 2, limit: 200, offset: 0,
+        });
+      }
+      const wantsPaused = query?.states?.includes("paused");
+      return Promise.resolve({ items: wantsPaused ? [] : [queueItem({ id: "qi_running" })], total: 1, limit: 500, offset: 0 });
+    });
+    renderOverview();
+    fireEvent.click((await screen.findAllByRole("button", { name: /Очередь/ }))[0]);
+    expect(await screen.findByText("qi_running")).toBeInTheDocument();
+    expect(screen.queryByText("qi_old_failed")).not.toBeInTheDocument();
   });
 
   it("«Пропустить» из модалки очереди тоже спрашивает подтверждение", async () => {

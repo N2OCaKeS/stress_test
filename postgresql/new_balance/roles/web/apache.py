@@ -148,10 +148,9 @@ class ApacheVM:
                 "install python deps": {
                     "command": (
                         "sudo sh -c \""
-                        "pip config --global set global.index-url "
-                        "http://allta.devos.astralinux.ru:3141/root/release && "
-                        "pip config --global set global.trusted-host "
-                        "allta.devos.astralinux.ru && "
+                        "install -d -m 0755 /etc && "
+                        "printf '[global]\\nindex-url = http://allta.devos.astralinux.ru:3141/root/release\\ntrusted-host = allta.devos.astralinux.ru\\n' > /etc/pip.conf && "
+                        "chmod 0644 /etc/pip.conf && "
                         "if test \\\"$(grep 1.7 /etc/astra_version)\\\"; then "
                         "pip3 install -q "
                         "flask==2.2.5 "

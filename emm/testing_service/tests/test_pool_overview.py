@@ -1,12 +1,15 @@
-"""Тесты `GET /api/testing/v1/pool-overview` (§F плана 2026-09-11).
+"""Тесты `GET /api/testing/v1/pool-overview` (§F плана 2026-09-11, доработка 2026-09-23).
 
 Покрывает:
 
 * пустой пул/очередь — нули, не 500/null;
-* очередь: `remaining` (queued+preparing+ready) отдельно от `running`;
+* очередь: `remaining` (queued+preparing+ready+paused) отдельно от `running`,
+  всегда по всему отделу, без окна;
 * успешные/упавшие — по последней попытке логического теста, не по каждой
   попытке цепочки retry;
-* три контекста (`all`/`run`/`standalone`) не путают числа друг друга;
+* авто-режим: `active_run` (незавершённая кампания отдела, сколько бы дней ни
+  шла) против `rolling_24h` (нет активной кампании — статистика за сутки),
+  без переключателя на стороне вызывающего;
 * приоритет статусов стенда (восстановление → недоступен → тест идёт →
   готов), включая «нет данных» при отсутствии/устаревании ping;
 * department-изоляция.
@@ -35,7 +38,6 @@ from tests.test_queue import (  # noqa: F401 — фикстуры переисп
 )
 
 BASE = "/api/testing/v1/pool-overview"
-NOW = datetime(2026, 9, 15, 12, 0, tzinfo=timezone.utc)
 
 
 @pytest.fixture(autouse=True)
@@ -54,13 +56,18 @@ async def _add_item(
     test_run_id: str | None = None, retry_of_id: str | None = None,
     debug_mode: bool = False, created_at: datetime | None = None,
 ) -> str:
+    """`created_at` по умолчанию — реальное "сейчас": авто-режим без активной
+    кампании считает succeeded/failed rolling-окном за последние 24 часа, а не
+    за всю историю, значит фиктивная дата в прошлом молча выпадала бы из
+    большинства сценариев этого файла.
+    """
     item_id = f"qi_pool_{uuid.uuid4().hex}"
     async with AsyncSessionLocal() as db:
         db.add(QueueItem(
             id=item_id, stand_id=stand_id, test_id=test_id, launch_context={},
             state=state, test_run_id=test_run_id, retry_of_id=retry_of_id,
             debug_mode=debug_mode, created_by="usr_pool",
-            created_at=created_at or NOW,
+            created_at=created_at or datetime.now(timezone.utc),
         ))
         await db.flush()
         await db.commit()
@@ -85,7 +92,7 @@ class TestEmptyPool:
         resp = await client.get(BASE, headers=auth_hdr(admin_token))
         assert resp.status_code == 200, resp.text
         body = resp.json()
-        assert body["context"] == "all"
+        assert body["mode"] == "rolling_24h"
         assert body["remaining"] == 0
         assert body["running"] == 0
         assert body["succeeded"] == 0
@@ -119,6 +126,7 @@ class TestQueueCounts:
 
         resp = await client.get(BASE, headers=auth_hdr(admin_token))
         body = resp.json()
+        assert body["mode"] == "rolling_24h"
         assert body["succeeded"] == 1
         assert body["failed"] == 1
 
@@ -136,62 +144,81 @@ class TestQueueCounts:
         assert body["failed"] == 13
 
 
-class TestContexts:
-    async def test_run_context_scopes_to_one_campaign(self, client, admin_token):
+class TestAutoMode:
+    """Сервис сам выбирает режим агрегации succeeded/failed — без переключателя на UI."""
+
+    async def test_active_run_scopes_outcomes_to_the_running_campaign(self, client, admin_token):
         stand, _ = await _create_stand(client, admin_token)
         test = await _create_test_def(client, admin_token, stand)
-        run_a = await _add_test_run()
-        run_b = await _add_test_run()
+        run_a = await _add_test_run(status="running")
         await _add_item(stand_id=stand, test_id=test, state="succeeded", test_run_id=run_a)
-        await _add_item(stand_id=stand, test_id=test, state="failed", test_run_id=run_b)
-        await _add_item(stand_id=stand, test_id=test, state="queued")  # standalone, не должен попасть
+        await _add_item(stand_id=stand, test_id=test, state="failed", test_run_id=run_a)
+        # Одиночный (без кампании) провал — не должен примешаться, пока кампания активна.
+        await _add_item(stand_id=stand, test_id=test, state="failed")
 
-        resp = await client.get(BASE, headers=auth_hdr(admin_token), params={"context": "run", "test_run_id": run_a})
+        resp = await client.get(BASE, headers=auth_hdr(admin_token))
         body = resp.json()
+        assert body["mode"] == "active_run"
         assert body["succeeded"] == 1
-        assert body["failed"] == 0
-        assert body["remaining"] == 0
+        assert body["failed"] == 1
+        assert body["test_run_id"] == run_a
         assert body["test_run"]["id"] == run_a
 
-    async def test_standalone_context_excludes_campaigns(self, client, admin_token):
+    async def test_active_run_stays_in_focus_regardless_of_age(self, client, admin_token):
+        """Кампания может идти несколько дней — окно на неё не давит."""
         stand, _ = await _create_stand(client, admin_token)
         test = await _create_test_def(client, admin_token, stand)
-        run_a = await _add_test_run()
-        await _add_item(stand_id=stand, test_id=test, state="succeeded", test_run_id=run_a)
-        await _add_item(stand_id=stand, test_id=test, state="failed")
+        run_a = await _add_test_run(status="running")
+        old = datetime.now(timezone.utc) - timedelta(days=3)
+        await _add_item(stand_id=stand, test_id=test, state="succeeded", test_run_id=run_a, created_at=old)
 
-        resp = await client.get(BASE, headers=auth_hdr(admin_token), params={"context": "standalone"})
+        resp = await client.get(BASE, headers=auth_hdr(admin_token))
         body = resp.json()
-        assert body["succeeded"] == 0
-        assert body["failed"] == 1
+        assert body["mode"] == "active_run"
+        assert body["succeeded"] == 1
 
-    async def test_all_context_does_not_merge_success_and_failure_into_one_run(self, client, admin_token):
+    async def test_multiple_active_runs_combine_without_a_single_header(self, client, admin_token):
         stand, _ = await _create_stand(client, admin_token)
         test = await _create_test_def(client, admin_token, stand)
-        run_a = await _add_test_run()
+        run_a = await _add_test_run(status="running")
+        run_b = await _add_test_run(status="queued")
         await _add_item(stand_id=stand, test_id=test, state="succeeded", test_run_id=run_a)
-        await _add_item(stand_id=stand, test_id=test, state="failed")
-        resp = await client.get(BASE, headers=auth_hdr(admin_token), params={"context": "all"})
+        await _add_item(stand_id=stand, test_id=test, state="failed", test_run_id=run_b)
+
+        resp = await client.get(BASE, headers=auth_hdr(admin_token))
         body = resp.json()
+        assert body["mode"] == "active_run"
         assert body["succeeded"] == 1
         assert body["failed"] == 1
+        assert body["test_run"] is None
+        assert body["test_run_id"] is None
 
-    async def test_run_context_requires_test_run_id(self, client, admin_token):
-        resp = await client.get(BASE, headers=auth_hdr(admin_token), params={"context": "run"})
-        assert resp.status_code == 422, resp.text
-        assert resp.json()["error_code"] == "TEST_RUN_ID_REQUIRED"
+    async def test_finished_campaign_falls_back_to_rolling_24h(self, client, admin_token):
+        stand, _ = await _create_stand(client, admin_token)
+        test = await _create_test_def(client, admin_token, stand)
+        run_a = await _add_test_run(status="succeeded")
+        await _add_item(stand_id=stand, test_id=test, state="succeeded", test_run_id=run_a)
+        await _add_item(stand_id=stand, test_id=test, state="failed")
 
-    async def test_test_run_id_rejected_outside_run_context(self, client, admin_token):
-        run_a = await _add_test_run()
-        resp = await client.get(BASE, headers=auth_hdr(admin_token), params={"context": "all", "test_run_id": run_a})
-        assert resp.status_code == 422, resp.text
-        assert resp.json()["error_code"] == "TEST_RUN_ID_NOT_ALLOWED"
+        resp = await client.get(BASE, headers=auth_hdr(admin_token))
+        body = resp.json()
+        assert body["mode"] == "rolling_24h"
+        assert body["succeeded"] == 1
+        assert body["failed"] == 1
+        assert body["test_run"] is None
 
-    async def test_run_context_404_for_foreign_department(self, client, admin_token, make_token):
-        run_a = await _add_test_run(department_id="dep_other")
-        resp = await client.get(BASE, headers=auth_hdr(admin_token), params={"context": "run", "test_run_id": run_a})
-        assert resp.status_code == 404, resp.text
-        assert resp.json()["error_code"] == "TEST_RUN_NOT_FOUND"
+    async def test_rolling_24h_excludes_older_history(self, client, admin_token):
+        stand, _ = await _create_stand(client, admin_token)
+        test = await _create_test_def(client, admin_token, stand)
+        old = datetime.now(timezone.utc) - timedelta(hours=30)
+        await _add_item(stand_id=stand, test_id=test, state="failed", created_at=old)
+        await _add_item(stand_id=stand, test_id=test, state="succeeded")
+
+        resp = await client.get(BASE, headers=auth_hdr(admin_token))
+        body = resp.json()
+        assert body["mode"] == "rolling_24h"
+        assert body["succeeded"] == 1
+        assert body["failed"] == 0
 
     async def test_department_isolation(self, client, admin_token, make_token):
         stand, _ = await _create_stand(client, admin_token)
@@ -201,21 +228,18 @@ class TestContexts:
         resp = await client.get(BASE, headers=auth_hdr(other))
         assert resp.json()["failed"] == 0
 
-    async def test_invalid_time_range_rejected(self, client, admin_token):
-        resp = await client.get(BASE, headers=auth_hdr(admin_token), params={
-            "context": "standalone",
-            "created_from": "2026-09-15T12:00:00+03:00",
-            "created_until": "2026-09-15T10:00:00+03:00",
-        })
-        assert resp.status_code == 422, resp.text
-        assert resp.json()["error_code"] == "INVALID_TIME_RANGE"
+    async def test_active_run_of_another_department_does_not_leak(self, client, admin_token):
+        await _add_test_run(department_id="dep_other", status="running")
+        resp = await client.get(BASE, headers=auth_hdr(admin_token))
+        body = resp.json()
+        assert body["mode"] == "rolling_24h"
 
     async def test_requires_auth(self, client):
         assert (await client.get(BASE)).status_code == 401
 
 
 def _fresh() -> str:
-    """Момент "только что" — счёт свежести ping идёт от реального времени вызова, не от фиктивного `NOW`."""
+    """Момент "только что" — счёт свежести ping идёт от реального времени вызова, не от фиктивного значения."""
     return datetime.now(timezone.utc).isoformat()
 
 

@@ -233,7 +233,7 @@ async def has_successor(db: AsyncSession, item_id: str) -> bool:
 
 async def aggregate_pool_overview(
     db: AsyncSession, department_id: str, *, kind: str,
-    test_run_id: str | None = None,
+    test_run_ids: list[str] | None = None,
     created_from: datetime | None = None, created_until: datetime | None = None,
 ) -> dict[str, int]:
     """Считает очередь/исходы обзора пула (§F плана 2026-09-11) одним запросом.
@@ -246,6 +246,10 @@ async def aggregate_pool_overview(
     заодно посчитался бы дважды. Пропущенный (`skipped`) исхода не имеет и не
     попадает ни в один счётчик — работы по нему больше нет, но и результата
     тоже.
+
+    `test_run_ids` — список, не одиночный id: авто-режим обзора пула (§F
+    доработки 2026-09-23) может держать в фокусе сразу несколько параллельно
+    идущих кампаний отдела, не одну.
     """
     successor = aliased(QueueItem)
     is_current = ~select(successor.id).where(successor.retry_of_id == QueueItem.id).exists()
@@ -258,8 +262,8 @@ async def aggregate_pool_overview(
         stmt = stmt.where(QueueItem.test_run_id.is_(None))
     elif kind == "campaign":
         stmt = stmt.where(QueueItem.test_run_id.is_not(None))
-    if test_run_id is not None:
-        stmt = stmt.where(QueueItem.test_run_id == test_run_id)
+    if test_run_ids is not None:
+        stmt = stmt.where(QueueItem.test_run_id.in_(test_run_ids))
     if created_from is not None:
         stmt = stmt.where(QueueItem.created_at >= created_from)
     if created_until is not None:

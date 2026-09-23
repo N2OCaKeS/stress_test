@@ -3,6 +3,7 @@
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.constants import TERMINAL_TEST_RUN_STATUSES
 from src.models import TestRun
 
 
@@ -10,6 +11,22 @@ async def get_by_id(db: AsyncSession, run_id: str) -> TestRun | None:
     """SELECT по PK."""
     stmt = select(TestRun).where(TestRun.id == run_id)
     return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def list_active(db: AsyncSession, department_id: str) -> list[TestRun]:
+    """Незавершённые кампании отдела (§F плана 2026-09-11, авто-режим обзора пула).
+
+    "Активная" — статус не в `TERMINAL_TEST_RUN_STATUSES`, независимо от
+    длительности: кампания может идти несколько дней, обзор пула должен
+    держать её в фокусе всё это время, а не переключаться на rolling-окно
+    только потому, что прошли сутки.
+    """
+    stmt = (
+        select(TestRun)
+        .where(TestRun.department_id == department_id, TestRun.status.not_in(TERMINAL_TEST_RUN_STATUSES))
+        .order_by(TestRun.created_at.desc())
+    )
+    return list((await db.execute(stmt)).scalars())
 
 
 async def lock_request(db: AsyncSession, actor: str, request_id: str) -> None:

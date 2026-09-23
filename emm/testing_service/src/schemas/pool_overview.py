@@ -1,9 +1,10 @@
-"""Pydantic-схемы GET /pool-overview (§F плана 2026-09-11).
+"""Pydantic-схемы GET /pool-overview (§F плана 2026-09-11, доработка 2026-09-23).
 
 Один ответ несёт оба независимых блока: очередь/исходы (`remaining`/
 `running`/`succeeded`/`failed`) и статусы стендов (`stands` + `stand_status_counts`).
-`test_run` заполнен только при `context=run` — заголовок карточки (РЦ, ядро,
-режим) без отдельного похода клиента за кампанией.
+`test_run` заполнен только при `mode=active_run` и ровно одной активной
+кампании отдела — заголовок карточки (РЦ, ядро, режим) без отдельного похода
+клиента за кампанией.
 """
 
 from datetime import datetime
@@ -15,7 +16,7 @@ StandStatusLiteral = Literal["recovering", "unreachable", "testing", "testing_do
 
 
 class PoolOverviewTestRun(BaseModel):
-    """Заголовок выбранной кампании — только то, что нужно карточке контекста."""
+    """Заголовок активной кампании — только то, что нужно карточке `mode=active_run`."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -51,15 +52,22 @@ class PoolOverviewStand(BaseModel):
 class PoolOverviewResponse(BaseModel):
     """Ответ GET /pool-overview."""
 
-    context: Literal["all", "run", "standalone"]
+    mode: Literal["active_run", "rolling_24h"] = Field(
+        description=(
+            "Режим агрегации succeeded/failed, выбранный сервисом: `active_run` "
+            "— по незавершённой кампании отдела, `rolling_24h` — за последние "
+            "сутки, если активных кампаний нет."
+        ),
+    )
     test_run_id: str | None = None
     test_run: PoolOverviewTestRun | None = Field(
-        default=None, description="Только при context=run — заголовок кампании.",
+        default=None,
+        description="Заполнено только при `mode=active_run` и ровно одной активной кампании.",
     )
-    remaining: int = Field(description="queued+preparing+ready — осталось выполнить.")
-    running: int = Field(description="Выполняются сейчас.")
-    succeeded: int = Field(description="Логические тесты, у которых последняя попытка — succeeded.")
-    failed: int = Field(description="Логические тесты, у которых последняя попытка — failed.")
+    remaining: int = Field(description="queued+preparing+ready — осталось выполнить, по всему отделу.")
+    running: int = Field(description="Выполняются сейчас, по всему отделу.")
+    succeeded: int = Field(description="Логические тесты, у которых последняя попытка — succeeded, в выбранном режиме.")
+    failed: int = Field(description="Логические тесты, у которых последняя попытка — failed, в выбранном режиме.")
     stands: list[PoolOverviewStand]
     stand_status_counts: dict[StandStatusLiteral, int] = Field(
         description="Число стендов в каждом статусе — свёртка `stands` для карточек.",

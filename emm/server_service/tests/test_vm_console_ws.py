@@ -9,7 +9,8 @@
   * ВМ занята другим / у учётки нет пароля → close 4409;
   * happy-path: креды учётки стэшатся, start несёт `target_type=vm`,
     `console_kind`, домен ВМ и адрес hub'а; аудит session_open/close с
-    target_type=vm и account_id/login/kind.
+    target_type=vm и account_id/login/kind; `stop` публикуется не сразу на
+    disconnect, а после grace-периода (монкипатчен на доли секунды в тестах).
 
 WS не гоняем через реальный handshake — вызываем хендлер с фейковым
 WebSocket'ом и подменяем auth/резолв кред/Redis на уровне модуля `console`.
@@ -93,18 +94,47 @@ class FakePubSub:
 
 
 class FakeRedis:
+    """`pubsub()` отдаёт заскриптованный мост первым вызовом; любой следующий —
+    свежий пустой `FakePubSub` (отдельные Redis-соединения detach/reattach —
+    `_grace_watch`/`_ping_worker`, см. `console.py` и `test_console_ws.py`).
+    get/set/delete — dict-стор под `dbos:console_session:*` (реестр сессий)."""
+
     def __init__(self, pubsub):
         self._pubsub = pubsub
         self.published: list[tuple[str, str]] = []
+        self._store: dict[str, str] = {}
+        self._pubsub_calls = 0
 
     def pubsub(self):
-        return self._pubsub
+        self._pubsub_calls += 1
+        if self._pubsub_calls == 1:
+            return self._pubsub
+        return FakePubSub([])
 
     async def publish(self, channel, message):
         self.published.append((channel, message))
 
+    async def get(self, key):
+        return self._store.get(key)
+
+    async def set(self, key, value, ex=None):
+        self._store[key] = value
+
+    async def delete(self, key):
+        self._store.pop(key, None)
+
     async def aclose(self):
         pass
+
+
+async def _drain_grace_tasks() -> None:
+    """Дождаться фоновых grace-watcher'ов — см. одноимённый хелпер в
+    `test_console_ws.py`: `_enter_grace` только планирует таймер и
+    возвращается, финализация (публикация `stop` + `session_close`) идёт в
+    отдельной task'е из `console._pending_grace_tasks`."""
+    tasks = list(console._pending_grace_tasks)
+    if tasks:
+        await asyncio.wait(tasks, timeout=2.0)
 
 
 def _make_vm():
@@ -155,6 +185,15 @@ def _patch_console(monkeypatch):
     monkeypatch.setattr(console.vm_svc, "resolve_vm_console_credentials", fake_resolve)
     monkeypatch.setattr(console.worker_client, "store_console_creds", fake_store)
     monkeypatch.setattr(console.worker_client, "delete_console_creds", fake_delete)
+
+    # Detach/reattach-таймауты — доли секунды вместо реальных 15 минут grace /
+    # 3 секунд ping, чтобы тесты не ждали фоновый таймер.
+    fake_settings = SimpleNamespace(
+        console_reattach_grace_seconds=0.05,
+        console_session_registry_ttl_seconds=3600,
+        console_reattach_ping_timeout_seconds=0.05,
+    )
+    monkeypatch.setattr(console, "get_settings", lambda: fake_settings)
 
     class _FakeSessionCM:
         async def __aenter__(self):
@@ -294,7 +333,9 @@ async def test_vm_bridge_publishes_vm_start(monkeypatch, _patch_console):
     assert base64.b64decode(json.loads(in_msgs[0])["data"]) == b"whoami\n"
     # вывод доставлен клиенту.
     assert b"guest$ " in b"".join(ws.sent_bytes)
-    # stop опубликован на disconnect.
+    # На сам disconnect stop ещё не публикуется — сессия уходит в
+    # grace-период; дожидаемся фонового таймера (монкипатчен на 0.05с).
+    await _drain_grace_tasks()
     assert any(ch == ctl_ch and '"stop"' in m for ch, m in redis.published)
     # session_open + session_close с target_type=vm.
     opened = [e for e in _patch_console if e["action"] == "ssh_console.session_open"][0]
@@ -329,3 +370,4 @@ async def test_vm_serial_kind_flows_to_start(monkeypatch, _patch_console):
     start = [m for ch, m in redis.published if ch == ctl_ch and '"start"' in m]
     assert start
     assert json.loads(start[0])["console_kind"] == "serial"
+    await _drain_grace_tasks()

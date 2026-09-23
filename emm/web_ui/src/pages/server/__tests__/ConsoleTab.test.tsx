@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { ToastProvider } from "@/contexts/ToastContext";
 import { toBase64 } from "@/lib/base64";
+import { closeAllConsoleSockets } from "@/lib/consoleSocketRegistry";
 import type { Persona } from "@/types/persona";
 
 // xterm рисует в DOM и тащит canvas — для jsdom подменяем терминал заглушкой,
@@ -156,6 +157,17 @@ async function connect() {
 
 describe("ConsoleTab password injection", () => {
   beforeEach(() => {
+    // Живая WS-сессия консоли теперь держится в persistent-реестре
+    // (`@/lib/consoleSocketRegistry`) — module-уровневый singleton, который
+    // осознанно переживает unmount компонента (SPA-навигация), но из-за
+    // этого точно так же переживает и unmount между тестами в одном файле.
+    // Без явного сброса второй тест находит "живую" сессию, оставшуюся от
+    // первого (WS там ни разу не закрывался), и монтируется сразу в
+    // состоянии "Подключено" вместо "Подключить". Закрываем всё перед каждым
+    // тестом — ровно то же самое, что происходит в реальном приложении на
+    // logout.
+    closeAllConsoleSockets();
+    sessionStorage.clear();
     lastWs = null;
     listAccountsMock.mockReset();
     getAccountMock.mockReset();

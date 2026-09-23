@@ -15,6 +15,19 @@
  * Prepare для консоли не требуется — заходим напрямую под выбранным аккаунтом.
  * Обязателен лишь выбор учётки; причины отказа бэка маппятся на понятный баннер
  * по close-коду.
+ *
+ * Владение WebSocket'ом и xterm-Terminal'ом живёт НЕ в этом компоненте, а в
+ * персистентном module-уровневом реестре (`@/lib/consoleSocketRegistry`) —
+ * `ConsoleSession` на маунте либо создаёт новую запись (`connect()`), либо
+ * находит уже живую по ключу `(target, account)` и просто переоткрывает
+ * xterm в свой DOM-узел (`Terminal.open`), не трогая сокет. На unmount (уход
+ * на другую страницу ВНУТРИ SPA) запись не закрывается — WS и Terminal живут
+ * дальше сами по себе, пока эту же карточку не откроют снова (или сессия не
+ * закроется по другой причине: «Отключить», logout, реальное закрытие
+ * вкладки — тогда бэк получает распознаваемый close-код и не ждёт grace, см.
+ * `console.py`). Detach/reattach через `session_id`+sessionStorage (ниже) —
+ * отдельный, более медленный fallback-слой на случай, когда сам JS-реестр не
+ * пережил разрыв (перезагрузка страницы, реальный обрыв сети, новая вкладка).
  */
 import {
   useCallback,
@@ -67,6 +80,18 @@ import { HeightResizeHandle } from "@/components/shell/ResizeHandle";
 import { usePanelHeight } from "@/components/shell/usePanelWidth";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
 import { Dropdown } from "@/components/ui/Dropdown";
+import {
+  CONSOLE_CLOSE_INTENTIONAL,
+  attachSubscriber,
+  consoleRegistryKey,
+  detachSubscriber,
+  findLiveAccountId,
+  getConsoleEntry,
+  registerConsoleEntry,
+  removeConsoleEntry,
+  type ConsoleSocketEntry,
+  type ConsoleSocketSubscriber,
+} from "@/lib/consoleSocketRegistry";
 import { mockVmAccounts, mockVmConsole } from "@/mocks/vm";
 import {
   alltaUpdateVm,
@@ -122,6 +147,89 @@ interface ConsoleAccount {
 const CONSOLE_HEIGHT_KEY = "dbos-console-height";
 const CONSOLE_MIN_HEIGHT = 240;
 const CONSOLE_MAX_HEIGHT = 2000;
+
+// ── Detach/reattach: session_id консоли переживает unmount компонента ───────
+// (переход на другую страницу/вкладку внутри SPA, но не закрытие браузерной
+// вкладки/reload — sessionStorage привязан к ней). Бэкенд держит PTY живым
+// ещё грейс-период после обрыва WS (см. докстринг `server_service/.../
+// console.py`) — если вернуться на эту же карточку и переподключиться под
+// той же учёткой раньше, чем грейс истечёт, увидим тот же терминал, без
+// повторного запуска сессии. История вывода за время разрыва не
+// восстанавливается — только то, что PTY произведёт после реконнекта.
+const CONSOLE_ACTIVE_SESSION_PREFIX = "dbos-console-active:";
+
+interface PersistedConsoleSession {
+  accountId: string;
+  sessionId: string;
+}
+
+function consoleTargetStorageKey(target: ConsoleTarget): string {
+  return target.kind === "server"
+    ? `${CONSOLE_ACTIVE_SESSION_PREFIX}server:${target.serverId}`
+    : `${CONSOLE_ACTIVE_SESSION_PREFIX}vm:${target.vmId}:${target.consoleKind ?? "ssh"}`;
+}
+
+function loadPersistedSession(target: ConsoleTarget): PersistedConsoleSession | null {
+  try {
+    const raw = sessionStorage.getItem(consoleTargetStorageKey(target));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedConsoleSession>;
+    if (typeof parsed.accountId === "string" && typeof parsed.sessionId === "string") {
+      return { accountId: parsed.accountId, sessionId: parsed.sessionId };
+    }
+  } catch {
+    // приватный режим / битый JSON — просто нет сохранённой сессии
+  }
+  return null;
+}
+
+function savePersistedSession(
+  target: ConsoleTarget,
+  accountId: string,
+  sessionId: string,
+): void {
+  try {
+    sessionStorage.setItem(
+      consoleTargetStorageKey(target),
+      JSON.stringify({ accountId, sessionId } satisfies PersistedConsoleSession),
+    );
+  } catch {
+    // квота/приватный режим — просто не переживём reload, не критично
+  }
+}
+
+/** session_id, который стоит попробовать на reattach для (target, accountId),
+ * либо `undefined`, если сохранённой сессии для ЭТОЙ учётки нет. */
+function pickReattachSessionId(
+  target: ConsoleTarget,
+  accountId: string,
+): string | undefined {
+  const persisted = loadPersistedSession(target);
+  return persisted && persisted.accountId === accountId
+    ? persisted.sessionId
+    : undefined;
+}
+
+/** Текстовый control-кадр `{"event":"session","session_id":...}` — единственный
+ * JSON-текст, который шлёт мост при удачном connect/reattach. Всё остальное
+ * текстовое от сервера в этом протоколе не встречается, но на всякий случай
+ * не перехватываем ничего, что не распозналось как этот конкретный кадр. */
+function tryParseSessionFrame(text: string): string | null {
+  if (!text.startsWith("{")) return null;
+  try {
+    const obj: unknown = JSON.parse(text);
+    if (
+      obj && typeof obj === "object" &&
+      (obj as Record<string, unknown>).event === "session" &&
+      typeof (obj as Record<string, unknown>).session_id === "string"
+    ) {
+      return (obj as Record<string, unknown>).session_id as string;
+    }
+  } catch {
+    // не JSON — обычный текстовый кадр
+  }
+  return null;
+}
 
 // Как часто спрашиваем testing_service, не идёт ли сейчас на этом сервере
 // тест (§8.6 плана миграции) — обычный REST-polling, WS для самого
@@ -285,6 +393,39 @@ function AccountConsolePanel({
   const selectedAccount =
     accounts.find((a) => a.id === selectedAccountId) ?? null;
 
+  // Учётка живой сессии (см. `ConsoleSession.onConnStateChange`) — дропдаун
+  // блокируется, пока она открыта/открывается: смена аккаунта в дропдауне не
+  // переоткрывает сокет автоматически, а значит вкладка «Пароль» могла бы
+  // тянуть пароль ДРУГОЙ (только что выбранной) учётки и слать его в РЕАЛЬНО
+  // открытую сессию под старой — баг из аудита. Простой и однозначный фикс:
+  // пока сессия жива, дропдаун недоступен — сначала отключитесь.
+  const [sessionState, setSessionState] = useState<ConnState>("idle");
+  const accountLocked = sessionState === "open" || sessionState === "connecting";
+
+  // Однократный автовыбор учётки уже живой сессии — сначала смотрим в
+  // persistent-реестр (WS реально ещё открыт где-то в этой же вкладке, просто
+  // мы только что смонтировались на другой странице SPA), и только если там
+  // пусто — на sessionStorage (grace-period fallback на реальный обрыв). Чтобы
+  // при возврате на карточку не приходилось выбирать аккаунт заново вручную.
+  const autoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (autoSelectedRef.current || accounts.length === 0) return;
+    autoSelectedRef.current = true;
+    const accountIds = accounts.map((a) => a.id);
+    const liveAccountId =
+      target.kind === "server"
+        ? findLiveAccountId("server", target.serverId, accountIds)
+        : findLiveAccountId("vm", target.vmId, accountIds, target.consoleKind ?? "ssh");
+    if (liveAccountId) {
+      setSelectedAccountId(liveAccountId);
+      return;
+    }
+    const persisted = loadPersistedSession(target);
+    if (persisted && accounts.some((a) => a.id === persisted.accountId)) {
+      setSelectedAccountId(persisted.accountId);
+    }
+  }, [accounts, target]);
+
   return (
     <>
       {loading && <div className="text-xs text-dim">Загружаем аккаунты…</div>}
@@ -316,6 +457,7 @@ function AccountConsolePanel({
           <Dropdown
             mode="single"
             searchable
+            disabled={accountLocked}
             placeholder="— выберите учётку —"
             options={[
               { value: "", label: "— выберите учётку —" },
@@ -328,8 +470,9 @@ function AccountConsolePanel({
             onChange={setSelectedAccountId}
           />
           <span className="text-dim text-xs">
-            Сессия откроется под этим аккаунтом. Подготовка (Prepare) для
-            консоли не требуется.
+            {accountLocked
+              ? "Сессия открыта под этим аккаунтом — отключитесь, чтобы сменить учётку."
+              : "Сессия откроется под этим аккаунтом. Подготовка (Prepare) для консоли не требуется."}
           </span>
         </label>
       )}
@@ -339,6 +482,7 @@ function AccountConsolePanel({
           target={target}
           account={selectedAccount}
           canReveal={canReveal}
+          onConnStateChange={setSessionState}
         />
       )}
     </>
@@ -358,17 +502,25 @@ function StatusBadge({ state }: { state: ConnState }) {
 
 /**
  * Живой терминал. xterm монтируется один раз в контейнер; WebSocket
- * открывается по «Подключить» и dispose'ится по «Отключить» / unmount. Маршрут
- * WS выбирается по `target` (сервер или ВМ) — сама механика одна и та же.
+ * открывается по «Подключить» (или автоматически, если для этой пары
+ * target+account есть сохранённая ещё живая сессия — см. reattach-эффект
+ * ниже) и явно закрывается по «Отключить». На unmount WS НЕ закрывается
+ * искусственно — компонент просто перестаёт существовать (переход на другую
+ * страницу внутри SPA), браузер прибьёт соединение сам, а бэкенд даст
+ * grace-период на переподключение вместо немедленного `stop` (см. докстринг
+ * `console.py`). Маршрут WS выбирается по `target` (сервер или ВМ) — сама
+ * механика одна и та же.
  */
 function ConsoleSession({
   target,
   account,
   canReveal,
+  onConnStateChange,
 }: {
   target: ConsoleTarget;
   account: ConsoleAccount | null;
   canReveal: boolean;
+  onConnStateChange?: (state: ConnState) => void;
 }) {
   const toast = useToast();
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -376,10 +528,31 @@ function ConsoleSession({
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const inputDisposeRef = useRef<(() => void) | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const subscriberRef = useRef<ConsoleSocketSubscriber | null>(null);
 
-  const [state, setState] = useState<ConnState>("idle");
-  const [closeInfo, setCloseInfo] = useState<ConsoleCloseInfo | null>(null);
+  // Ключ persistent-реестра для (target, account) — null, пока аккаунт не
+  // выбран. Смена аккаунта/вида консоли меняет ключ и заново прогоняет
+  // attach-или-create эффект ниже (каждый ключ — своя, независимая сессия).
+  const key = useMemo(() => {
+    if (!account) return null;
+    return target.kind === "server"
+      ? consoleRegistryKey("server", target.serverId, account.id)
+      : consoleRegistryKey("vm", target.vmId, account.id, target.consoleKind ?? "ssh");
+  }, [target, account]);
+
+  const [state, setState] = useState<ConnState>(
+    () => (key && getConsoleEntry(key)?.state) || "idle",
+  );
+  const onConnStateChangeRef = useRef(onConnStateChange);
+  onConnStateChangeRef.current = onConnStateChange;
+  const updateState = useCallback((next: ConnState) => {
+    setState(next);
+    onConnStateChangeRef.current?.(next);
+  }, []);
+  const [closeInfo, setCloseInfo] = useState<ConsoleCloseInfo | null>(
+    () => (key && getConsoleEntry(key)?.closeInfo) || null,
+  );
   const [injecting, setInjecting] = useState(false);
   const [termHeight, setTermHeight] = usePanelHeight(
     CONSOLE_HEIGHT_KEY,
@@ -399,30 +572,64 @@ function ConsoleSession({
     return () => document.removeEventListener("keydown", onKey);
   }, [fullscreen]);
 
-  // Монтируем терминал один раз и держим до unmount. fit и на ресайз окна, и
-  // на ресайз самого контейнера (смена вкладок/раскрытие панелей меняют высоту
-  // не трогая window) — иначе xterm считает строки по устаревшему размеру и
-  // нижний ряд клипается, а scrollback не прокручивается.
+  // Монтируем терминал (или переиспользуем уже живой из persistent-реестра —
+  // см. модульный докстринг) в контейнер при каждой смене `key`. Fit — и на
+  // ресайз окна, и на ресайз самого контейнера (смена вкладок/раскрытие
+  // панелей меняют высоту не трогая window) — иначе xterm считает строки по
+  // устаревшему размеру и нижний ряд клипается, а scrollback не прокручивается.
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
-    const term = new Terminal({
-      convertEol: true,
-      cursorBlink: true,
-      scrollback: 5000,
-      fontFamily:
-        "'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace",
-      fontSize: 13,
-      theme: { background: "#1e1e1e" },
-    });
-    const fit = new FitAddon();
-    term.loadAddon(fit);
-    term.open(mount);
-    try {
-      fit.fit();
-    } catch {
-      // контейнер ещё без размеров — fit'нём на первом ресайзе
+
+    const existing = key ? getConsoleEntry(key) : undefined;
+    let term: Terminal;
+    let fit: FitAddon;
+
+    if (existing) {
+      // Реюз: WS и Terminal уже живут в реестре (сессия пережила уход на
+      // другую страницу SPA) — просто переоткрываем xterm в свой DOM-узел и
+      // подписываемся на дальнейшие события. Никакого нового подключения.
+      term = existing.term;
+      fit = existing.fit;
+      wsRef.current = existing.ws;
+      sessionIdRef.current = existing.sessionId;
+      const subscriber: ConsoleSocketSubscriber = {
+        onState: updateState,
+        onCloseInfo: setCloseInfo,
+        onSessionId: (sid) => {
+          sessionIdRef.current = sid;
+        },
+      };
+      attachSubscriber(existing.key, subscriber);
+      subscriberRef.current = subscriber;
+      updateState(existing.state);
+      setCloseInfo(existing.closeInfo);
+      term.open(mount);
+      try {
+        fit.fit();
+      } catch {
+        // контейнер ещё без размеров — fit'нём на первом ресайзе
+      }
+    } else {
+      term = new Terminal({
+        convertEol: true,
+        cursorBlink: true,
+        scrollback: 5000,
+        fontFamily:
+          "'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace",
+        fontSize: 13,
+        theme: { background: "#1e1e1e" },
+      });
+      fit = new FitAddon();
+      term.loadAddon(fit);
+      term.open(mount);
+      try {
+        fit.fit();
+      } catch {
+        // контейнер ещё без размеров — fit'нём на первом ресайзе
+      }
     }
+
     termRef.current = term;
     fitRef.current = fit;
 
@@ -443,51 +650,63 @@ function ConsoleSession({
     return () => {
       window.removeEventListener("resize", onResize);
       ro?.disconnect();
-      inputDisposeRef.current?.();
-      inputDisposeRef.current = null;
-      wsRef.current?.close(1000, "unmount");
-      wsRef.current = null;
-      term.dispose();
+      if (key && subscriberRef.current) {
+        detachSubscriber(key, subscriberRef.current);
+        subscriberRef.current = null;
+      }
+      // Живая запись в реестре (по этому же ключу) значит, что сессия
+      // продолжает жить сама по себе — переход на другую страницу SPA не
+      // должен рвать ни WS, ни Terminal. Иначе (никогда не подключались,
+      // либо сессия уже реально закрылась) — терминал был чисто локальным,
+      // dispose'им как раньше.
+      const stillLive = key ? getConsoleEntry(key) : undefined;
+      if (!stillLive) {
+        term.dispose();
+      }
       termRef.current = null;
       fitRef.current = null;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
 
   const disconnect = useCallback(() => {
-    inputDisposeRef.current?.();
-    inputDisposeRef.current = null;
-    const ws = wsRef.current;
-    wsRef.current = null;
+    const entry = key ? getConsoleEntry(key) : undefined;
+    const ws = entry?.ws ?? wsRef.current;
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-      ws.close(1000, "client_disconnect");
+      // 4001 — явное клиентское намерение прекратить сессию прямо сейчас
+      // («Отключить», как и logout) — бэк не входит в grace на этот код.
+      ws.close(CONSOLE_CLOSE_INTENTIONAL, "client_disconnect");
     }
-    setState("closed");
-  }, []);
+    updateState("closed");
+  }, [key, updateState]);
 
   const connect = useCallback(() => {
     const term = termRef.current;
-    if (!term || !account) return;
-    // Перед новым подключением убираем прошлый сокет/подписку.
-    inputDisposeRef.current?.();
-    inputDisposeRef.current = null;
-    wsRef.current?.close(1000, "reconnect");
-    wsRef.current = null;
+    if (!term || !account || !key) return;
+    // Защитный случай: живая запись уже есть (кнопка «Подключить» не должна
+    // быть видна, пока сессия жива) — не пересоздаём поверх неё.
+    if (getConsoleEntry(key)) return;
 
     setCloseInfo(null);
-    setState("connecting");
+    updateState("connecting");
     term.clear();
     term.writeln("Подключение к консоли…");
 
+    // Persistent-реестр уже проверили выше (пусто) — sessionStorage-reattach
+    // остаётся fallback'ом на РЕАЛЬНЫЙ обрыв (reload страницы, новая вкладка),
+    // который сам JS-реестр пережить не может. Бэкенд сам решает, валиден ли
+    // ещё этот session_id; невалидный тихо игнорирует и создаёт новую сессию.
+    const reattachSessionId = pickReattachSessionId(target, account.id);
     const url =
       target.kind === "server"
-        ? consoleWsUrl(target.serverId, account.id)
-        : vmConsoleWsUrl(target.vmId, account.id, target.consoleKind ?? "ssh");
+        ? consoleWsUrl(target.serverId, account.id, reattachSessionId)
+        : vmConsoleWsUrl(target.vmId, account.id, target.consoleKind ?? "ssh", reattachSessionId);
 
     let ws: WebSocket;
     try {
       ws = new WebSocket(url, consoleWsProtocols());
     } catch {
-      setState("closed");
+      updateState("closed");
       setCloseInfo({
         message: "Не удалось открыть WebSocket-соединение.",
         normal: false,
@@ -497,49 +716,112 @@ function ConsoleSession({
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;
 
+    const entry: ConsoleSocketEntry = {
+      key,
+      ws,
+      term,
+      fit: fitRef.current!,
+      sessionId: null,
+      state: "connecting",
+      closeInfo: null,
+      subscriber: null,
+      inputDispose: null,
+    };
+    registerConsoleEntry(entry);
+    const subscriber: ConsoleSocketSubscriber = {
+      onState: updateState,
+      onCloseInfo: setCloseInfo,
+      onSessionId: (sid) => {
+        sessionIdRef.current = sid;
+      },
+    };
+    entry.subscriber = subscriber;
+    subscriberRef.current = subscriber;
+
+    // Обработчики WS живут на уровне записи реестра, не этого компонента:
+    // они обязаны продолжать работать (писать вывод в term, обновлять
+    // entry.state), даже когда компонент размонтирован — доставка в React
+    // идёт исключительно через `entry.subscriber`, который есть только пока
+    // кто-то смонтирован и смотрит.
     ws.onopen = () => {
-      setState("open");
-      // Ввод терминала → серверу. xterm отдаёт строку (включая управляющие
-      // последовательности), шлём как текстовый кадр.
+      entry.state = "open";
+      entry.subscriber?.onState("open");
       const sub = term.onData((data) => {
         if (ws.readyState === WebSocket.OPEN) ws.send(data);
       });
-      inputDisposeRef.current = () => sub.dispose();
+      entry.inputDispose = () => sub.dispose();
       term.focus();
     };
 
     ws.onmessage = (ev) => {
-      const t = termRef.current;
-      if (!t) return;
       const data = ev.data;
       if (typeof data === "string") {
-        t.write(data);
-      } else if (data instanceof ArrayBuffer) {
-        t.write(new Uint8Array(data));
+        // Единственный текстовый control-кадр в протоколе —
+        // `{"event":"session","session_id":...}`, шлётся один раз сразу
+        // после старта/reattach. Перехватываем его для sessionStorage-
+        // fallback'а, не рисуем в терминале; всё остальное текстовое — как
+        // раньше, обычный вывод.
+        const sid = tryParseSessionFrame(data);
+        if (sid) {
+          entry.sessionId = sid;
+          entry.subscriber?.onSessionId(sid);
+          savePersistedSession(target, account.id, sid);
+          return;
+        }
+        entry.term.write(data);
+        return;
+      }
+      if (data instanceof ArrayBuffer) {
+        entry.term.write(new Uint8Array(data));
       } else if (data instanceof Blob) {
         data.arrayBuffer().then((buf) => {
-          termRef.current?.write(new Uint8Array(buf));
+          entry.term.write(new Uint8Array(buf));
         });
       }
     };
 
     ws.onclose = (ev) => {
-      if (wsRef.current === ws) wsRef.current = null;
-      inputDisposeRef.current?.();
-      inputDisposeRef.current = null;
-      setState("closed");
       const info = describeConsoleClose(ev.code, ev.reason);
-      setCloseInfo(info);
-      const t = termRef.current;
-      if (t) t.writeln(`\r\n\x1b[2m— ${info.message}\x1b[0m`);
+      entry.state = "closed";
+      entry.closeInfo = info;
+      entry.inputDispose?.();
+      entry.inputDispose = null;
+      entry.subscriber?.onState("closed");
+      entry.subscriber?.onCloseInfo(info);
+      try {
+        entry.term.writeln(`\r\n\x1b[2m— ${info.message}\x1b[0m`);
+      } catch {
+        // term мог быть уже dispose'нут где-то ещё — не критично
+      }
+      removeConsoleEntry(key);
+      if (wsRef.current === ws) wsRef.current = null;
     };
 
     ws.onerror = () => {
       // Детали придут в onclose (код/причина); здесь только не залипнуть в
       // «connecting», если соединение упало до open.
-      if (state === "connecting") setState("closed");
+      if (entry.state === "connecting") {
+        entry.state = "closed";
+        entry.subscriber?.onState("closed");
+      }
     };
-  }, [target, account, state]);
+  }, [target, account, key, updateState]);
+
+  // Автоподключение при монтировании — только если в persistent-реестре для
+  // этого ключа пусто (иначе mount-эффект выше уже атачнулся напрямую) и
+  // есть сохранённый в sessionStorage session_id (реальный обрыв/reload, а
+  // не обычная SPA-навигация). Срабатывает один раз на маунт, как только
+  // появился аккаунт (авто-выбранный родителем — см. `AccountConsolePanel`).
+  const autoConnectedRef = useRef(false);
+  useEffect(() => {
+    if (autoConnectedRef.current || !account || !key) return;
+    autoConnectedRef.current = true;
+    if (getConsoleEntry(key)) return;
+    if (pickReattachSessionId(target, account.id)) {
+      connect();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, key]);
 
   // Подставить пароль текущей учётки в терминал без перевода строки: при
   // запросе пароля (sudo и т.п.) пользователю остаётся нажать Enter. Пароль

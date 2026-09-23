@@ -87,13 +87,23 @@ Source-of-truth — `src/services/audit_events.py::SERVICE_EVENTS`.
 `WS /api/server/v1/servers/{id}/console/ws` — интерактивная PTY-консоль через
 Redis pub/sub мост к worker'у. server_service эмитит session-события на стороне
 WS; per-команда (`ssh_console.command`) эмитит worker (см.
-`server_worker/AUDIT_EVENTS.md`). Доступ: `(server, console)` — sensitive,
-дефолтно admin/operator. Сервер обязан быть `is_managed` (prepared).
+`server_worker/AUDIT_EVENTS.md`). Доступ: `(server, console)` ЛИБО
+`console`/`view_password` на выбранном server_account — sensitive, дефолтно
+admin/operator. Prepare НЕ требуется — консоль коннектится под кредами
+выбранного аккаунта, не под управляющим ключом.
+
+Detach/reattach: обрыв браузерного WS не закрывает сессию сразу — PTY живёт
+ещё `CONSOLE_REATTACH_GRACE_SECONDS` (дефолт 15 минут) в ожидании reattach по
+тому же `session_id` (см. докстринг `endpoints/console.py`). `session_close`
+эмитится один раз, в момент реального завершения PTY (после grace-таймаута
+либо worker-side idle/max-lifetime), а не на каждый обрыв WS. Перехват сессии
+реконнектом из другой вкладки (`taken_over`) — не событие закрытия, аудит по
+нему не пишется.
 
 | action | default_severity | эмитится при | target_type | детали |
 |---|---|---|---|---|
-| `ssh_console.session_open` | INFO | WS connect → RBAC/visibility/prepared-gate. success → PTY-сессия запрошена у worker'а; denied → нет `console`-права; failure → `not_found_or_cross_dept` / `decommissioned` / `prepare_required` | `server` | success: `session_id`, `department_id`, `management_user`. denied: `reason=permission_denied`. failure: `reason in {not_found_or_cross_dept, decommissioned, prepare_required}`, `department_id` |
-| `ssh_console.session_close` | INFO | WS disconnect / таймаут / ошибка моста — закрытие сессии | `server` | `session_id`, `reason in {client_disconnect, bridge_error, start_failed:*}`, `department_id` |
+| `ssh_console.session_open` | INFO | WS connect (create ИЛИ reattach) → RBAC/visibility-гейт. success → PTY-сессия запрошена у worker'а либо переиспользована; denied → нет `console`-права; failure → `not_found_or_cross_dept` / `decommissioned` / `account_has_no_password` / `test_credentials_missing` | `server` | success: `session_id`, `department_id`, `account_id`, `login`, `credentials_source`, `reattach`. denied: `reason=permission_denied`. failure: `reason`, `department_id` |
+| `ssh_console.session_close` | INFO | PTY реально завершён: grace-таймаут без reattach, worker сам снёс PTY (idle_timeout/max_lifetime), реальное закрытие вкладки / явный intentional-close с фронта (без grace), либо `start` вообще не удался | `server` | `session_id`, `reason in {grace_timeout, idle_timeout, max_lifetime, pty_eof, client_stop, tab_closed, client_intentional_close, start_failed:*}`, `department_id`, `account_id`, `login`, `credentials_source` |
 
 `ssh_console.command` (worker-emitted, severity INFO / WARNING на ненулевом
 exit) — здесь session-события; per-команда зарегистрирована под server_service

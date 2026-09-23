@@ -873,21 +873,27 @@ class Settings(BaseSettings):
     # ключом и мостит ввод/вывод через Redis pub/sub. Сессия закрывается по
     # `stop`-сигналу, WS-disconnect'у либо таймауту бездействия.
     console_idle_timeout_seconds: float = Field(
-        default=900.0,
+        default=10800.0,
         gt=0,
         description=(
             "Idle timeout for an interactive SSH console PTY session. If no "
             "input arrives from the client within this window, the worker "
             "tears the session down and emits ssh_console.session_close with "
-            "reason=idle_timeout."
+            "reason=idle_timeout. 3 hours: covers watching a long debug test "
+            "run to completion without typing anything (server_service's "
+            "detach/reattach grace period only survives a WS drop, it does not "
+            "reset this timer — the worker only sees PTY stdin, not browser "
+            "connect/disconnect)."
         ),
     )
     console_max_session_seconds: float = Field(
-        default=3600.0,
+        default=36000.0,
         gt=0,
         description=(
             "Hard cap on a single console session lifetime regardless of "
-            "activity. Bounds resource usage of a forgotten open terminal."
+            "activity. Bounds resource usage of a forgotten open terminal. "
+            "10 hours: owner-specified ceiling for a full workday debug session "
+            "kept open across tab switches/SPA navigation on the frontend."
         ),
     )
     console_max_command_length: int = Field(

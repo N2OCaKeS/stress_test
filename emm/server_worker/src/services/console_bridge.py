@@ -5,8 +5,15 @@ server_worker не держит собственного HTTP/WS-сервера,
 Redis pub/sub. server_service на connect генерит `session_id`, публикует
 `start`-сигнал в control-канал, мостит клиентский WS на data-каналы:
 
-  * `console:ctl:<sid>` — control: server_service шлёт `start` / `stop`,
-    worker отвечает `ready` / `closed` / `error`.
+  * `console:ctl:<sid>` — control: server_service шлёт `start` / `stop` /
+    `ping`, worker отвечает `ready` / `closed` / `error` / `pong`. `ping` —
+    liveness-проба на reattach (см. server_service `console.py`): server_service
+    держит собственный Redis-реестр «жива ли сессия ещё» для detach/reattach
+    моста, `ping`/`pong` — способ свериться с истиной у самого worker'а перед
+    тем как мостить клиента на существующий sid. `stop` тоже отправляется не
+    сразу на browser-disconnect — server_service даёт grace-период на
+    переподключение, эта часть протокола целиком на его стороне, worker её не
+    видит и не хранит.
   * `console:in:<sid>`  — ввод клиента (client → PTY stdin).
   * `console:out:<sid>` — вывод PTY (PTY stdout/stderr → client).
 
@@ -828,6 +835,16 @@ async def _handle_ctl_message(message: dict) -> None:
         entry = _ACTIVE_SESSIONS.get(session_id)
         if entry is not None:
             entry[1].signal_stop()
+    elif action == "ping":
+        # Liveness-проба для reattach: server_service шлёт её перед тем как
+        # мостить клиента на существующую сессию, чтобы не подключить его к
+        # PTY, которого уже нет (idle_timeout/max_lifetime могли снести его,
+        # пока никто не был подключён). Отвечает только процесс-владелец —
+        # у остальных `_ACTIVE_SESSIONS` для этого sid пуст.
+        if session_id in _ACTIVE_SESSIONS:
+            asyncio.create_task(
+                _publish_pong(session_id), name=f"console-pong-{session_id}",
+            )
 
 
 def _start_session(session_id: str, msg: dict) -> None:
@@ -853,6 +870,14 @@ def _start_session(session_id: str, msg: dict) -> None:
 
     task = asyncio.create_task(_runner(), name=f"console-session-{session_id}")
     _ACTIVE_SESSIONS[session_id] = (task, session)
+
+
+async def _publish_pong(session_id: str) -> None:
+    try:
+        client = redis_pool.get_redis()
+        await client.publish(ctl_channel(session_id), json.dumps({"event": "pong"}))
+    except Exception:  # noqa: BLE001
+        logger.debug("console: pong publish failed", exc_info=True)
 
 
 async def _publish_start_error(session_id: str, error_code: str) -> None:

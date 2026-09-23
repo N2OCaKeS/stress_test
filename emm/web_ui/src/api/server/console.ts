@@ -20,9 +20,20 @@ import { getAccessToken } from "@/api/tokenStore";
  *
  * `accountId` — сервисная учётка, под которой бэк откроет PTY. Уходит в
  * query `account_id`; без него бэк закроет соединение кодом 4400.
+ *
+ * `sessionId` (опционально) — попытка переподключиться к уже открытой
+ * сессии вместо создания новой (detach/reattach, см. докстринг бэкендового
+ * `console.py`). Бэк сам проверяет, валиден ли он ещё для этого сервера/
+ * аккаунта/пользователя — невалидный/протухший тихо игнорируется, коннект
+ * идёт как обычный новый.
  */
-export function consoleWsUrl(serverId: string, accountId: string): string {
-  const path = `${API_BASE_URL}/server/v1/servers/${serverId}/console/ws?account_id=${encodeURIComponent(accountId)}`;
+export function consoleWsUrl(
+  serverId: string,
+  accountId: string,
+  sessionId?: string | null,
+): string {
+  let path = `${API_BASE_URL}/server/v1/servers/${serverId}/console/ws?account_id=${encodeURIComponent(accountId)}`;
+  if (sessionId) path += `&session_id=${encodeURIComponent(sessionId)}`;
   if (/^https?:\/\//i.test(API_BASE_URL)) {
     return path.replace(/^http/i, "ws");
   }
@@ -36,13 +47,16 @@ export function consoleWsUrl(serverId: string, accountId: string): string {
  * сервера, только путь ведёт в `/vms/{id}/console/ws`. `accountId` уходит в
  * query `account_id`: бэк открывает сессию в гость под этой учёткой. `kind`
  * выбирает транспорт: `ssh` (PTY в гость) или `serial` (`virsh console`).
+ * `sessionId` — тот же detach/reattach, что и у серверной консоли.
  */
 export function vmConsoleWsUrl(
   vmId: string,
   accountId: string,
   kind: "ssh" | "serial" = "ssh",
+  sessionId?: string | null,
 ): string {
-  const path = `${API_BASE_URL}/server/v1/vms/${vmId}/console/ws?account_id=${encodeURIComponent(accountId)}&kind=${kind}`;
+  let path = `${API_BASE_URL}/server/v1/vms/${vmId}/console/ws?account_id=${encodeURIComponent(accountId)}&kind=${kind}`;
+  if (sessionId) path += `&session_id=${encodeURIComponent(sessionId)}`;
   if (/^https?:\/\//i.test(API_BASE_URL)) {
     return path.replace(/^http/i, "ws");
   }
@@ -134,6 +148,12 @@ export function describeConsoleClose(
         message: "Сервер сейчас не принимает консольную сессию.",
         hint: reason ? `Причина: ${reason}.` : undefined,
         normal: false,
+      };
+    case 4419:
+      return {
+        message: "Сессия консоли открыта в другой вкладке или окне.",
+        hint: "Эта вкладка отключена — продолжайте работу там, откуда переподключились.",
+        normal: true,
       };
     case 4503:
       return {

@@ -18,6 +18,7 @@ import {
   setTokens,
   subscribe as subscribeTokens,
 } from "@/api/tokenStore";
+import { closeAllConsoleSockets } from "@/lib/consoleSocketRegistry";
 import type {
   IdentityContext,
   LoginRequest,
@@ -76,9 +77,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ApiClient → context bridge: when the client gives up on refresh it clears
-  // tokens and calls back here so we can drop the user out of state.
+  // tokens and calls back here so we can drop the user out of state. This is
+  // the involuntary-signout path too — a revoked session (ban/block/forced
+  // password reset — see `_revoke_sessions_on_block` server-side) surfaces
+  // here on the next failed refresh, not through `logout()`. Any live
+  // interactive console session must not survive under whoever logs in next
+  // in this same tab, so we kill them here unconditionally, same as an
+  // explicit logout.
   useEffect(() => {
     registerSignOutHandler(() => {
+      closeAllConsoleSockets();
       setUser(null);
       try {
         if (typeof window !== "undefined") {
@@ -159,6 +167,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Явный logout обрывает все живые консольные SSH-сессии этой вкладки
+    // немедленно (close-код 4001 — бэк не входит в grace на этот код, см.
+    // `_CLIENT_CLOSE_INTENTIONAL` в `console.py`). Делаем это ДО похода на
+    // сервер: сетевой сбой /logout не должен оставить SSH висеть открытым.
+    closeAllConsoleSockets();
     if (!USE_MOCK_AUTH) {
       try {
         // Refresh-токен уедет cookie'ой — браузер прикрепит её к запросу.

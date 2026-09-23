@@ -376,6 +376,45 @@ class Settings(BaseSettings):
             "открывает его, предъявляя подписанный токен."
         ),
     )
+    console_reattach_grace_seconds: float = Field(
+        default=900.0,
+        gt=0,
+        alias="CONSOLE_REATTACH_GRACE_SECONDS",
+        description=(
+            "Сколько ждём переподключения к интерактивной SSH/serial-консоли "
+            "(сервер или ВМ) после обрыва браузерного WebSocket, прежде чем "
+            "опубликовать worker'у `stop` и снести PTY. 15 минут — достаточно, "
+            "чтобы пережить переключение вкладок/сна ноутбука/кратковременный "
+            "сетевой сбой, но не держит забытую сессию вечно. Само значение не "
+            "спасает от worker-side `console_max_session_seconds` — тот "
+            "по-прежнему рвёт PTY по абсолютному таймауту независимо от grace."
+        ),
+    )
+    console_session_registry_ttl_seconds: int = Field(
+        default=24 * 3600,
+        gt=0,
+        alias="CONSOLE_SESSION_REGISTRY_TTL_SECONDS",
+        description=(
+            "TTL Redis-записи `dbos:console_session:<sid>` (метаданные для "
+            "reattach + владения single-attach) в живом состоянии. Не таймер "
+            "сессии — просто потолок, чтобы запись не висела в Redis вечно, "
+            "если под с активной консолью упал мимо `finally` (grace так и не "
+            "выставился). Должен с запасом перекрывать самую длинную реальную "
+            "сессию; сама живучесть PTY регулируется `console_max_session_"
+            "seconds` воркера."
+        ),
+    )
+    console_reattach_ping_timeout_seconds: float = Field(
+        default=3.0,
+        gt=0,
+        alias="CONSOLE_REATTACH_PING_TIMEOUT_SECONDS",
+        description=(
+            "Сколько ждём `pong` от worker'а на reattach-попытке (проверка, что "
+            "PTY реально ещё жив, а не просто есть Redis-запись про сессию). "
+            "Не дождались — сессия считается мёртвой, reattach тихо откатывается "
+            "на создание нового подключения под теми же кредами."
+        ),
+    )
     logging_service_url: str = Field(
         default="",
         description=(

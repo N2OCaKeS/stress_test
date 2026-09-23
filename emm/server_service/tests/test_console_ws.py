@@ -16,8 +16,11 @@ prepare НЕ требуется. Покрытие:
   * managed=False сервер → консоль работает (prepare не нужен);
   * happy-path bridge: креды аккаунта стэшатся в Redis, после `ready` ввод
     клиента публикуется в `console:in:<sid>`, вывод из `console:out:<sid>`
-    уходит клиенту, на disconnect публикуется `stop`; start несёт
-    `creds_stash_key`, аудит несёт `account_id`/`login`;
+    уходит клиенту; на disconnect `stop` НЕ публикуется немедленно — сессия
+    уходит в grace-период (см. `_enter_grace`/`_grace_watch`), `stop`
+    публикуется только когда фоновый grace-таймер (здесь монкипатчен на
+    доли секунды) истекает без reattach; start несёт `creds_stash_key`,
+    аудит несёт `account_id`/`login`;
   * занят тестом (`busy_state=testing`) → консоль НЕ блокируется, но
     `account_id` из query игнорируется — креды берутся из
     `server_test_credentials` (`pft_svc.read_test_credentials`), аудит несёт
@@ -121,18 +124,50 @@ class FakePubSub:
 
 
 class FakeRedis:
+    """`pubsub()` отдаёт заскриптованный мост первым вызовом (основная
+    сессия), любой следующий вызов — свежий пустой `FakePubSub` (это
+    отдельные Redis-соединения detach/reattach-инфраструктуры: `_grace_watch`
+    слушает control-канал уже ПОСЛЕ основного моста, `_ping_worker` — на
+    reattach). get/set/delete — простой dict-стор под `dbos:console_session:*`
+    (реестр сессий для grace/reattach, см. `console.py`)."""
+
     def __init__(self, pubsub):
         self._pubsub = pubsub
         self.published: list[tuple[str, str]] = []
+        self._store: dict[str, str] = {}
+        self._pubsub_calls = 0
 
     def pubsub(self):
-        return self._pubsub
+        self._pubsub_calls += 1
+        if self._pubsub_calls == 1:
+            return self._pubsub
+        return FakePubSub([])
 
     async def publish(self, channel, message):
         self.published.append((channel, message))
 
+    async def get(self, key):
+        return self._store.get(key)
+
+    async def set(self, key, value, ex=None):
+        self._store[key] = value
+
+    async def delete(self, key):
+        self._store.pop(key, None)
+
     async def aclose(self):
         pass
+
+
+async def _drain_grace_tasks() -> None:
+    """Дождаться фоновых grace-watcher'ов (`_enter_grace`), запущенных за
+    время теста — иначе финализация (публикация `stop` + `session_close`)
+    ещё не успеет случиться к моменту assert'ов: `_enter_grace` только
+    ПЛАНИРУЕТ таймер и возвращается, саму отложенную работу делает отдельная
+    task в `console._pending_grace_tasks`."""
+    tasks = list(console._pending_grace_tasks)
+    if tasks:
+        await asyncio.wait(tasks, timeout=2.0)
 
 
 def _make_server(
@@ -213,6 +248,17 @@ def _patch_console(monkeypatch):
     )
     monkeypatch.setattr(console.worker_client, "store_console_creds", fake_store)
     monkeypatch.setattr(console.worker_client, "delete_console_creds", fake_delete)
+
+    # Detach/reattach-таймауты — доли секунды, чтобы тесты не ждали реальные
+    # 15 минут grace-периода / 3 секунды ping-таймаута. `get_settings()`
+    # зовётся из нескольких мест модуля (`_claim_session`/`_enter_grace`/
+    # `_grace_watch`/`_ping_worker`) — патчим сам биндинг в модуле `console`.
+    fake_settings = SimpleNamespace(
+        console_reattach_grace_seconds=0.05,
+        console_session_registry_ttl_seconds=3600,
+        console_reattach_ping_timeout_seconds=0.05,
+    )
+    monkeypatch.setattr(console, "get_settings", lambda: fake_settings)
 
     # AsyncSessionLocal → async-CM, отдающий заглушку (require_action /
     # load_visible_server мокаются отдельно, db не используется реально).
@@ -600,7 +646,10 @@ async def test_bridge_publishes_input_and_relays_output(monkeypatch, _patch_cons
     assert decoded == b"ls -la\n"
     # вывод PTY доставлен клиенту.
     assert b"hello\n" in b"".join(ws.sent_bytes)
-    # stop опубликован на disconnect.
+    # На сам disconnect stop ещё НЕ публикуется — сессия уходит в grace-период
+    # (см. `_enter_grace`); дожидаемся фонового таймера (монкипатчен на 0.05с).
+    await _drain_grace_tasks()
+    # ...и вот теперь grace истёк без reattach — stop опубликован.
     assert any(ch == ctl_ch and '"stop"' in m for ch, m in redis.published)
     # session_open + session_close в аудите, с account_id/login в details.
     actions = [e["action"] for e in _patch_console]
@@ -641,6 +690,7 @@ async def test_managed_false_server_works(monkeypatch, _patch_console):
     assert ws.accepted
     assert ws.closed_reason != "PREPARE_REQUIRED"
     assert any(ch == ctl_ch and '"start"' in m for ch, m in redis.published)
+    await _drain_grace_tasks()
 
 
 @pytest.mark.asyncio
@@ -734,5 +784,8 @@ async def test_testing_uses_forced_test_credentials(monkeypatch, _patch_console)
     # реально резолвились не через него.
     assert opened["details"]["account_id"] == "acc_whatever"
 
+    # session_close (и итоговый stop) приходят только после grace-периода.
+    await _drain_grace_tasks()
+    assert any(ch == ctl_ch and '"stop"' in m for ch, m in redis.published)
     closed = [e for e in _patch_console if e["action"] == "ssh_console.session_close"][0]
     assert closed["details"]["credentials_source"] == "test"

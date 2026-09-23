@@ -109,6 +109,18 @@ def console_out_channel(session_id: str) -> str:
     return f"{CONSOLE_OUT_CHANNEL_PREFIX}{session_id}"
 
 
+# Redis-запись про живую/grace-сессию консоли (detach/reattach + single-attach
+# ownership). Ключ переживает конкретный WebSocket: держит метаданные сессии
+# (кто/что/куда) и `token` текущего владельца — реконнект перезаписывает token,
+# что и есть механизм отзыва как у старого live-моста (takeover), так и у
+# отложенного stop-таймера grace-периода (см. `endpoints/console.py`).
+CONSOLE_SESSION_KEY_PREFIX = "dbos:console_session:"
+
+
+def console_session_key(session_id: str) -> str:
+    return f"{CONSOLE_SESSION_KEY_PREFIX}{session_id}"
+
+
 def get_worker_redis() -> "aioredis.Redis":
     """Вернуть Redis-клиент к worker-брокеру для console pub/sub.
 

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALLTA · Двухпанельный мониторинг с фильтрами</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * { transition: all 0.2s ease; }
+        body { background: #0b1620; font-family: 'Inter', system-ui, sans-serif; color: #eef2ff; height: 100vh; overflow: hidden; }
+        
+        /* Левая панель */
+        .stands-sidebar {
+            background: rgba(10, 17, 28, 0.95);
+            border-right: 1px solid rgba(66, 153, 225, 0.2);
+            height: 100vh;
+            overflow-y: auto;
+            padding: 16px 12px;
+        }
+        
+        .stand-item {
+            background: rgba(18, 28, 40, 0.6);
+            border: 1px solid rgba(66, 153, 225, 0.2);
+            border-radius: 20px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .stand-item:hover { background: rgba(255, 123, 44, 0.15); border-color: #ff7b2c; transform: translateX(4px); }
+        .stand-item.active { background: rgba(255, 123, 44, 0.25); border-color: #ff7b2c; box-shadow: 0 0 10px rgba(255, 123, 44, 0.2); }
+        
+        .stand-status-led { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+        .stand-status-running { background-color: #2ecc71; box-shadow: 0 0 4px #2ecc71; }
+        .stand-status-stopped { background-color: #e74c3c; }
+        
+        .stand-cpu-bar { height: 3px; background: #1e2a3a; border-radius: 4px; overflow: hidden; width: 60px; display: inline-block; margin-left: 8px; }
+        .stand-cpu-fill { height: 100%; background: #ff7b2c; width: 0%; border-radius: 4px; }
+        
+        /* Правая панель */
+        .detail-panel {
+            height: 100vh;
+            overflow-y: auto;
+            padding: 20px 24px;
+        }
+        
+        .glass-card { background: rgba(18, 28, 40, 0.75); backdrop-filter: blur(2px); border: 1px solid rgba(66, 153, 225, 0.2); border-radius: 24px; }
+        
+        .progress-micro { height: 6px; background: #1e2a3a; border-radius: 10px; overflow: hidden; width: 100%; }
+        .progress-fill { height: 100%; background: #ff7b2c; width: 0%; border-radius: 10px; }
+        
+        .test-control-btn { background: rgba(18, 28, 40, 0.8); border: 1px solid rgba(66, 153, 225, 0.4); color: #cbd5e6; border-radius: 40px; padding: 6px 18px; font-size: 0.8rem; transition: all 0.2s; }
+        .test-control-btn:hover { background: #ff7b2c; border-color: #ff7b2c; color: #0b1620; }
+        .test-control-start { border-color: #2ecc71; color: #2ecc71; }
+        .test-control-start:hover { background: #2ecc71; color: #0b1620; }
+        .test-control-stop { border-color: #e74c3c; color: #e74c3c; }
+        .test-control-stop:hover { background: #e74c3c; color: #0b1620; }
+        .test-control-ok { border-color: #f1c40f; color: #f1c40f; }
+        .test-control-ok:hover { background: #f1c40f; color: #0b1620; }
+        
+        .health-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .health-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(18, 28, 40, 0.5); padding: 4px 12px; border-radius: 40px; font-size: 0.75rem; }
+        
+        .btn-outline-accent { border-color: #ff7b2c; color: #ff9a5a; }
+        .btn-outline-accent:hover { background: #ff7b2c; color: #0b1620; }
+        
+        .filter-group { background: rgba(18, 28, 40, 0.5); border-radius: 40px; padding: 4px 12px; }
+        .filter-select { background: #0f1722; border: 1px solid #2d3a4a; color: #eef2ff; border-radius: 30px; padding: 4px 12px; font-size: 0.75rem; }
+        .filter-select:focus { outline: none; border-color: #ff7b2c; }
+        
+        /* Кастомный скролл */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #1e2a3a; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #ff7b2c; border-radius: 10px; }
+        
+        .navbar-custom { background: #0a111c; border-bottom: 1px solid #1e2f3c; padding: 8px 20px; }
+    </style>
+</head>
+<body>
+
+<!-- Верхняя панель с кнопками -->
+<div class="navbar-custom d-flex justify-content-between align-items-center">
+    <a class="navbar-brand fs-4" href="#"><i class="fas fa-chart-simple me-2" style="color: #ff7b2c;"></i>ALLTA · Двухпанельный мониторинг</a>
+    <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-accent" data-bs-toggle="modal" data-bs-target="#queueModal"><i class="fas fa-plus-circle"></i> Создать очередь</button>
+        <button class="btn btn-sm btn-outline-accent" data-bs-toggle="modal" data-bs-target="#createRunModal"><i class="fas fa-rocket"></i> Создать прогон</button>
+    </div>
+</div>
+
+<div class="container-fluid p-0 h-100" style="height: calc(100vh - 57px);">
+    <div class="row g-0 h-100">
+        
+        <!-- ЛЕВАЯ ПАНЕЛЬ: список стендов с фильтрами -->
+        <div class="col-12 col-lg-4 col-xl-3 stands-sidebar">
+            <div class="d-flex justify-content-between align-items-center mb-3 px-2">
+                <h5 class="m-0"><i class="fas fa-server me-2"></i>Стенды</h5>
+                <span class="badge bg-secondary" id="standsCount">0</span>
+            </div>
+            
+            <!-- Фильтры -->
+            <div class="d-flex flex-wrap gap-2 mb-3 px-2">
+                <select id="filterType" class="filter-select">
+                    <option value="all">🏷️ Все типы</option>
+                    <option value="vm">🖥️ VM</option>
+                    <option value="physical">🖧 Физические</option>
+                </select>
+                <select id="filterStatus" class="filter-select">
+                    <option value="all">📊 Все статусы</option>
+                    <option value="running">🟢 Активные</option>
+                    <option value="stopped">🔴 Остановлены</option>
+                </select>
+                <select id="filterOwner" class="filter-select">
+                    <option value="all">👥 Все владельцы</option>
+                    <option value="free">🆓 Свободные</option>
+                    <option value="busy">🔒 Занятые</option>
+                </select>
+            </div>
+            
+            <div id="standsList" class="scrollable" style="max-height: calc(100vh - 200px);">
+                <!-- Список стендов будет заполнен динамически -->
+            </div>
+        </div>
+        
+        <!-- ПРАВАЯ ПАНЕЛЬ: детали выбранного стенда -->
+        <div class="col-12 col-lg-8 col-xl-9 detail-panel">
+            <!-- Верхние карточки (хранилища + health) -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-4">
+                    <div class="glass-card p-3 h-100">
+                        <h6 class="mb-2"><i class="fas fa-hard-drive"></i> Хранилища</h6>
+                        <div class="mb-2"><div class="d-flex justify-content-between small"><span>Системный</span><span id="sysDiskUsed">0%</span></div><div class="progress-micro mt-1"><div id="sysDiskBar" style="width:0%; background:#34d399;"></div></div></div>
+                        <div class="mb-2"><div class="d-flex justify-content-between small"><span>FTP</span><span id="ftpDiskUsed">0%</span></div><div class="progress-micro mt-1"><div id="ftpDiskBar" style="width:0%; background:#f97316;"></div></div></div>
+                        <div><div class="d-flex justify-content-between small"><span>Partimag</span><span id="partimagDiskUsed">0%</span></div><div class="progress-micro mt-1"><div id="partimagDiskBar" style="width:0%; background:#ff4d4d;"></div></div></div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="glass-card p-3 h-100">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6><i class="fas fa-heartbeat me-1"></i> ALLTA Services</h6>
+                            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#alltaServicesModal"><i class="fas fa-external-link-alt"></i></button>
+                        </div>
+                        <div id="alltaServicesSummary" class="health-summary mt-2">
+                            <span class="health-badge"><i class="fas fa-check-circle text-success"></i> running: <span id="alltaRunningCount">0</span></span>
+                            <span class="health-badge"><i class="fas fa-pause-circle text-warning"></i> exited: <span id="alltaExitedCount">0</span></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="glass-card p-3 h-100">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6><i class="fas fa-shield-alt me-1"></i> Astra Services</h6>
+                            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#astraServicesModal"><i class="fas fa-external-link-alt"></i></button>
+                        </div>
+                        <div id="astraServicesSummary" class="health-summary mt-2">
+                            <span class="health-badge"><i class="fas fa-check-circle text-success"></i> ok: <span id="astraOkCount">0</span></span>
+                            <span class="health-badge"><i class="fas fa-exclamation-circle text-danger"></i> fail: <span id="astraFailCount">0</span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Детальная карточка выбранного стенда -->
+            <div id="selectedStandDetails" class="glass-card p-4">
+                <div class="text-center py-5">
+                    <i class="fas fa-arrow-left me-2"></i> Выберите стенд из левого списка
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ========== МОДАЛЬНЫЕ ОКНА ========== -->
+<div class="modal fade" id="alltaServicesModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content bg-dark text-light border-secondary" style="background: #0b1620; border-radius: 28px;">
+            <div class="modal-header border-secondary"><h5><i class="fas fa-heartbeat me-2"></i> ALLTA Services Health</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body" id="alltaServicesDetail" style="max-height: 60vh; overflow-y: auto;"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="astraServicesModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content bg-dark text-light border-secondary" style="background: #0b1620; border-radius: 28px;">
+            <div class="modal-header border-secondary"><h5><i class="fas fa-shield-alt me-2"></i> Astra Services Health</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body" id="astraServicesDetail" style="max-height: 60vh; overflow-y: auto;"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="queueModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content bg-dark text-light border-secondary" style="background: #0b1620; border-radius: 28px;">
+            <div class="modal-header border-secondary"><h5><i class="fas fa-tasks"></i> Создать очередь</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">Демо-режим: здесь будут настройки очереди</div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="createRunModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-light border-secondary" style="background: #0b1620; border-radius: 28px;">
+            <div class="modal-header border-secondary"><h5><i class="fas fa-rocket"></i> Создать прогон</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">Демо-режим: здесь будут настройки прогона</div>
+        </div>
+    </div>
+</div>
+
+<div id="toastContainer" class="toast-notify position-fixed bottom-0 end-0 p-3" style="z-index: 1100;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // ---------- ДАННЫЕ СТЕНДОВ (с указанием типа) ----------
+    let standsData = [
+        { id:1, name:'stand1-201', type:'VM WorkStation', category:'vm', cpu:24, ram:38, io:12, status:'running', lastTask:'UnixBench', progress:'100%', powerStatus:true, testStatus:'running', owner:'dtimonin', snapshots:['2025-01-01','2025-02-01'] },
+        { id:2, name:'stand2-202', type:'VM WorkStation', category:'vm', cpu:0, ram:0, io:0, status:'stopped', lastTask:'', progress:'', powerStatus:false, testStatus:'stopped', owner:'', snapshots:[] },
+        { id:3, name:'stand3-59-204', type:'LowServer', category:'physical', cpu:68, ram:54, io:89, status:'running', lastTask:'Parsec', progress:'70%', powerStatus:true, testStatus:'running', owner:'ivelikanov', snapshots:['2025-01-15'] },
+        { id:4, name:'stand4-58-203', type:'MiddleServer', category:'physical', cpu:45, ram:61, io:34, status:'running', lastTask:'fs_mark', progress:'100%', powerStatus:true, testStatus:'stopped', owner:'', snapshots:[] },
+        { id:5, name:'stand5-91-205', type:'HighServer', category:'physical', cpu:92, ram:85, io:73, status:'running', lastTask:'PostgreSQL', progress:'45%', powerStatus:true, testStatus:'running', owner:'amedvedev', snapshots:['2025-02-01'] },
+        { id:6, name:'stand6-101', type:'VM TestStation', category:'vm', cpu:12, ram:28, io:5, status:'running', lastTask:'sysbench', progress:'30%', powerStatus:true, testStatus:'running', owner:'mfilippenko', snapshots:[] },
+        { id:7, name:'stand7-102', type:'VM TestStation', category:'vm', cpu:0, ram:0, io:0, status:'stopped', lastTask:'', progress:'', powerStatus:false, testStatus:'stopped', owner:'', snapshots:[] },
+        { id:8, name:'stand8-103', type:'VM TestStation', category:'vm', cpu:8, ram:15, io:2, status:'running', lastTask:'iperf', progress:'60%', powerStatus:true, testStatus:'running', owner:'dtimonin', snapshots:[] },
+        { id:9, name:'stand9-104', type:'VM TestStation', category:'vm', cpu:0, ram:0, io:0, status:'stopped', lastTask:'', progress:'', powerStatus:false, testStatus:'stopped', owner:'', snapshots:[] },
+        { id:10, name:'stand10-0-206', type:'LowServer', category:'physical', cpu:34, ram:42, io:18, status:'running', lastTask:'netperf', progress:'80%', powerStatus:true, testStatus:'running', owner:'ivelikanov', snapshots:['2025-01-20'] },
+        { id:11, name:'stand11-0-207', type:'LowServer', category:'physical', cpu:56, ram:48, io:27, status:'running', lastTask:'fio', progress:'55%', powerStatus:true, testStatus:'running', owner:'amedvedev', snapshots:[] },
+        { id:12, name:'stand12-0-208', type:'LowServer', category:'physical', cpu:0, ram:0, io:0, status:'stopped', lastTask:'', progress:'', powerStatus:false, testStatus:'stopped', owner:'', snapshots:[] },
+        { id:13, name:'stand13-0-209', type:'LowServer', category:'physical', cpu:72, ram:63, io:41, status:'running', lastTask:'Parsec', progress:'25%', powerStatus:true, testStatus:'running', owner:'mfilippenko', snapshots:['2025-02-10'] }
+    ];
+
+    let selectedStandId = 1;
+    let currentFilters = { type: 'all', status: 'all', owner: 'all' };
+
+    // ALLTA Services
+    const alltaServices = [
+        { name: 'acs.service', status: 'active (running)' }, { name: 'allta.service', status: 'active (running)' },
+        { name: 'allta_auth.service', status: 'active (exited)' }, { name: 'allta_infocollector.service', status: 'active (exited)' },
+        { name: 'allta_vm.service', status: 'active (exited)' }, { name: 'changelog.service', status: 'active (running)' },
+        { name: 'devpi.service', status: 'active (exited)' }, { name: 'docker_registry.service', status: 'active (exited)' },
+        { name: 'grafana_prometheus.service', status: 'active (exited)' }, { name: 'node_exporter.service', status: 'active (exited)' },
+        { name: 'portainer.service', status: 'active (exited)' }, { name: 'statistics.service', status: 'active (running)' }
+    ];
+
+    const astraServices = [
+        { name: 'Astra Linux Health', status: 'ok' }, { name: 'Parsec Core', status: 'ok' },
+        { name: 'Security Module', status: 'fail' }, { name: 'Update Service', status: 'ok' }
+    ];
+
+    function showToast(msg, type='success') { const c = document.getElementById('toastContainer'); const t = document.createElement('div'); t.className = `alert alert-${type} alert-dismissible fade show shadow-sm`; t.innerHTML = `${msg} <button type="button" class="btn-close" data-bs-dismiss="alert"></button>`; c.appendChild(t); setTimeout(() => t.remove(), 2800); }
+
+    function updateStorage() { 
+        ['sysDiskUsed','ftpDiskUsed','partimagDiskUsed'].forEach(id => { let v = Math.floor(20+Math.random()*70); document.getElementById(id).innerText = v+'%'; document.getElementById(id.replace('Used','Bar')).style.width = v+'%'; }); 
+    }
+
+    function updateHealthSummaries() {
+        const running = alltaServices.filter(s => s.status.includes('running')).length;
+        const exited = alltaServices.filter(s => s.status.includes('exited')).length;
+        document.getElementById('alltaRunningCount').innerText = running;
+        document.getElementById('alltaExitedCount').innerText = exited;
+        const okCount = astraServices.filter(s => s.status === 'ok').length;
+        const failCount = astraServices.filter(s => s.status === 'fail').length;
+        document.getElementById('astraOkCount').innerText = okCount;
+        document.getElementById('astraFailCount').innerText = failCount;
+    }
+
+    function renderServicesDetails() {
+        document.getElementById('alltaServicesDetail').innerHTML = alltaServices.map(s => {
+            let icon = s.status.includes('running') ? '✅' : (s.status.includes('exited') ? '⏺' : '❓');
+            let colorClass = s.status.includes('running') ? 'text-success' : (s.status.includes('exited') ? 'text-warning' : 'text-danger');
+            return `<div class="d-flex justify-content-between align-items-center py-2 border-bottom border-secondary"><span><i class="fas fa-circle ${colorClass} fa-2xs me-2"></i>${s.name}</span><span class="${colorClass}">${icon} ${s.status}</span></div>`;
+        }).join('');
+        document.getElementById('astraServicesDetail').innerHTML = astraServices.map(s => {
+            let icon = s.status === 'ok' ? '✅' : '❌';
+            let colorClass = s.status === 'ok' ? 'text-success' : 'text-danger';
+            return `<div class="d-flex justify-content-between align-items-center py-2 border-bottom border-secondary"><span><i class="fas fa-circle ${colorClass} fa-2xs me-2"></i>${s.name}</span><span class="${colorClass}">${icon} ${s.status === 'ok' ? 'active' : 'down'}</span></div>`;
+        }).join('');
+    }
+
+    function filterStands() {
+        let filtered = [...standsData];
+        if (currentFilters.type !== 'all') {
+            filtered = filtered.filter(s => s.category === currentFilters.type);
+        }
+        if (currentFilters.status !== 'all') {
+            filtered = filtered.filter(s => s.status === currentFilters.status);
+        }
+        if (currentFilters.owner !== 'all') {
+            if (currentFilters.owner === 'free') {
+                filtered = filtered.filter(s => !s.owner);
+            } else if (currentFilters.owner === 'busy') {
+                filtered = filtered.filter(s => s.owner);
+            }
+        }
+        return filtered;
+    }
+
+    function renderStandsList() {
+        const filtered = filterStands();
+        const container = document.getElementById('standsList');
+        container.innerHTML = '';
+        filtered.forEach(s => {
+            const statusClass = s.status === 'running' ? 'stand-status-running' : 'stand-status-stopped';
+            const item = document.createElement('div');
+            item.className = `stand-item ${selectedStandId == s.id ? 'active' : ''}`;
+            item.dataset.id = s.id;
+            item.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <div><span class="stand-status-led ${statusClass}"></span><strong>${s.name}</strong></div>
+                    <div class="small text-secondary">${s.type}</div>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mt-1">
+                    <span class="small">CPU ${s.cpu}%</span>
+                    <div class="stand-cpu-bar"><div class="stand-cpu-fill" style="width:${s.cpu}%;"></div></div>
+                </div>
+                <div class="small text-secondary mt-1"><i class="fas fa-user"></i> ${s.owner || '—'}</div>
+            `;
+            item.addEventListener('click', () => { selectedStandId = s.id; renderStandsList(); renderSelectedStandDetails(); });
+            container.appendChild(item);
+        });
+        document.getElementById('standsCount').innerText = filtered.length;
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="text-center text-secondary py-4">Нет стендов по выбранным фильтрам</div>';
+        }
+    }
+
+    function renderSelectedStandDetails() {
+        const s = standsData.find(s => s.id == selectedStandId);
+        if(!s) {
+            document.getElementById('selectedStandDetails').innerHTML = '<div class="text-center py-5"><i class="fas fa-arrow-left me-2"></i> Выберите стенд из левого списка</div>';
+            return;
+        }
+        const statusClass = s.status === 'running' ? 'status-running' : 'status-stopped';
+        const statusText = s.status === 'running' ? 'Активен' : 'Остановлен';
+        const showStart = (s.testStatus === 'stopped' || s.testStatus === '') && s.powerStatus;
+        const showStop = s.testStatus === 'running';
+        const showOk = s.testStatus === 'ready';
+        const powerText = s.powerStatus ? 'Включен' : 'Выключен';
+        const backupItems = (s.snapshots && s.snapshots.length) ? s.snapshots.map(v => `<li><a class="dropdown-item" href="#">${v}</a></li>`).join('') : '<li><a class="dropdown-item">Нет снимков</a></li>';
+        const userItems = s.owner ? `<li><a class="dropdown-item" href="#">Остановить</a></li>` : `<li><a class="dropdown-item" href="#">dtimonin</a><a class="dropdown-item" href="#">ivelikanov</a><a class="dropdown-item" href="#">mfilippenko</a><a class="dropdown-item" href="#">amedvedev</a></li>`;
+        
+        document.getElementById('selectedStandDetails').innerHTML = `
+            <div class="d-flex justify-content-between align-items-start mb-4">
+                <div><h3><i class="fas fa-server me-2"></i>${s.name}</h3><p class="text-secondary mb-0">${s.type} · ${s.ip || '10.177.103.' + (200 + s.id)}</p></div>
+                <div><span class="status-led ${statusClass} me-1"></span><span class="badge ${s.status === 'running' ? 'bg-success' : 'bg-secondary'}">${statusText}</span></div>
+            </div>
+            
+            <div class="row g-3 mb-4">
+                <div class="col-md-4"><div class="glass-card p-3"><div class="d-flex justify-content-between small"><span>CPU</span><span>${s.cpu}%</span></div><div class="progress-micro mt-1"><div class="progress-fill" style="width:${s.cpu}%;"></div></div></div></div>
+                <div class="col-md-4"><div class="glass-card p-3"><div class="d-flex justify-content-between small"><span>RAM</span><span>${s.ram}%</span></div><div class="progress-micro mt-1"><div class="progress-fill" style="width:${s.ram}%; background:#38bdf8;"></div></div></div></div>
+                <div class="col-md-4"><div class="glass-card p-3"><div class="d-flex justify-content-between small"><span>IO (NVMe)</span><span>${s.io}%</span></div><div class="progress-micro mt-1"><div class="progress-fill" style="width:${s.io}%; background:#f97316;"></div></div></div></div>
+            </div>
+            
+            <div class="glass-card p-3 mb-4">
+                <div class="row">
+                    <div class="col-6"><i class="fas fa-plug me-1"></i> Питание: <span class="badge ${s.powerStatus ? 'bg-success' : 'bg-secondary'}">${powerText}</span></div>
+                    <div class="col-6"><i class="fas fa-chart-line me-1"></i> Прогресс: ${s.progress || '—'}</div>
+                </div>
+            </div>
+            
+            <div class="d-flex gap-2 flex-wrap mb-4">
+                ${showStart ? `<button class="test-control-btn test-control-start start-test-btn" data-id="${s.id}"><i class="fas fa-play"></i> Запустить тест</button>` : ''}
+                ${showStop ? `<button class="test-control-btn test-control-stop stop-test-btn" data-id="${s.id}"><i class="fas fa-stop"></i> Остановить тест</button>` : ''}
+                ${showOk ? `<button class="test-control-btn test-control-ok ok-test-btn" data-id="${s.id}"><i class="fas fa-check"></i> Ок</button>` : ''}
+                <button class="test-control-btn reboot-btn" data-id="${s.id}"><i class="fas fa-sync-alt"></i> Reboot</button>
+                <button class="test-control-btn poweroff-btn" data-id="${s.id}"><i class="fas fa-power-off"></i> Power off</button>
+                <div class="dropdown d-inline-block"><button class="test-control-btn dropdown-toggle" data-bs-toggle="dropdown">Backup</button><ul class="dropdown-menu dropdown-menu-dark">${backupItems}</ul></div>
+                <div class="dropdown d-inline-block"><button class="test-control-btn dropdown-toggle" data-bs-toggle="dropdown">Status</button><ul class="dropdown-menu dropdown-menu-dark">${userItems}</ul></div>
+                <div class="dropdown d-inline-block"><button class="test-control-btn dropdown-toggle" data-bs-toggle="dropdown">Dashboards</button><ul class="dropdown-menu dropdown-menu-dark"><li><a class="dropdown-item" href="#">ALLTA</a></li><li><a class="dropdown-item" href="#">Full</a></li></ul></div>
+                <a class="test-control-btn" href="#">IPMI</a>
+                <div class="dropdown d-inline-block"><button class="test-control-btn dropdown-toggle" data-bs-toggle="dropdown">Broker</button><ul class="dropdown-menu dropdown-menu-dark"><li><a class="dropdown-item">📊 Статус очереди</a></li><li><a class="dropdown-item">📋 Все задачи</a></li><li><a class="dropdown-item">❌ Проваленные задачи</a></li><li><hr class="dropdown-divider"></li><li><a class="dropdown-item">⏹ Остановить очередь</a></li><li><a class="dropdown-item">🗑 Очистить очередь</a></li></ul></div>
+            </div>
+            
+            <div class="glass-card p-3">
+                <div class="row">
+                    <div class="col-6"><i class="fas fa-tasks me-1"></i> Активность: ${s.lastTask || '—'}</div>
+                    <div class="col-6"><i class="fas fa-user me-1"></i> Владелец: ${s.owner || '—'}</div>
+                </div>
+            </div>
+        `;
+        
+        document.querySelectorAll('.start-test-btn').forEach(btn => btn.addEventListener('click', () => { showToast(`🚀 Запуск тестов на стенде ${selectedStandId} (демо)`, 'success'); updateTestStatus(selectedStandId, 'running'); }));
+        document.querySelectorAll('.stop-test-btn').forEach(btn => btn.addEventListener('click', () => { showToast(`⏹ Остановка тестов на стенде ${selectedStandId} (демо)`, 'warning'); updateTestStatus(selectedStandId, 'stopped'); }));
+        document.querySelectorAll('.ok-test-btn').forEach(btn => btn.addEventListener('click', () => { showToast(`✅ Подтверждение на стенде ${selectedStandId} (демо)`, 'info'); updateTestStatus(selectedStandId, 'ready'); }));
+        document.querySelectorAll('.reboot-btn').forEach(btn => btn.addEventListener('click', () => { showToast(`🔄 Reboot стенда ${selectedStandId} (демо)`, 'info'); }));
+        document.querySelectorAll('.poweroff-btn').forEach(btn => btn.addEventListener('click', () => { showToast(`⚡ Power off стенда ${selectedStandId} (демо)`, 'warning'); updatePowerStatus(selectedStandId, false); }));
+    }
+
+    function updateTestStatus(id, status) { let s = standsData.find(s => s.id == id); if(s) { s.testStatus = status; s.status = status === 'running' ? 'running' : 'stopped'; renderStandsList(); renderSelectedStandDetails(); } }
+    function updatePowerStatus(id, powerOn) { let s = standsData.find(s => s.id == id); if(s) { s.powerStatus = powerOn; if(!powerOn) { s.testStatus = 'stopped'; s.status = 'stopped'; } renderStandsList(); renderSelectedStandDetails(); } }
+
+    function simulateLoad() { 
+        standsData.forEach(s => { if(s.status === 'running') { s.cpu = Math.min(98, Math.max(5, s.cpu + Math.floor(Math.random()*12)-6)); s.ram = Math.min(96, Math.max(8, s.ram + Math.floor(Math.random()*10)-4)); s.io = Math.min(90, Math.max(2, s.io + Math.floor(Math.random()*14)-7)); } }); 
+        renderStandsList(); 
+        renderSelectedStandDetails(); 
+    }
+
+    // Обработчики фильтров
+    document.getElementById('filterType').addEventListener('change', (e) => { currentFilters.type = e.target.value; renderStandsList(); });
+    document.getElementById('filterStatus').addEventListener('change', (e) => { currentFilters.status = e.target.value; renderStandsList(); });
+    document.getElementById('filterOwner').addEventListener('change', (e) => { currentFilters.owner = e.target.value; renderStandsList(); });
+
+    updateHealthSummaries(); renderServicesDetails(); updateStorage(); renderStandsList(); renderSelectedStandDetails();
+    setInterval(() => { simulateLoad(); updateStorage(); }, 5000);
+</script>
+</body>
+</html>

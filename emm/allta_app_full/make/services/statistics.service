@@ -1,0 +1,18 @@
+[Unit]
+Description=Gunicorn instance to serve statistics_app
+Requires=docker.service
+After=docker.service
+ 
+[Service]
+User=u
+Group=www-data
+WorkingDirectory=/home/u/statistics_api/stress_test/statistics
+#ExecStart=gunicorn --workers 4 --bind 10.177.103.10 -m 007 wsgi:app --timeout 120
+ExecStart=/bin/sh -c 'git pull && sudo docker-compose build && sudo docker-compose up'
+ExecStop=sudo docker-compose down
+#ExecStart=gunicorn --workers 4 --bind 10.177.103.10 -m 007 -k uvicorn.workers.UvicornWorker asgi:app --timeout 120
+ 
+Restart=always
+RestartSec=10s
+[Install]
+WantedBy=multi-user.target

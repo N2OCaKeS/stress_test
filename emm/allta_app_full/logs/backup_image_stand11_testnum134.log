@@ -1,0 +1,23 @@
+2026-03-30 19:26:20 - ERROR - <module>: 426 -
+
+
+Start logging
+
+2026-03-30 19:26:20 - ERROR - <module>: 427 - parsec impact-fs aud-off_1.7.10.64_smolensk_5.15.0-170-generic_stand11
+
+
+
+2026-03-30 19:26:20 - DEBUG - _rest_request: 921 - HTTP REQUEST (GET) for /redfish/v1/:
+Headers:
+        Accept: */*
+        OData-Version: 4.0
+
+Body: No request body
+
+2026-03-30 19:26:20 - INFO - _rest_request: 927 - Attempt 1 of /redfish/v1/
+2026-03-30 19:26:20 - DEBUG - _new_conn: 1049 - Starting new HTTPS connection (1): 10.177.5.74:443
+2026-03-30 19:26:21 - DEBUG - _make_request: 544 - https://10.177.5.74:443 "GET /redfish/v1/ HTTP/1.1" 200 None
+2026-03-30 19:26:21 - INFO - _rest_request: 947 - Response Time for GET to /redfish/v1/: 0.2777397008612752 seconds.
+2026-03-30 19:26:21 - DEBUG - _rest_request: 974 - HTTP RESPONSE for /redfish/v1/:
+Code: 200 OK
+

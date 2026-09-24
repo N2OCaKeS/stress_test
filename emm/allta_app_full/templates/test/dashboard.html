@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>ALLTA · Минималистичный дашборд</title>
+    <!-- Bootstrap 5 (темная тема) + иконки + шрифты -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Chart.js для графиков -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            transition: all 0.2s ease;
+        }
+        body {
+            background: #0b1620;
+            font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            color: #eef2ff;
+            padding-bottom: 2rem;
+        }
+        /* стекло-эффект для карточек */
+        .glass-card {
+            background: rgba(18, 28, 40, 0.65);
+            backdrop-filter: blur(2px);
+            border: 1px solid rgba(66, 153, 225, 0.2);
+            border-radius: 24px;
+            transition: transform 0.2s, border-color 0.2s;
+        }
+        .glass-card:hover {
+            border-color: #ff7b2c;
+            transform: translateY(-2px);
+        }
+        .navbar-brand {
+            font-weight: 700;
+            letter-spacing: -0.3px;
+            background: linear-gradient(135deg, #ff9a5a, #ff4d2e);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+        }
+        .stat-number {
+            font-size: 2.2rem;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+        .badge-ok {
+            background: #10b98120;
+            color: #34d399;
+            border: 1px solid #10b98140;
+            border-radius: 40px;
+            padding: 4px 12px;
+            font-size: 0.75rem;
+        }
+        .badge-warn {
+            background: #f59e0b20;
+            color: #fbbf24;
+            border: 1px solid #f59e0b40;
+        }
+        .progress-thin {
+            height: 6px;
+            background-color: #1e2a3a;
+            border-radius: 10px;
+        }
+        .footer-note {
+            font-size: 0.7rem;
+            color: #5b7a9a;
+            border-top: 1px solid #1e2f3c;
+            padding-top: 1.5rem;
+            margin-top: 2rem;
+            text-align: center;
+        }
+        .sidebar-icon {
+            width: 38px;
+            text-align: center;
+            color: #ff9a5a;
+        }
+        .hover-lift:hover {
+            transform: translateY(-2px);
+        }
+        .list-group-item-dark {
+            background-color: #0f1722;
+            border-color: #1e2a3a;
+            color: #cbd5e6;
+        }
+        .btn-outline-accent {
+            border-color: #ff7b2c;
+            color: #ff9a5a;
+        }
+        .btn-outline-accent:hover {
+            background: #ff7b2c;
+            color: #0b1620;
+            border-color: #ff7b2c;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ===========================  ВЕРХНЯЯ ПАНЕЛЬ (НАВБАР) =========================== -->
+<nav class="navbar navbar-expand-lg navbar-dark px-3 py-2" style="background: #0a111c; border-bottom: 1px solid #1e2f3c;">
+    <div class="container-fluid">
+        <a class="navbar-brand fs-3" href="#">
+            <i class="fas fa-chart-simple me-2" style="color: #ff7b2c;"></i> ALLTA · Минималистичный дашборд
+        </a>
+        <div class="ms-auto d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" id="refreshAllBtn"><i class="fas fa-sync-alt"></i> Обновить виджеты</button>
+            <button class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#testModal">
+                <i class="fas fa-flask"></i> Запустить тесты
+            </button>
+            <a href="#" class="btn btn-sm btn-outline-danger"><i class="fas fa-sign-out-alt"></i> Выход</a>
+        </div>
+    </div>
+</nav>
+
+<div class="container-fluid px-4 mt-4">
+    <!-- ВЕРХНИЕ KPI / МЕТРИКИ (общая статистика по всей инфраструктуре) -->
+    <div class="row g-4 mb-5">
+        <div class="col-md-3">
+            <div class="glass-card p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="text-secondary-emphasis"><i class="fas fa-microchip"></i> Общая нагрузка CPU</span>
+                        <div class="stat-number mt-1" id="overallCpu">0<span style="font-size:1.2rem;">%</span></div>
+                    </div>
+                    <i class="fas fa-chart-line fa-2x opacity-25"></i>
+                </div>
+                <div class="progress-thin mt-3"><div class="progress-bar-custom" id="cpuOverallBar" style="width:0%; background:#ff7b2c; height:6px; border-radius:10px;"></div></div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="glass-card p-3 h-100">
+                <div><i class="fas fa-memory"></i> Средняя RAM</div>
+                <div class="stat-number mt-1" id="overallRam">0<span style="font-size:1.2rem;">%</span></div>
+                <div class="progress-thin mt-3"><div class="progress-bar-custom" id="ramOverallBar" style="width:0%; background:#ff7b2c;"></div></div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="glass-card p-3 h-100">
+                <div><i class="fas fa-database"></i> Дисковое пространство (Partimag)</div>
+                <div class="stat-number mt-1" id="diskPartimag">0<span style="font-size:1.2rem;"> ГБ</span></div>
+                <div class="small text-secondary">свободно / 3 ТБ</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="glass-card p-3 h-100">
+                <div><i class="fas fa-chart-simple"></i> Сбойные тесты (24ч)</div>
+                <div class="stat-number mt-1 text-danger" id="failedTestsCount">0</div>
+                <div class="small"><span id="totalTestsCount">0</span> всего запусков</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ГРАФИКИ И ВИДЖЕТЫ (ПРОИЗВОДИТЕЛЬНОСТЬ СТЕНДОВ) -->
+    <div class="row g-4 mb-5">
+        <div class="col-lg-8">
+            <div class="glass-card p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0"><i class="fas fa-chart-line me-2"></i> Загрузка CPU по стендам</h5>
+                    <span class="badge-ok"><i class="fas fa-chart-simple"></i> последние 60 мин</span>
+                </div>
+                <canvas id="cpuChart" height="180" style="max-height: 260px;"></canvas>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="glass-card p-3 h-100">
+                <h5 class="mb-3"><i class="fas fa-hard-drive"></i> Использование хранилищ</h5>
+                <div class="mb-3"><span>Системный диск</span><span class="float-end" id="sysDiskUsed">0</span><div class="progress-thin mt-1"><div id="sysDiskBar" style="width:0%; background:#34d399; height:6px;"></div></div></div>
+                <div class="mb-3"><span>FTP-хранилище</span><span class="float-end" id="ftpDiskUsed">0</span><div class="progress-thin mt-1"><div id="ftpDiskBar" style="width:0%; background:#f97316;"></div></div></div>
+                <div><span>Partimag (образы)</span><span class="float-end" id="partimagDiskUsed">0</span><div class="progress-thin mt-1"><div id="partimagDiskBar" style="width:0%; background:#ff4d4d;"></div></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- СПИСОК СТЕНДОВ (краткий, без аккордеонов и избыточных данных) -->
+    <div class="row">
+        <div class="col-12">
+            <div class="glass-card p-3">
+                <div class="d-flex justify-content-between mb-3">
+                    <h5><i class="fas fa-server me-2"></i> Состояние стендов</h5>
+                    <div><span class="badge-ok"><i class="fas fa-circle fa-2xs text-success me-1"></i> Активные</span> <span class="badge-ok ms-2"><i class="fas fa-circle fa-2xs text-secondary me-1"></i> Остановлены</span></div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-dark table-hover align-middle" style="border-color: #1e2f3c;">
+                        <thead>
+                            <tr><th>Стенд</th><th>Статус</th><th>CPU нагрузка</th><th>RAM</th><th>Активность</th><th></th></tr>
+                        </thead>
+                        <tbody id="standsTableBody">
+                            <!-- динамически заполняется через JS -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="text-end mt-2"><small class="text-secondary">*Детальное управление — через модальное окно «Запустить тесты»</small></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- МОДАЛЬНОЕ ОКНО ДЛЯ ЗАПУСКА ТЕСТОВ (минималистичная версия) -->
+<div class="modal fade" id="testModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-dark text-light border-secondary">
+            <div class="modal-header"><h5 class="modal-title"><i class="fas fa-vial"></i> Запуск тестов</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <label class="form-label">Выберите стенд</label>
+                <select class="form-select bg-dark text-light border-secondary" id="standSelectModal">
+                    <option value="1">stand1-201 (VM WorkStation)</option><option value="3">stand3-59-204 (LowServer)</option><option value="5">stand5-91-205 (HighServer)</option>
+                </select>
+                <label class="form-label mt-3">Тип теста</label>
+                <select class="form-select bg-dark text-light border-secondary" id="testTypeSelect"><option>UnixBench</option><option>fs_mark</option><option>sysbench</option></select>
+                <div class="mt-4"><button class="btn btn-outline-accent w-100" id="demoRunTestBtn"><i class="fas fa-play"></i> Демо-запуск (имитация)</button></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="footer-note container">
+    <i class="fas fa-chart-pie"></i> Минималистичный дашборд — вся ключевая метрика на одной странице. Данные обновляются автоматически.
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // -------------------- ДЕМО-ДАННЫЕ (имитация работы с API) --------------------
+    const stands = [
+        { id:1, name:'stand1-201', type:'VM WorkStation', ip:'10.177.103.201', cpu:24, ram:38, status:'running', lastTask:'UnixBench 1.7' },
+        { id:2, name:'stand2-202', type:'VM WorkStation', ip:'10.177.103.202', cpu:12, ram:22, status:'stopped', lastTask:'-' },
+        { id:3, name:'stand3-59-204', type:'LowServer', ip:'10.177.103.204', cpu:68, ram:54, status:'running', lastTask:'Parsec нагрузка' },
+        { id:4, name:'stand4-58-203', type:'MiddleServer', ip:'10.177.103.203', cpu:45, ram:61, status:'running', lastTask:'fs_mark' },
+        { id:5, name:'stand5-91-205', type:'HighServer', ip:'10.177.103.205', cpu:92, ram:85, status:'running', lastTask:'PostgreSQL TPC-C' },
+        { id:6, name:'stand6-101', type:'VM TestStation', ip:'10.177.103.101', cpu:17, ram:29, status:'stopped', lastTask:'-' },
+        { id:7, name:'stand7-102', type:'VM TestStation', ip:'10.177.103.102', cpu:9, ram:18, status:'stopped', lastTask:'-' },
+    ];
+    let demoInterval;
+    function randomInRange(min,max){ return Math.floor(Math.random()*(max-min+1)+min); }
+
+    // симуляция общего CPU / RAM (усреднённая нагрузка)
+    function updateGlobalStats() {
+        let totalCpu = 0, totalRam = 0, runningCount=0;
+        stands.forEach(s => { if(s.status==='running'){ totalCpu+=s.cpu; totalRam+=s.ram; runningCount++; } });
+        let avgCpu = runningCount ? (totalCpu/runningCount).toFixed(1) : 0;
+        let avgRam = runningCount ? (totalRam/runningCount).toFixed(1) : 0;
+        document.getElementById('overallCpu').innerHTML = avgCpu + '<span style="font-size:1.2rem;">%</span>';
+        document.getElementById('overallRam').innerHTML = avgRam + '<span style="font-size:1.2rem;">%</span>';
+        document.getElementById('cpuOverallBar').style.width = avgCpu + '%';
+        document.getElementById('ramOverallBar').style.width = avgRam + '%';
+        document.getElementById('diskPartimag').innerHTML = randomInRange(2100,2850) + '<span style="font-size:1.2rem;"> ГБ</span>';
+        document.getElementById('failedTestsCount').innerHTML = randomInRange(0,4);
+        document.getElementById('totalTestsCount').innerHTML = randomInRange(32,89);
+        document.getElementById('sysDiskUsed').innerHTML = randomInRange(38,68) + '%';
+        document.getElementById('ftpDiskUsed').innerHTML = randomInRange(12,34) + '%';
+        document.getElementById('partimagDiskUsed').innerHTML = randomInRange(45,78) + '%';
+        document.getElementById('sysDiskBar').style.width = document.getElementById('sysDiskUsed').innerHTML;
+        document.getElementById('ftpDiskBar').style.width = document.getElementById('ftpDiskUsed').innerHTML;
+        document.getElementById('partimagDiskBar').style.width = document.getElementById('partimagDiskUsed').innerHTML;
+    }
+
+    // отрисовка таблицы стендов
+    function renderStandsTable() {
+        let html = '';
+        stands.forEach(s => {
+            let statusHtml = s.status === 'running' ? '<span class="badge-ok"><i class="fas fa-play-circle me-1"></i> Активен</span>' : '<span class="badge-warn"><i class="fas fa-stop-circle me-1"></i> Остановлен</span>';
+            let cpuPercent = s.cpu + '%';
+            let ramPercent = s.ram + '%';
+            let lastActive = s.lastTask !== '-' ? s.lastTask : '—';
+            html += `<tr>
+                        <td><i class="fas fa-server me-2 text-secondary"></i>${s.name}</td>
+                        <td>${statusHtml}</td>
+                        <td><div class="d-flex align-items-center gap-2"><span>${cpuPercent}</span><div class="progress-thin w-50"><div style="width:${s.cpu}%; background:#ff7b2c; height:6px;"></div></div></div></td>
+                        <td><div class="d-flex align-items-center gap-2"><span>${ramPercent}</span><div class="progress-thin w-50"><div style="width:${s.ram}%; background:#38bdf8; height:6px;"></div></div></div></td>
+                        <td><span class="small text-secondary"><i class="far fa-clock"></i> ${lastActive}</span></td>
+                        <td><button class="btn btn-sm btn-outline-secondary demo-detail" data-id="${s.id}"><i class="fas fa-info-circle"></i></button></td>
+                     </tr>`;
+        });
+        document.getElementById('standsTableBody').innerHTML = html;
+        document.querySelectorAll('.demo-detail').forEach(btn => btn.addEventListener('click', (e) => { alert('В полноценной версии → детали стенда, логи, перезагрузка и кнопки управления.'); }));
+    }
+
+    // График (CPU по стендам)
+    let cpuChart;
+    function updateChart() {
+        let labels = stands.filter(s=>s.status==='running').map(s=>s.name);
+        let cpuData = stands.filter(s=>s.status==='running').map(s=>s.cpu);
+        if(cpuChart) cpuChart.destroy();
+        let ctx = document.getElementById('cpuChart').getContext('2d');
+        cpuChart = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Загрузка CPU (%)', data: cpuData, backgroundColor: '#ff7b2c80', borderRadius: 8 }] }, options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { labels: { color: '#cbd5e6' } } } } });
+    }
+
+    // имитация изменения нагрузки (демонстрация live-обновлений)
+    function simulateLiveLoad() {
+        stands.forEach(s => { if(s.status === 'running'){ s.cpu = Math.min(100, randomInRange(s.cpu-8, s.cpu+12)); s.ram = Math.min(100, randomInRange(s.ram-5, s.ram+8)); } });
+        updateGlobalStats();
+        renderStandsTable();
+        updateChart();
+    }
+
+    // первичная загрузка и интервал
+    function startDemo() {
+        updateGlobalStats();
+        renderStandsTable();
+        updateChart();
+        if(demoInterval) clearInterval(demoInterval);
+        demoInterval = setInterval(() => simulateLiveLoad(), 8000);
+    }
+
+    document.getElementById('refreshAllBtn').addEventListener('click', () => { startDemo(); alert('Виджеты и метрики обновлены (демо-режим)'); });
+    document.getElementById('demoRunTestBtn').addEventListener('click', () => { alert('Демо: задача добавлена в очередь. В реальной версии — POST на /rest/api/queue-stand/add'); });
+    startDemo();
+</script>
+</body>
+</html>

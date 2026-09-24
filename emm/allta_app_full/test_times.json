@@ -1,0 +1,168 @@
+{
+    "1.7": {
+        "stand3": {
+            "EXFAT": "4:16:04",
+            "EXT2": "1:10:08",
+            "EXT3": "1:09:56",
+            "EXT4": "1:09:24",
+            "FAT": "1:51:27",
+            "XFS": "1:09:32",
+            "unix": "1:34:50",
+            "EXT4 parsec": "1:09:59",
+            "XFS parsec": "1:10:33",
+            "unix parsec": "0:00:12",
+            "FreeIPA auth": "1:04:34",
+            "FreeIPA c-users": "0:49:58",
+            "FreeIPA plugin": "4:56:53",
+            "Total time": "0:00:00"
+        },
+        "stand4": {
+            "postgresql": "5:58:45",
+            "postgresql-aud-off": "2:56:39",
+            "postgresql-sm": "5:38:59",
+            "psql parsec": "3:04:26",
+            "psql vanilla": "2:49:19",
+            "Total time": "0:00:00"
+        },
+        "stand10": {
+            "NTFS": "7:45:06",
+            "OCFS2": "1:56:18",
+            "CEPH": "12:00:00",
+            "CEPH fio": "2:16:11",
+            "Total time": "0:00:00",
+            "CEPH parsec": "5:42:47",
+            "raw-spin-lock": "2:33:30",
+            "astraevents": "1:49:28",
+            "astraevents-sm": "1:49:28",
+            "apache-balance": "2:09:10",
+            "OS usage": "1:29:03"
+        },
+        "stand11": {
+            "parsec impact-fs": "0:35:17",
+            "parsec impact-fs aud-off": "0:35:24",
+            "docker-wa": "0:58:00",
+            "FIO": "2:41:48",
+            "vPingPong": "1:04:44",
+            "vUnixBench": "2:26:34",
+            "psql oom": "0:40:40",
+            "Dovecot-IMAP": "4:14:47",
+            "Exim4-SMTP": "1:49:58",
+            "AOpenVPNcc": "1:31:35",
+            "FIO_large": "1:17:47",
+            "Total time": "0:00:00",
+            "FIO large": "3:28:30",
+            "DHCP": "2:01:46"
+        },
+        "stand12": {
+            "syslog-ng": "2:16:10",
+            "apache-rp": "0:38:58",
+            "apache-bp": "1:26:48",
+            "auditd-f": "0:45:12",
+            "auditd-p": "1:29:28",
+            "auditd-u": "2:38:12",
+            "digsig-cdt": "0:32:55",
+            "InitOnFree": "2:07:22",
+            "SegFault": "1:10:27",
+            "PSQL_OLAP-hq": "2:28:15",
+            "XFS mem leak": "1:01:56",
+            "Total time": "0:00:00",
+            "PSQL OLAP-hq": "2:26:24"
+        },
+        "stand13": {
+            "syslog-ng-cwl": "1 day, 6:59:50",
+            "Total time": "0:00:00"
+        },
+        "stand14": {
+            "psql info-sys": "2:28:15",
+            "psql info-sys-orel": "2:28:15",
+            "psql balance": "2:24:27",
+            "psql kernels": "2:09:44",
+            "steal time": "12:00:00",
+            "steal time-sm": "2:50:07",
+            "Total time": "0:00:00"
+        }
+    },
+    "1.8": {
+        "stand3": {
+            "EXFAT": "4:09:57",
+            "EXT2": "0:53:39",
+            "EXT3": "0:53:44",
+            "EXT4": "0:53:22",
+            "FAT": "1:37:37",
+            "XFS": "0:53:37",
+            "unix": "1:34:55",
+            "EXT4 parsec": "0:55:48",
+            "XFS parsec": "0:55:22",
+            "unix parsec": "1:35:44",
+            "FreeIPA auth": "1:35:13",
+            "FreeIPA c-users": "1:21:16",
+            "FreeIPA plugin": "8:56:01",
+            "Total time": "0:00:00"
+        },
+        "stand4": {
+            "postgresql": "3:32:34",
+            "postgresql-aud-off": "3:03:32",
+            "postgresql-sm": "1:08:55",
+            "psql parsec": "3:17:50",
+            "psql vanilla": "3:05:02",
+            "Total time": "0:00:00"
+        },
+        "stand10": {
+            "NTFS": "7:16:13",
+            "OCFS2": "1:15:48",
+            "CEPH": "2:49:10",
+            "CEPH fio": "0:31:04",
+            "Total time": "0:00:00",
+            "CEPH parsec": "2:51:24",
+            "raw-spin-lock": "1:19:45",
+            "astraevents": "0:58:36",
+            "astraevents-sm": "0:58:36",
+            "apache-balance": "2:09:10",
+            "OS usage": "0:52:23"
+        },
+        "stand11": {
+            "parsec impact-fs": "0:36:42",
+            "parsec impact-fs aud-off": "0:35:21",
+            "docker-wa": "1:00:47",
+            "FIO": "1:44:02",
+            "vPingPong": "1:05:00",
+            "vUnixBench": "2:28:50",
+            "psql oom": "2:03:30",
+            "Dovecot-IMAP": "4:15:21",
+            "Exim4-SMTP": "1:47:22",
+            "FIO_large": "1:21:28",
+            "Total time": "0:00:00",
+            "AOpenVPNcc": "1:32:52",
+            "FIO large": "3:28:46",
+            "DHCP": "1:04:09"
+        },
+        "stand12": {
+            "syslog-ng": "2:28:02",
+            "apache-rp": "0:32:16",
+            "apache-bp": "1:32:16",
+            "auditd-f": "0:44:41",
+            "auditd-p": "1:53:23",
+            "auditd-u": "6:16:41",
+            "digsig-cdt": "1:19:32",
+            "InitOnFree": "1:04:27",
+            "SegFault": "1:11:39",
+            "PSQL_OLAP-hq": "2:28:15",
+            "Total time": "0:00:00",
+            "XFS mem leak": "1:03:05",
+            "PSQL OLAP-hq": "2:06:47"
+        },
+        "stand13": {
+            "syslog-ng-cwl": "1 day, 6:52:29",
+            "Total time": "0:00:00"
+        },
+        "stand14": {
+            "psql info-sys": "2:28:15",
+            "psql info-sys-orel": "2:28:15",
+            "psql balance": "2:54:15",
+            "psql kernels": "2:23:59",
+            "steal time": "3:12:40",
+            "steal time-sm": "3:14:29",
+            "Total time": "0:00:00"
+        }
+    }
+}

@@ -237,8 +237,6 @@ def usage_os_publisher(username,
     with open(USAGE_OS_MATH_MODEL_FILE, 'r') as f:
         results_dict = json.load(f)
 
-    criteria = results_dict["criteria"]
-
     builder.add_heading(text="Результаты тестирования", level=2)
     builder.add_heading(text=f"Total Rating: {results_dict['rating']:.2f}", level=2)
 
@@ -251,6 +249,75 @@ def usage_os_publisher(username,
     with open(USAGE_OS_LOAD_CSV, newline='') as load_file:
         load_rows = list(csv.DictReader(load_file))
     sample_count = min(len(idle_rows), len(load_rows))
+
+    # Ключевые метрики для статистики: колонка CSV -> (название, делитель единиц).
+    # Значения в CSV уже без вклада генераторов нагрузки — только расход самой ОС.
+    key_metrics = {
+        "cpu_used_pct": ("CPU used, %", 1),
+        "mem_used_kb": ("RAM used, MB", 1024),
+    }
+
+    builder.add_table({
+        "title": "Ключевые метрики (среднее за время замера)",
+        "headers": ["Метрика", "Idle", "Load"],
+        "rows": [
+            [
+                label,
+                f'{sum(float(row[column]) for row in idle_rows) / len(idle_rows) / divider:.2f}',
+                f'{sum(float(row[column]) for row in load_rows) / len(load_rows) / divider:.2f}',
+            ]
+            for column, (label, divider) in key_metrics.items()
+        ],
+    })
+
+    # Пояснения к графикам: колонка CSV -> что показывает график.
+    # Метрики с пометкой «ОС» пересчитаны за вычетом вклада генераторов нагрузки,
+    # остальные сняты по всей системе как есть.
+    chart_descriptions = {
+        "cpu_user_pct": "доля времени CPU в пользовательском режиме (user + nice), по /proc/stat",
+        "cpu_system_pct": "доля времени CPU в режиме ядра (system), по /proc/stat",
+        "cpu_irq_pct": "доля времени CPU на обработку аппаратных и программных прерываний (irq + softirq)",
+        "cpu_iowait_pct": "доля времени простоя CPU в ожидании завершения операций ввода-вывода",
+        "cpu_steal_pct": "доля времени, отобранного у ВМ гипервизором под другие ВМ",
+        "cpu_idle_pct": "доля времени простоя CPU (ОС: 100 − CPU used)",
+        "cpu_used_pct": "суммарная загрузка CPU (ОС: за вычетом процессов-генераторов нагрузки); ключевая метрика",
+        "load_1m": "средняя длина очереди выполнения (running + ожидание I/O) за 1 минуту, /proc/loadavg",
+        "load_5m": "то же за 5 минут — сглаженная тенденция нагрузки",
+        "load_15m": "то же за 15 минут — долгосрочная тенденция нагрузки",
+        "tasks_running": "число задач в состоянии выполнения в момент замера, /proc/loadavg",
+        "tasks_total": "общее число задач (потоков) в системе, /proc/loadavg",
+        "mem_total_kb": "общий объём RAM (MemTotal); должен быть постоянным",
+        "mem_available_kb": "объём памяти, доступной для новых процессов без свопинга (MemAvailable)",
+        "mem_used_kb": "занятая память MemTotal − MemAvailable (ОС: за вычетом памяти генераторов нагрузки); ключевая метрика",
+        "mem_used_pct": "занятая память ОС в процентах от MemTotal",
+        "swap_total_kb": "общий объём swap (SwapTotal)",
+        "swap_used_kb": "занятый объём swap (SwapTotal − SwapFree)",
+        "swap_used_pct": "занятый swap в процентах от SwapTotal",
+        "buffers_kb": "память под буферы блочных устройств (Buffers)",
+        "cached_kb": "страничный кэш файлов (Cached)",
+        "slab_kb": "память, занятая slab-аллокатором ядра (Slab)",
+        "kernel_memory_kb": "стеки ядра и таблицы страниц (KernelStack + PageTables)",
+        "shmem_kb": "разделяемая память и tmpfs (Shmem); под нагрузкой включает RAM-генератор",
+        "context_switches_per_sec": "число переключений контекста в секунду (ctxt из /proc/stat)",
+        "interrupts_per_sec": "число обработанных прерываний в секунду (intr из /proc/stat)",
+        "procs_running": "число процессов, готовых к выполнению (procs_running из /proc/stat)",
+        "procs_blocked": "число процессов, заблокированных в ожидании I/O (procs_blocked из /proc/stat)",
+        "disk_read_kbps": "скорость чтения с диска тестового каталога (ОС: за вычетом дискового генератора)",
+        "disk_write_kbps": "скорость записи на диск тестового каталога (ОС: за вычетом дискового генератора)",
+        "net_rx_kbps": "входящий трафик по всем внешним интерфейсам (кроме lo)",
+        "net_tx_kbps": "исходящий трафик по всем внешним интерфейсам (кроме lo)",
+        "net_lo_rx_kbps": "входящий трафик loopback (ОС: за вычетом сетевого генератора)",
+        "net_lo_tx_kbps": "исходящий трафик loopback (ОС: за вычетом сетевого генератора)",
+    }
+
+    builder.add_heading(text="Описание графиков", level=3)
+    builder.add_paragraph(
+        text="На каждом графике: зелёная линия idle — ОС в простое, красная линия load — ОС "
+             "под синтетической нагрузкой CPU/RAM/диск/сеть. Ось X — время от начала замера, с."
+    )
+    builder.add_unordered_list(
+        [f"{label} — {chart_descriptions[column]}." for column, label in USAGE_OS_ALL_METRICS.items()]
+    )
 
     # 33 метрики на полном разрешении (600 точек) кладут тело страницы за лимит
     # Confluence REST (5 242 880 байт на запрос) — прореживаем до ~120 точек на график.

@@ -59,7 +59,8 @@ from src.schemas.stp_pull_from_life import (
     StpPullRunComposition,
     StpPullRunResult,
 )
-from src.services import permissions, secret_client, server_client, zephyr_client
+from src.services import permissions, secret_client, zephyr_client, zephyr_verdict
+from src.services import zephyr_folder as zephyr_folder_svc
 from src.services.zephyr_client import ZephyrTestRunDetail, ZephyrTestRunSummary
 from src.utils.ids import stp_cell_id as new_cell_id
 from src.utils.ids import stp_pull_operation_id as new_pull_op_id
@@ -71,26 +72,6 @@ logger = logging.getLogger(__name__)
 _NAME_NOT_PARSEABLE = "NAME_NOT_PARSEABLE"
 _STAND_NOT_FOUND = "STAND_NOT_FOUND"
 _STAND_WRONG_DEPARTMENT = "STAND_WRONG_DEPARTMENT"
-
-
-def _derive_release(rc_number: str, *, is_urgent_update: bool = False) -> str:
-    """Дублирует `services/stp.py::_derive_release` — тот же приём, что и
-    `stp_add_test.py::_resolve_jira_ctx` уже применяет к `_resolve_jira_bearer`:
-    крохотный чистый хелпер дублируется, а не импортируется из чужой зоны.
-
-    Правило легаси: 4 сегмента → первые три, хотфикс из 6 сегментов с `UU` на
-    четвёртом месте → первые пять. Поиск обязан ходить в ту же папку, в
-    которую пишет `stp.py`, иначе легаси-раны не находятся. Принимает
-    человеческий номер РЦ (`rc_number`), не `os_version_id` — резолвится
-    вызывающим через `server_client.resolve_os_version_info`.
-
-    `is_urgent_update` — тот же структурный флаг-ворота и регистронезависимое
-    сравнение с `UU`, что и в `stp.py::_derive_release` — см. его докстринг.
-    """
-    parts = rc_number.split(".")
-    if is_urgent_update and len(parts) == 6 and parts[3].upper() == "UU":
-        return ".".join(parts[:5])
-    return ".".join(parts[:3]) if len(parts) >= 3 else rc_number
 
 
 async def _resolve_jira_ctx(db: AsyncSession, department_id: str) -> tuple[str, str] | None:
@@ -183,10 +164,11 @@ async def _search_folder(
             message="department_integration_settings not configured or credential reveal failed",
         )
     base_url, bearer_token = jira_ctx
-    os_version_info = await server_client.resolve_os_version_info(os_version_id)
-    rc_number = os_version_info.name
-    release = _derive_release(rc_number, is_urgent_update=os_version_info.is_urgent_update)
-    folder = f"/stress_test/{release}/{rc_number}"
+    # Та же папка, в которую пишет генерация СТП: ручная запись
+    # `zephyr_folders` либо шаблон `zephyr_folder_path_template` отдела.
+    folder, _record = await zephyr_folder_svc.effective_folder_path(
+        db, department_id=department_id, os_version_id=os_version_id,
+    )
     summaries = await zephyr_client.search_test_runs(base_url=base_url, bearer_token=bearer_token, folder=folder)
     return base_url, bearer_token, folder, summaries
 
@@ -399,7 +381,10 @@ async def _import_one(
             db, summary=summary, department_id=department_id, os_version_id=os_version_id,
             folder=folder, stand=stand, mode=mode, kernel=kernel,
         )
-        detail = await zephyr_client.get_test_run(base_url=base_url, bearer_token=bearer_token, test_run_key=summary.key)
+        detail = await zephyr_client.get_test_run(
+            base_url=base_url, bearer_token=bearer_token, test_run_key=summary.key,
+            status_mapping=await zephyr_verdict.load_mapping(db, department_id),
+        )
         cases_created, cases_matched, cells_created, cells_matched, conflicts = await _sync_cells(
             db, run=run, detail=detail, identity=identity, department_id=department_id,
         )

@@ -21,7 +21,9 @@ from src.schemas.queue import (
     QueueClaimResponse,
     QueueCompletedRequest,
     QueueInterruptCheckResponse,
+    QueuePreflightStateRequest,
 )
+from src.services import preflight_status as preflight_status_svc
 from src.services import queue as queue_svc
 
 router = APIRouter(prefix="/internal/queue", include_in_schema=False)
@@ -44,7 +46,7 @@ async def claim(
     `claim` того же item'а креды уже не получит), содержимое `dates.conf`
     (`dates_content`/`dates_filename`) для SFTP-записи ДО запуска, уже
     резолвленную команду запуска `starter.sh` (`resolve_dates_content` +
-    `_resolve_git_token`, см. `services/queue.py::claim_next`),
+    `resolve_git_token`, см. `services/queue.py::claim_next`),
     `debug_mode`/`is_retry` для контекста воркера.
     """
     item = await queue_svc.claim_next(db)
@@ -93,3 +95,21 @@ async def interrupt_check(
     return QueueInterruptCheckResponse(
         action=await queue_svc.get_interrupt_action(db, queue_item_id),
     )
+
+
+@router.post("/{queue_item_id}/preflight-state", response_model=OkResponse)
+async def preflight_state(
+    body: QueuePreflightStateRequest,
+    queue_item_id: str = Path(description="id элемента очереди, для которого ждём внешние сервисы."),
+    db: AsyncSession = Depends(get_db),
+    _caller: None = Depends(require_caller_identity("testing_worker")),
+) -> OkResponse:
+    """testing_worker сообщает, что ждёт внешние сервисы перед запуском item'а.
+
+    `waiting` — записать/продлить ожидание (TTL — два интервала опроса отдела),
+    `ok` — снять. Отдел берётся из стенда item'а. Неизвестный item — 404.
+    """
+    await preflight_status_svc.set_state(
+        db, queue_item_id, waiting=body.state == "waiting", unavailable=body.unavailable,
+    )
+    return OkResponse()

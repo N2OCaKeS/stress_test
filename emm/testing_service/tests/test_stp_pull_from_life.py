@@ -2,7 +2,7 @@
 
 Переиспользует стенды/каталог/моки Jira из `tests.test_stp` — тот же стиль,
 что `test_stp_add_test.py`. `zephyr_client.search_test_runs`/`get_test_run`
-мокаются отдельно (`mock_zephyr_pull`) — эта волна только ЧИТАЕТ Zephyr,
+мокаются отдельно (`mock_zephyr_pull`) — pull-операция только ЧИТАЕТ Zephyr,
 `mock_zephyr`/`mock_create_test_case` из `test_stp.py` здесь не нужны.
 """
 
@@ -31,7 +31,14 @@ from tests.test_stp import (  # noqa: F401
     mock_secret_client,
 )
 
+from tests.test_zephyr_folder import rc_release_variable  # noqa: F401,E402
+
 PULL_BASE = STP_BASE + "/pull-from-life"
+
+
+@pytest.fixture(autouse=True)
+def _tp06_folder_template(rc_release_variable):  # noqa: F811
+    """Папка поиска — по шаблону отдела `/stress_test/{RC_RELEASE}/{RC_NAME}`."""
 
 
 @pytest.fixture
@@ -43,7 +50,7 @@ def mock_zephyr_pull(monkeypatch):
     async def fake_search(*, base_url, bearer_token, folder, project_key="BT"):
         return list(state["runs"])
 
-    async def fake_get_test_run(*, base_url, bearer_token, test_run_key):
+    async def fake_get_test_run(*, base_url, bearer_token, test_run_key, status_mapping=None):
         return state["details"][test_run_key]
 
     monkeypatch.setattr(zephyr_client, "search_test_runs", fake_search)
@@ -60,30 +67,6 @@ def _run_detail(key: str, items: list[tuple[str, str]], name: str = "") -> Zephy
         key=key, name=name, folder=None,
         items=[ZephyrTestRunResultItem(test_case_key=k, status=s, test_case_name=k) for k, s in items],
     )
-
-
-class TestDeriveRelease:
-    """Поиск обязан ходить в легаси-папку (`parts[:3]`, для UU — `parts[:5]`),
-    иначе легаси-раны того же РЦ не находятся вообще."""
-
-    def test_ordinary_four_segment_release_keeps_three(self):
-        assert pull_svc._derive_release("1.8.5.46") == "1.8.5"
-
-    def test_search_folder_matches_legacy_example(self):
-        rc = "1.8.5.46"
-        assert f"/stress_test/{pull_svc._derive_release(rc)}/{rc}" == "/stress_test/1.8.5/1.8.5.46"
-
-    def test_uu_hotfix_keeps_five_segments(self):
-        assert pull_svc._derive_release("1.7.3.UU.1.2", is_urgent_update=True) == "1.7.3.UU.1"
-
-    def test_uu_marker_case_insensitive(self):
-        assert pull_svc._derive_release("1.7.3.uu.1.2", is_urgent_update=True) == "1.7.3.uu.1"
-
-    def test_uu_shape_without_flag_is_not_hotfix(self):
-        assert pull_svc._derive_release("1.7.3.UU.1.2", is_urgent_update=False) == "1.7.3"
-
-    def test_short_format_falls_back_without_raising(self):
-        assert pull_svc._derive_release("1.8") == "1.8"
 
 
 class TestParseRunName:

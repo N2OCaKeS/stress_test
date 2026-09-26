@@ -226,6 +226,40 @@ def _set_mgmt_env(monkeypatch):
     get_settings.cache_clear()
 
 
+def _stub_node_exporter(monkeypatch) -> list[tuple]:
+    """Заглушить шаг установки node_exporter в конце prepare.
+
+    Шаг идёт отдельной управляющей key-сессией после bootstrap'а и provision'а;
+    скриптованный conn из `_prepare_seq` его команд не содержит. Возвращает
+    список вызовов `(server_id, management_user, has_private_key)`.
+    """
+    calls: list[tuple] = []
+
+    class _Session:
+        host = "stub"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return None
+
+    def fake_build_session(creds, server_id):
+        calls.append((
+            server_id,
+            creds.get("management_user"),
+            bool(creds.get("management_private_key")),
+        ))
+        return _Session()
+
+    async def fake_install(runner, target):
+        return {"target": target, "returncode": 0, "output_tail": ""}
+
+    monkeypatch.setattr(prepare.ssh_client, "build_session", fake_build_session)
+    monkeypatch.setattr(prepare, "install_node_exporter", fake_install)
+    return calls
+
+
 class TestPrepareHandler:
     async def test_bootstrap_and_submit(
         self, make_task, fetch_task, captured_audit, monkeypatch,
@@ -235,6 +269,7 @@ class TestPrepareHandler:
             monkeypatch,
             {"bootstrap_login": "bootadmin", "bootstrap_password": "Boot1234"},
         )
+        node_exporter_calls = _stub_node_exporter(monkeypatch)
 
         tid = await make_task(
             task_kind="server.prepare", target_server_id="srv_prep1",
@@ -268,6 +303,10 @@ class TestPrepareHandler:
         assert t.result["management_mode"] == "other_os"
         # Креды удалены из Redis после успеха.
         assert delete_calls == ["dbos:prepare_creds:pcd_x"]
+        # node_exporter ставится под управляющей key-сессией, маркер снят.
+        assert node_exporter_calls == [("srv_prep1", "dbos", True)]
+        assert t.result["node_exporter"] is True
+        assert await prepare._read_node_exporter_installed(tid) is False
 
         get_settings.cache_clear()
 
@@ -287,6 +326,7 @@ class TestPrepareHandler:
                 "bootstrap_creds_key": "dbos:prepare_creds:pcd_y",
             },
         )
+        _stub_node_exporter(monkeypatch)
         conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async def fake_submit(*a, **kw):
@@ -328,6 +368,7 @@ class TestPrepareHandler:
                 "bootstrap_creds_key": original_key,
             },
         )
+        _stub_node_exporter(monkeypatch)
         conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
@@ -392,6 +433,7 @@ class TestPrepareHandler:
         assert t.status == TaskStatus.QUEUED  # re-queued, не FAILED
 
         # Попытка 2: connect успешен → SUCCEEDED. Креды снова прочитаны из Redis.
+        _stub_node_exporter(monkeypatch)
         conn2 = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn2))
         await prepare.server_prepare.original_func(tid)
@@ -463,12 +505,13 @@ class TestPrepareHandler:
             pass
         monkeypatch.setattr(_runner, "_schedule_retry", noop)
 
-        # Имитируем что попытка 1 уже отработала SSH и provision привязанных
-        # учёток — ставим оба маркера вручную (bootstrap с детектнутым ранее
-        # режимом Смоленск + linked). Оба маркера => retry идёт сразу в submit,
-        # не читая stash (TTL истёк).
+        # Имитируем что попытка 1 уже отработала все SSH-шаги — ставим маркеры
+        # вручную (bootstrap с детектнутым ранее режимом Смоленск + linked +
+        # node_exporter). Все маркеры => retry идёт сразу в submit, не читая
+        # stash (TTL истёк).
         await prepare._mark_bootstrap_succeeded(tid, "astra_smolensk")
         await prepare._mark_linked_provisioned(tid)
+        await prepare._mark_node_exporter_installed(tid)
 
         # SSH connect не должен вызываться — маркеры пропускают шаги.
         monkeypatch.setattr(
@@ -490,8 +533,9 @@ class TestPrepareHandler:
         assert t.status == TaskStatus.SUCCEEDED
         # Режим из маркера донёсся в submit_prepared, несмотря на пропуск SSH.
         assert submit_calls == [("srv_prep_marker", "dbos", "astra_smolensk")]
-        # Маркер вычищен после успеха.
+        # Маркеры вычищены после успеха.
         assert await prepare._read_bootstrap_succeeded(tid) == (False, None)
+        assert await prepare._read_node_exporter_installed(tid) is False
 
         get_settings.cache_clear()
 
@@ -595,6 +639,7 @@ class TestPrepareHandler:
             task_kind="server.prepare", target_server_id="srv_prep_ok",
             payload={"server_id": "srv_prep_ok", "bootstrap_creds_key": good_key},
         )
+        _stub_node_exporter(monkeypatch)
         conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async def fake_submit(*a, **kw):
@@ -646,6 +691,7 @@ class TestPrepareHandler:
 
         await prepare._mark_bootstrap_succeeded(tid, "other_os")
         await prepare._mark_linked_provisioned(tid)
+        await prepare._mark_node_exporter_installed(tid)
         # SSH connect не должен вызываться — маркеры пропускают шаги.
         monkeypatch.setattr(
             asyncssh, "connect",
@@ -716,6 +762,7 @@ class TestPrepareHandler:
                 "bootstrap_creds_key": "dbos:prepare_creds:pcd_cleanup_fail",
             },
         )
+        _stub_node_exporter(monkeypatch)
         conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
@@ -753,6 +800,7 @@ class TestPrepareHandler:
                 "bootstrap_creds_key": "dbos:prepare_creds:pcd_z",
             },
         )
+        _stub_node_exporter(monkeypatch)
         conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
         async def fake_submit(*a, **kw):
@@ -885,6 +933,7 @@ class TestPrepareProvisionsLinkedAccounts:
                 "ssh_port": 2222,
             },
         )
+        _stub_node_exporter(monkeypatch)
         conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
@@ -948,6 +997,7 @@ class TestPrepareProvisionsLinkedAccounts:
             )
             await session.commit()
 
+        _stub_node_exporter(monkeypatch)
         conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
@@ -990,6 +1040,7 @@ class TestPrepareProvisionsLinkedAccounts:
                 "bootstrap_creds_key": "dbos:prepare_creds:pcd_noacc",
             },
         )
+        _stub_node_exporter(monkeypatch)
         conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
@@ -1066,11 +1117,13 @@ class TestPrepareProvisionsLinkedAccounts:
         await prepare._mark_bootstrap_succeeded(tid, "other_os")
 
         # SSH-bootstrap по паролю не должен вызываться — bootstrap-маркер стоит,
-        # а provision привязанных учёток идёт через мок provision_user.
+        # provision привязанных учёток идёт через мок provision_user, а
+        # node_exporter (маркера нет) доставляется заглушкой.
         monkeypatch.setattr(
             asyncssh, "connect",
             AsyncMock(side_effect=AssertionError("password bootstrap must not re-run")),
         )
+        node_exporter_calls = _stub_node_exporter(monkeypatch)
 
         submit_calls = []
         async def fake_submit(server_id, management_user, target_department_id=None, *, management_mode=None):
@@ -1093,6 +1146,7 @@ class TestPrepareProvisionsLinkedAccounts:
         assert creds["management_user"] == "dbos"
         # submit_prepared дошёл с режимом из bootstrap-маркера.
         assert submit_calls == [("srv_relink", "dbos", "other_os")]
+        assert node_exporter_calls == [("srv_relink", "dbos", True)]
         # Оба маркера вычищены после успеха.
         assert await prepare._read_bootstrap_succeeded(tid) == (False, None)
         assert await prepare._read_linked_provisioned(tid) is False
@@ -1198,6 +1252,7 @@ class TestPrepareInstallsMgmtCreds:
                 "bootstrap_creds_key": "dbos:prepare_creds:pcd_mgmt",
             },
         )
+        _stub_node_exporter(monkeypatch)
         conn = _conn(_prepare_seq())
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
 
@@ -1422,6 +1477,7 @@ class TestPrepareHandlerMode:
             _run_result("", "", 0),                    # verify `true` под ключом
         ])
         monkeypatch.setattr(asyncssh, "connect", AsyncMock(return_value=conn))
+        _stub_node_exporter(monkeypatch)
 
         submit_calls = []
         async def fake_submit(server_id, management_user, target_department_id=None, *, management_mode=None):

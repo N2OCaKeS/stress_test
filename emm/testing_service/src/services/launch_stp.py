@@ -2,6 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.exceptions import DomainValidationError
+from src.models import Scenario, ScenarioAction, ScenarioRun
 from src.repositories import (
     stp_test_case as cases,
     stp_test_run as runs,
@@ -92,3 +93,20 @@ async def require_membership(
         message="Тест отсутствует в выбранной СТП. Добавьте его в СТП или используйте debug.",
         details={"stp_test_run_id": context_run.id},
     )
+
+
+async def case_code_for_item(db: AsyncSession, item, test_code: str) -> str | None:
+    """Код тест-кейса СТП, в ячейку которого пишется исход item'а.
+
+    Одиночный запуск — код теста. Действие сценария — только действие-вердикт
+    (исход остальных действий — внутреннее дело сценария), код — кейс
+    сценария (`stp_test_case_code`), иначе код теста. `None` — в СТП не пишет.
+    """
+    if not item.scenario_run_id:
+        return test_code
+    action = await db.get(ScenarioAction, item.scenario_action_id) if item.scenario_action_id else None
+    if action is None or not action.is_verdict:
+        return None
+    run = await db.get(ScenarioRun, item.scenario_run_id)
+    scenario = await db.get(Scenario, run.scenario_id) if run is not None else None
+    return (scenario.stp_test_case_code if scenario is not None else None) or test_code

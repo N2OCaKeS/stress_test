@@ -35,6 +35,8 @@ from src.core.config import get_settings
 from src.core.constants import SERVICE_NAME
 from src.core.exceptions import (
     AuthorizationError,
+    ConflictError,
+    DomainValidationError,
     NotFoundError,
     ServiceUnavailableError,
 )
@@ -210,3 +212,153 @@ async def get_credential_metadata(token: str, cred_id: str) -> dict:
             error_code="SECRET_SERVICE_ERROR",
             message="secret_service returned a non-JSON body",
         ) from exc
+
+
+# ── Запись credential от имени пользователя ──────
+
+_CREDENTIALS_PATH = "/api/secret/v1/credentials"
+
+
+async def _user_call(
+    token: str, method: str, path: str, *, json: dict | None = None, params: dict | None = None,
+) -> httpx.Response:
+    """Вызов secret_service с bearer'ом вызывающего пользователя.
+
+    Запись credential (создать/обновить) делается правами ЧЕЛОВЕКА, а не
+    бота сервиса: бот testing_service живёт в системном отделе и не может
+    заводить credential чужого отдела (`credential_service.create`), а
+    secret_service должен видеть, кто именно поменял секрет. Сетевые сбои —
+    те же `SECRET_SERVICE_*`, что у `reveal_credential`.
+    """
+    settings = get_settings()
+    base = (settings.secret_service_url or "").rstrip("/")
+    if not base:
+        raise ServiceUnavailableError(
+            error_code="SECRET_SERVICE_NOT_CONFIGURED",
+            message="SECRET_SERVICE_URL is not configured",
+        )
+    headers = {**bearer_header(token), "X-Service-Identity": SERVICE_NAME}
+    async with build_client(settings.secret_request_timeout_seconds) as client:
+        try:
+            return await client.request(method, f"{base}{path}", headers=headers, json=json, params=params)
+        except httpx.TimeoutException as exc:
+            raise ServiceUnavailableError(
+                error_code="SECRET_SERVICE_TIMEOUT",
+                message="secret_service did not respond in time",
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise ServiceUnavailableError(
+                error_code="SECRET_SERVICE_UNREACHABLE",
+                message=f"Unable to reach secret_service: {type(exc).__name__}",
+            ) from exc
+
+
+def _user_call_body(response: httpx.Response, *, cred_id: str | None = None) -> dict:
+    """Разобрать ответ записи credential в доменные исключения.
+
+    409 отдаётся `ConflictError` с исходным `error_code` secret_service
+    (`NAME_DUPLICATE`) — вызывающий решает, что с ним делать.
+    """
+    details = {"credential_id": cred_id} if cred_id else {}
+    if response.status_code == 404:
+        raise NotFoundError(
+            error_code="CREDENTIAL_NOT_FOUND",
+            message="Credential not found or not visible to the caller",
+            details=details,
+        )
+    if response.status_code in (401, 403):
+        raise AuthorizationError(
+            error_code="CREDENTIAL_ACCESS_DENIED",
+            message=(
+                "secret_service denied this change: saving the test account needs "
+                "the right to create/modify service credentials of the department "
+                "(department_admin or secret_service admin of the department)"
+            ),
+            details=details,
+        )
+    if response.status_code == 409:
+        try:
+            code = (response.json() or {}).get("error_code") or "CREDENTIAL_CONFLICT"
+        except ValueError:
+            code = "CREDENTIAL_CONFLICT"
+        raise ConflictError(error_code=code, message="secret_service reported a conflict", details=details)
+    if response.status_code == 422:
+        raise DomainValidationError(
+            error_code="CREDENTIAL_PAYLOAD_INVALID",
+            message="secret_service rejected the credential payload",
+            details=details,
+        )
+    if response.status_code >= 300:
+        logger.warning("secret_service ответил %s на запись credential", response.status_code)
+        raise ServiceUnavailableError(
+            error_code="SECRET_SERVICE_ERROR",
+            message=f"secret_service returned {response.status_code}",
+        )
+    try:
+        body = response.json()
+    except ValueError as exc:
+        raise ServiceUnavailableError(
+            error_code="SECRET_SERVICE_ERROR",
+            message="secret_service returned a non-JSON body",
+        ) from exc
+    if not isinstance(body, dict):
+        raise ServiceUnavailableError(
+            error_code="SECRET_SERVICE_ERROR",
+            message="secret_service returned an unexpected body",
+        )
+    return body
+
+
+def _encode_secret(secret: str) -> str:
+    return base64.b64encode(secret.encode("utf-8")).decode("ascii")
+
+
+async def create_credential(
+    token: str, *, name: str, service: str, scope: str, owner_dept_id: str,
+    login: str | None, secret: str,
+) -> dict:
+    """`POST /credentials` правами пользователя. Возвращает карточку (без секрета)."""
+    response = await _user_call(token, "POST", _CREDENTIALS_PATH, json={
+        "name": name, "service": service, "scope": scope,
+        "owner_dept_id": owner_dept_id, "login": login,
+        "secret_b64": _encode_secret(secret),
+    })
+    return _user_call_body(response)
+
+
+async def update_credential(
+    token: str, cred_id: str, *, login: str | None = None, secret: str | None = None,
+) -> dict:
+    """`PATCH /credentials/{id}` правами пользователя: логин и/или секрет."""
+    body: dict = {}
+    if login is not None:
+        body["login"] = login
+    if secret is not None:
+        body["secret_b64"] = _encode_secret(secret)
+    response = await _user_call(token, "PATCH", _CREDENTIAL_PATH.format(cred_id=cred_id), json=body)
+    return _user_call_body(response, cred_id=cred_id)
+
+
+async def find_credential(
+    token: str, *, name: str, service: str, scope: str, owner_dept_id: str,
+) -> dict | None:
+    """Найти активную credential по (владелец, service, name) — листинг secret_service.
+
+    Нужен, когда `create_credential` отвечает 409 `NAME_DUPLICATE`: запись
+    уже есть (ссылка на неё потерялась), её надо переиспользовать, а не
+    плодить вторую. Курсорная пагинация, защита от зацикленного курсора.
+    """
+    cursor: str | None = None
+    seen: set[str] = set()
+    while True:
+        params: dict = {"service": service, "scope": scope, "status": "active", "limit": 100}
+        if cursor:
+            params["cursor"] = cursor
+        page = _user_call_body(await _user_call(token, "GET", _CREDENTIALS_PATH, params=params))
+        for item in page.get("items") or []:
+            if item.get("name") == name and item.get("owner_dept_id") == owner_dept_id:
+                return item
+        cursor = page.get("next_cursor")
+        if not cursor or cursor in seen:
+            return None
+        seen.add(cursor)

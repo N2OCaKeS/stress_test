@@ -10,13 +10,15 @@
   `POST /internal/queue/claim`: всё необходимое для одной SSH-сессии одним
   ответом (нет второго раунда за кредами/командой).
 * `QueueCompletedRequest` — тело `POST /internal/queue/{id}/completed` от
-  `testing_worker`, факт исхода без полного лога (потоковые логи — волна 6).
+  `testing_worker`, факт исхода без полного лога (потоковые логи появятся позже).
 """
 
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from src.schemas.department_test_settings import PreflightSettings
 
 
 class PrepareForTestCompletedCallback(BaseModel):
@@ -38,6 +40,23 @@ class PrepareForTestCompletedCallback(BaseModel):
     error: str | None = Field(default=None, max_length=2048)
 
 
+class QueueClaimFile(BaseModel):
+    """Один файл задания воркеру."""
+
+    path: str = Field(description="Абсолютный путь на стенде.")
+    content: str
+    mode: str = Field(default="0644", pattern=r"^0[0-7]{3}$", description="Права файла (восьмеричная строка).")
+    sensitive: bool = Field(default=False, description="Содержимое секретно — не логировать.")
+
+
+class QueueClaimStep(BaseModel):
+    """Шаг многоступенчатого теста в задании воркеру."""
+
+    index: int = Field(ge=0, description="Индекс шага с 0.")
+    count: int = Field(ge=1, description="Сколько шагов у теста.")
+    name: str = Field(default="", description="Подпись шага (для лога).")
+
+
 class QueueClaimItem(BaseModel):
     """Одно задание для `testing_worker` — всё нужное для SSH-исполнения теста."""
 
@@ -45,46 +64,34 @@ class QueueClaimItem(BaseModel):
     host: str = Field(description="IP стенда (см. `server_client.get_connection_info`).")
     test_username: str
     test_ssh_private_key: str
-    command: list[str] = Field(
+    files: list[QueueClaimFile] = Field(
         description=(
-            "Единственный SSH-вызов: `sudo bash /home/u/starter.sh <category> "
-            "<git_token_filename> <dates_filename> <RC> <starter_suffix>`. "
-            "Второй слот — имя файла на стенде с git-токеном (см. "
-            "`git_token_content`), не сам токен: argv процесса виден в "
-            "`ps`/`/proc/<pid>/cmdline` весь срок исполнения, секрет доставляется "
-            "по SFTP отдельным файлом, тем же приёмом, что и `dates_content`. "
-            "`starter.sh` сам клонирует ветку и гоняет `run.py`/конечный "
-            "скрипт — вне периметра testing_service."
+            "Файлы, которые воркер кладёт на стенд по SFTP в этом порядке до "
+            "запуска: starter.sh, git-токен, dates, testenv-маркер, "
+            "в prepare_only — ещё файл с командой. Пути и содержимое — из профиля "
+            "запуска; воркер своих путей не знает."
         ),
     )
-    command_masked: list[str] = Field(
+    cleanup_globs: list[str] = Field(
+        default_factory=list,
+        description="Маски файлов, удаляемых на стенде перед записью (T2, опция профиля; по умолчанию пусто).",
+    )
+    launch_command: str = Field(description="Команда запуска (строка shell, аргументы экранированы).")
+    launch_command_masked: str = Field(description="Та же команда для лога: sensitive-значения заменены на ***.")
+    stop_command: str = Field(
         description=(
-            "Та же команда — в argv больше нет секретов (см. `command`), поле "
-            "оставлено ради текущих потребителей command_text_masked в логе/UI."
+            "Команда остановки (T1): всё дерево потомков starter.sh по PPID, TERM → "
+            "grace → KILL, под sudo. Её же воркер шлёт по таймауту и по skip/pause."
         ),
     )
-    git_token_content: str = Field(
-        description=(
-            "Готовое значение заголовка `Authorization` для git-клонирования. "
-            "Воркер кладёт его по SFTP на стенд (`/home/u/<git_token_filename>`) "
-            "ДО вызова `command` — сюда, а не в argv, чтобы токен не был виден "
-            "в `ps` весь срок теста."
-        ),
+    use_pty: bool = Field(default=True, description="Исполнять в pty (T5): вывод построчно, stdout+stderr одним потоком.")
+    redact_values: list[str] = Field(
+        default_factory=list,
+        description="Значения, которые воркер вырезает из error и из каждого куска живого лога.",
     )
-    git_token_filename: str = Field(
-        description="Имя файла на стенде с git-токеном (`git_token_<queue_item_id>.conf`).",
-    )
-    dates_content: str = Field(
-        description=(
-            "Содержимое файла `dates.conf` (`resolve_dates_content`) — воркер "
-            "кладёт его по SFTP на стенд (`/home/u/<dates_filename>`) ДО вызова "
-            "`command`."
-        ),
-    )
-    dates_content_masked: str = Field(
-        description="Та же строка, но `is_sensitive`-переменные заменены на `***` — версия для логов.",
-    )
-    dates_filename: str = Field(description="Имя файла на стенде (`dates_<queue_item_id>.conf`).")
+    launch_profile_version_id: str = Field(description="Версия профиля запуска, которой собрано задание.")
+    log_chunk_interval_seconds: float = Field(default=2.5, description="Как часто слать куски живого лога (сек).")
+    log_chunk_max_bytes: int = Field(default=4096, description="Наибольший кусок живого лога (байт).")
     command_timeout_seconds: int | None = Field(
         default=None,
         description=(
@@ -97,18 +104,24 @@ class QueueClaimItem(BaseModel):
     prepare_only: bool = Field(
         default=False,
         description=(
-            "Легаси testenv-режим: воркер кладёт на стенд testenv-маркер "
-            "вместо запуска теста, а также `command.txt` с командой, которой "
-            "тест был бы запущен (см. `starter_suffix`)."
+            "Легаси testenv-режим: маркер testenv — `on`, starter.sh готовит "
+            "стенд и выходит, не запуская тест; в `files` есть файл с командой, "
+            "которой тест был бы запущен. Исход — `prepared`."
         ),
     )
-    starter_suffix: str = Field(
-        default="",
+    preflight: PreflightSettings | None = Field(
+        default=None,
         description=(
-            "`test_definitions.starter_suffix` этого теста — позиционный $5 "
-            "`starter.sh` (\"kernel\"/\"balance\"/\"oom\" или пусто). Нужен "
-            "воркеру только в `prepare_only`-режиме, чтобы посчитать команду "
-            "`run.py`, которую сам `starter.sh` не успевает собрать."
+            "Проверка внешних сервисов перед запуском — "
+            "`department_test_settings.preflight` отдела стенда на момент claim. "
+            "Нет поля — воркер берёт свои env-настройки (фолбэк)."
+        ),
+    )
+    step: QueueClaimStep = Field(
+        default_factory=lambda: QueueClaimStep(index=0, count=1),
+        description=(
+            "Какой шаг теста исполняет задание: у одношагового — `{index: 0, count: 1}`. "
+            "Воркер подписывает им сегмент лога; исход шага — обычный `completed`."
         ),
     )
 
@@ -180,3 +193,35 @@ class QueueItemSummaryResponse(BaseModel):
             "стартовал или у теста не задан таймаут."
         ),
     )
+
+
+class QueuePreflightStateRequest(BaseModel):
+    """Тело POST /internal/queue/{queue_item_id}/preflight-state.
+
+    `waiting` — воркер ждёт внешние сервисы перед запуском item'а, `ok` —
+    дождался (или сдался, или item сняли): ожидание снимается.
+    """
+
+    state: Literal["waiting", "ok"]
+    unavailable: list[str] = Field(
+        default_factory=list, max_length=64,
+        description="Недоступные пробы (URL, `dns`), как их называет воркер.",
+    )
+
+
+class PreflightStatusResponse(BaseModel):
+    """Ответ GET /preflight/status — ожидание внешних сервисов в отделе пользователя."""
+
+    state: Literal["waiting", "ok"] = Field(description="`waiting` — хоть один тест отдела ждёт внешние сервисы.")
+    unavailable: list[str] = Field(default_factory=list, description="Недоступные сервисы (объединение по тестам).")
+    since: datetime | None = Field(default=None, description="С какого момента ждём (самое раннее ожидание).")
+    waiting_items: int = Field(default=0, description="Сколько тестов ждут.")
+
+
+class StandSetupCompletedCallback(BaseModel):
+    """Тело POST /internal/stand-setup/{id}/completed от server_service."""
+
+    correlation_id: str = Field(max_length=128)
+    succeeded: bool
+    failed_step: str | None = Field(default=None, max_length=32)
+    error: str | None = Field(default=None, max_length=2048)

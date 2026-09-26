@@ -46,6 +46,7 @@ export interface DepartmentRunNotifications {
 /** Подпись теста для toast'а: «Тест <code> ...». */
 function outcomeMessage(item: PublicQueueItem): string {
   const label = item.test_code ?? item.test_name ?? item.test_id;
+  if (item.state === "succeeded" && item.verdict === "unknown") return `Тест ${label} завершён, результат не определён`;
   if (item.state === "succeeded") return `Тест ${label} завершён успешно`;
   if (item.state === "failed") return `Тест ${label} завершился с ошибкой`;
   if (item.state === "timed_out") return `Тест ${label} провален по таймауту`;

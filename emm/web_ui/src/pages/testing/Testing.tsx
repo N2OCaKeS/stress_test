@@ -22,17 +22,19 @@
  */
 import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Bug, Cog, FileText, ListChecks, type LucideIcon } from "lucide-react";
+import { Bug, Cog, FileText, ListChecks, Workflow, type LucideIcon } from "lucide-react";
 import { Shell } from "@/components/shell/Shell";
 import { LogsMiddlePanel, LogsWorkzone, useLogsState } from "./logs";
 import { TestingOverview } from "./overview";
 import { TestsWorkzone } from "./tests";
+import { ScenariosWorkzone } from "./scenarios";
 import { RunsMiddlePanel, RunsWorkzone, useRunsState } from "./runs";
 import { AdhocMiddlePanel, AdhocWorkzone, useAdhocState } from "./debug";
 import { StpMiddlePanel, StpWorkzone, useStpVersionState } from "./stp";
 
 const SUBSECTIONS = [
   { id: "tests", label: "Тесты", icon: FileText },
+  { id: "scenarios", label: "Сценарии", icon: Workflow },
   { id: "runs", label: "Прогоны", icon: ListChecks },
   { id: "debug", label: "Все запуски", icon: Bug },
   { id: "logs", label: "Логи", icon: FileText },
@@ -76,7 +78,7 @@ export function Testing() {
 
   return (
     <Shell breadcrumb={`testing_service / ${active.label}`} middle={middle}>
-      <main className={["tests", "runs", "debug", "logs"].includes(activeId) ? "flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden" : "flex-1 min-w-0 overflow-auto"}>
+      <main className={["tests", "scenarios", "runs", "debug", "logs"].includes(activeId) ? "flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden" : "flex-1 min-w-0 overflow-auto"}>
         <div className="border-b border-token px-5 py-4 flex items-center justify-between gap-4 flex-wrap shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <div className="h-10 w-10 rounded surface-2 border border-token flex items-center justify-center shrink-0">
@@ -104,9 +106,10 @@ export function Testing() {
           </div>
         </div>
 
-        <div className={["tests", "runs", "debug", "logs"].includes(activeId) ? "p-5 flex flex-1 min-h-0 flex-col" : "p-5"}>
+        <div className={["tests", "scenarios", "runs", "debug", "logs"].includes(activeId) ? "p-5 flex flex-1 min-h-0 flex-col" : "p-5"}>
           {activeId === "overview" && <TestingOverview runsState={runsState} />}
           {activeId === "tests" && <TestsWorkzone />}
+          {activeId === "scenarios" && <ScenariosWorkzone />}
           {activeId === "runs" && <RunsWorkzone state={runsState} />}
           {activeId === "debug" && <AdhocWorkzone state={adhocState} />}
           {activeId === "logs" && <LogsWorkzone state={logsState} />}

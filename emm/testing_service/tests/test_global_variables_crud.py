@@ -253,6 +253,38 @@ class TestDelete:
         assert resp.status_code == 404
 
 
+# ── Справочник форм source_ref ──────────────────────────────────────
+
+class TestSourceOptions:
+    async def test_lists_what_the_validator_accepts(self, client, no_role_token):
+        from src.services import variable_resolver as vr
+
+        resp = await client.get(f"{BASE}/source-options", headers=_hdr(no_role_token))
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert {"template", "test_field", "stand", "department_integration", "os_version",
+                "test_account", "zephyr_folder", "static", "launch_context"} <= set(body["sources"])
+        assert body["test_fields"] == sorted(vr.TEST_FIELDS)
+        assert body["stand_fields"] == sorted(vr.STAND_FIELDS)
+        assert body["template_conditions"] == ["debug", "not_debug"]
+        di = {row["field"]: row["is_credential"] for row in body["department_integration_fields"]}
+        assert set(di) == vr.DEPARTMENT_INTEGRATION_FIELDS
+        assert di["credential_id"] is True and di["confluence_credential_id"] is True
+        assert di["stp_matrix_confluence_space"] is False
+        # Каждое перечисленное поле действительно проходит валидацию.
+        for name in body["test_fields"]:
+            vr.validate_source_ref("test_field", {"field": name}, is_sensitive=False)
+        for row in body["department_integration_fields"]:
+            ref = {"field": row["field"]}
+            if row["is_credential"]:
+                ref["credential_part"] = "login"
+            vr.validate_source_ref("department_integration", ref, is_sensitive=False)
+
+    async def test_anonymous_is_401(self, client):
+        resp = await client.get(f"{BASE}/source-options")
+        assert resp.status_code == 401
+
+
 # ── OpenAPI ─────────────────────────────────────────────────────────────────
 
 class TestOpenApiSchema:

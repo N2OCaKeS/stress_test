@@ -41,6 +41,7 @@ import { getTestStand } from "@/api/testing/testStands";
 import { getTestDefinition } from "@/api/testing/testDefinitions";
 import { retryQueueItem } from "@/api/testing/queueItems";
 import { AttemptLogWorkzone } from "./AttemptLogWorkzone";
+import { StatisticsRecalcButton } from "./StatisticsRecalcModal";
 import type {
   RunSummaryCommentStatus,
   TestDefinition,
@@ -89,9 +90,15 @@ const QUEUE_ITEM_STATE_META: Record<string, { label: string; badge: BadgeKind }>
   // и на агрегатный статус кампании пропуск тоже не влияет.
   skipped: { label: "Пропущено", badge: "info" },
   paused: { label: "На паузе", badge: "warn" },
+  // Сессия на стенде закончилась, стенд держится, пока скрипт не
+  // опубликует статус теста в Zephyr.
+  awaiting_verdict: { label: "Ожидание вердикта", badge: "info" },
 };
 
-function queueItemStateMeta(state: string): { label: string; badge: BadgeKind } {
+function queueItemStateMeta(state: string, verdict?: string | null): { label: string; badge: BadgeKind } {
+  // Запуск без прогона в Zephyr: код выхода run.py всегда 0, засчитать
+  // «Выполнено» нельзя — исход смотреть в логе/Confluence.
+  if (state === "succeeded" && verdict === "unknown") return { label: "Результат не определён", badge: "warn" };
   return QUEUE_ITEM_STATE_META[state] ?? { label: state, badge: "warn" };
 }
 
@@ -289,6 +296,7 @@ export function RunsMiddlePanel({ state }: { state: RunsState }) {
           <Play className="w-3.5 h-3.5" />
           Запустить прогон
         </Button>
+        <StatisticsRecalcButton className="mt-2" />
       </div>
 
       {launchOpen && <LaunchRunModal state={state} onClose={() => setLaunchOpen(false)} />}
@@ -494,7 +502,7 @@ function RunDetailPanel({ run, onOpenLog, onChanged }: { run: TestRun; onOpenLog
             </thead>
             <tbody>
               {sorted.map((row) => {
-                const meta = queueItemStateMeta(row.state);
+                const meta = queueItemStateMeta(row.state, row.verdict);
                 const startedMs = row.started_at ? new Date(row.started_at).getTime() : null;
                 const finishedMs = row.finished_at ? new Date(row.finished_at).getTime() : null;
                 const elapsed =

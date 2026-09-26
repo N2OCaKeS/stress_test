@@ -271,8 +271,8 @@ class Action(StrEnum):
     # воркеру через internal endpoint. Узкий least-privilege грант worker_bot'а:
     # воркер тянет рабочий на боксе ключ перед каждой managed-операцией.
     VIEW_MANAGEMENT_CREDENTIALS = "view_management_credentials"
-    # Раскрытие учётки исполнения теста (`server_test_credentials`, план
-    # ALLTA MIGRATION §5.3) — человеку, не воркеру: живая отладка стенда во
+    # Раскрытие учётки исполнения теста (`server_test_credentials`) — человеку,
+    # не воркеру: живая отладка стенда во
     # время/после прогона. В отличие от VIEW_MANAGEMENT_CREDENTIALS это не
     # _NON_INSTANCE_ACTIONS — обычный грантуемый action, по умолчанию
     # засеян только роли admin.
@@ -362,7 +362,7 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         # Снимки сервера через ACS: список / создание / восстановление
         # (полная перезапись диска) — один action на все три.
         Action.ACS_SNAPSHOT,
-        # Раскрытие учётки исполнения теста (§5.3 плана ALLTA MIGRATION) —
+        # Раскрытие учётки исполнения теста —
         # `GET /servers/{id}/test-credentials?reveal=true`, засеяно только admin'у.
         Action.VIEW_TEST_CREDENTIALS,
     }),
@@ -521,7 +521,7 @@ class VmPowerState(StrEnum):
 
 
 class VmCredStrategy(StrEnum):
-    """Стратегия связи mgmt-кред со снимками ВМ (§6 дизайна).
+    """Стратегия связи mgmt-кред со снимками ВМ.
 
     `per_snapshot` (дефолт) — каждый снимок хранит свои креды; `reroll` —
     единый текущий пароль перекатывается по всем снимкам при ротации.
@@ -633,7 +633,7 @@ class VmBusyState(StrEnum):
 
 
 # Бронь ВМ: свободная и служебные статусы под тест. Любое другое значение —
-# это `<login>` забронировавшего (см. §2 дизайна). Здесь только зарезервированные.
+# это `<login>` забронировавшего. Здесь только зарезервированные значения.
 VM_STATUS_FREE = "free"
 VM_STATUS_RUN_TEST = "run test"
 VM_STATUS_DEBUG_TEST = "debug test"

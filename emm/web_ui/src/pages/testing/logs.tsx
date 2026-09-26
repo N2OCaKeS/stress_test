@@ -20,6 +20,7 @@ const PAGE_SIZE = 50;
 const STATES: Record<string, string> = {
   queued: "В очереди", preparing: "Подготовка", ready: "Готов к старту",
   running: "Выполняется", succeeded: "Успешно", failed: "Ошибка",
+  awaiting_verdict: "Ожидание вердикта", timed_out: "Провалено по таймауту",
 };
 
 export function useLogsState(enabled = true) {
@@ -95,7 +96,7 @@ export function LogsMiddlePanel({ state: s }: { state: LogsState }) {
       {s.page?.items.map((item) => <button key={item.id} onClick={() => s.select(item.id)} aria-label={`Открыть лог ${item.id}`}
         className={`w-full text-left px-3 py-3 border-b border-token hover-bg ${s.selected?.id === item.id ? "surface-2 border-l-2 border-l-accent" : ""}`}>
         <div className="text-sm font-medium">{item.test_name ?? item.test_code ?? "Тест удалён"}</div>
-        <div className="text-xs mt-1">{STATES[item.state] ?? item.state} · {item.debug_mode ? "Debug" : item.test_run_id ? "Прогон" : "Одиночный"}</div>
+        <div className="text-xs mt-1">{item.state === "succeeded" && item.verdict === "unknown" ? "Результат не определён" : STATES[item.state] ?? item.state} · {item.debug_mode ? "Debug" : item.test_run_id ? "Прогон" : "Одиночный"}</div>
         <div className="text-xs text-dim mt-1">{s.standsQ.data?.find((stand) => stand.id === item.stand_id)?.label ?? "Имя стенда недоступно"}</div>
         <div className="text-xs text-dim">{s.versionsQ.data?.find((v) => v.id === item.rc)?.name ?? item.rc} · {item.kernel}</div>
         <div className="text-[11px] text-dim mt-1">{formatMsk(item.created_at)} · {item.is_current === false ? "Предыдущая попытка" : item.retry_of_id ? "Повтор" : "Первая попытка"}</div>

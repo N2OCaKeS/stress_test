@@ -24,6 +24,72 @@ class TestMode(StrEnum):
     OREL = "orel"
     SMOLENSK = "smolensk"
 
+
+class DatesQuoting(StrEnum):
+    """Как токены команды теста склеиваются в строку `dates.conf` (D4).
+
+    `run.py` каждой ветки подставляет содержимое файла в команду через
+    `shell=True`, поэтому значение с пробелом без кавычек разваливается на
+    несколько аргументов.
+
+    * `shell` — каждый токен через `shlex.quote` (по умолчанию);
+    * `legacy` — в двойные кавычки берутся только токены с пробелом, как
+      `allta_app_full/backup_image.py:296-308` (`"{parent_page}"`, `"{args.TCASE}"`);
+    * `raw` — токены через пробел без экранирования (поведение до).
+    """
+
+    SHELL = "shell"
+    LEGACY = "legacy"
+    RAW = "raw"
+
+
+class VerdictSource(StrEnum):
+    """Откуда берётся исход теста (`test_definitions.verdict_source`, D1).
+
+    * `zephyr` — статус, который сам скрипт выставил тест-кейсу в прогоне
+      Zephyr (легаси: `libs/zefir.py` 91/92). `run.py` всех веток выходит с
+      кодом 0, так что код выхода исхода не несёт;
+    * `exit_code` — код выхода `starter.sh` (для веток, которые его
+      прокидывают).
+    """
+
+    ZEPHYR = "zephyr"
+    EXIT_CODE = "exit_code"
+
+
+class VerdictOutcome(StrEnum):
+    """Во что переводится статус Zephyr (`zephyr_status_mappings.outcome`).
+
+    `not_finished` — скрипт ещё не выставил итог (легаси 90 «выполняется»,
+    89 «не запускался»): опрос продолжается до таймаута ожидания.
+    """
+
+    PASSED = "passed"
+    FAILED = "failed"
+    NOT_FINISHED = "not_finished"
+
+
+class QueueVerdict(StrEnum):
+    """Итоговый вердикт элемента очереди (`queue_items.verdict`).
+
+    `unknown` — исход не определён: запуск без прогона в Zephyr (debug) при
+    `verdict_without_zephyr_run=unknown`. Элемент при этом `succeeded`
+    (стенд отпускается, автоповтора нет), но засчитывать его «пройденным»
+    нельзя — UI показывает «результат не определён».
+    """
+
+    PASSED = "passed"
+    FAILED = "failed"
+    UNKNOWN = "unknown"
+
+
+class VerdictWithoutZephyrRun(StrEnum):
+    """Что делать с исходом, если прогона в Zephyr у запуска нет."""
+
+    UNKNOWN = "unknown"
+    EXIT_CODE = "exit_code"
+
+
 # Health/ready paths, исключаемые из rate-limit / audit / introspect.
 HEALTH_PATHS: frozenset[str] = frozenset({
     "/api/testing/v1/health",
@@ -52,6 +118,24 @@ class EntityType(StrEnum):
     # расписание HR-отчёта). Одна строка на department_id, upsert — отдельного
     # create/delete действия нет.
     DEPARTMENT_TEST_SETTINGS = "department_test_settings"
+
+    # Тестовая учётка отдела: логин/пароль/SSH-пара в
+    # secret_service, ссылка — `department_test_settings.test_account_
+    # credential_id`. Отдельно от `department_test_settings`, потому что
+    # это секрет: право переключать retry не должно давать менять пароль
+    # учётки на всех стендах отдела. Гейт — `require_department_action`
+    # (department_admin-bypass + матрица), и чтение, и запись.
+    DEPARTMENT_TEST_ACCOUNT = "department_test_account"
+
+    # Профиль запуска: starter.sh, пути, команды запуска и
+    # остановки. Права — как у тестовой учётки (решение 24.09): админ
+    # тестирования и department_admin своего отдела. Общий профиль
+    # (department_id NULL) меняет только носитель роли по матрице.
+    LAUNCH_PROFILE = "launch_profile"
+
+    # Профиль подготовки стенда: degraded-allowlist, перезагрузки,
+    # PAM. Права — как у профиля запуска.
+    PROVISIONING_PROFILE = "provisioning_profile"
 
     # Прогон (fleet-wide кампания под один РЦ+ядро+режим на весь выбранный
     # пул стендов, §2.4/§6.1 плана миграции). Чтение открыто любому
@@ -104,6 +188,12 @@ class EntityType(StrEnum):
     # пересчёта (`POST /statistics/recalculate`) для одиночных тестов.
     STATISTICS_SETTINGS = "statistics_settings"
 
+    # Публичный compat `/rest/api/*`: разрешённые подсети
+    # источника и отдел по умолчанию для URL интеграций. Платформенная
+    # настройка (одна на все отделы) — только по матрице, без bypass'а
+    # department_admin: подсеть открывает анонимный доступ для всех.
+    LEGACY_COMPAT = "legacy_compat"
+
 
 class Action(StrEnum):
     """Fine-grained actions матрицы entity_permissions.
@@ -143,6 +233,15 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
     EntityType.DEPARTMENT_TEST_SETTINGS: frozenset({
         Action.VIEW, Action.UPDATE,
     }),
+    EntityType.DEPARTMENT_TEST_ACCOUNT: frozenset({
+        Action.VIEW, Action.UPDATE,
+    }),
+    EntityType.LAUNCH_PROFILE: frozenset({
+        Action.VIEW, Action.UPDATE,
+    }),
+    EntityType.PROVISIONING_PROFILE: frozenset({
+        Action.VIEW, Action.UPDATE,
+    }),
     EntityType.TEST_RUN: frozenset({
         Action.CREATE,
     }),
@@ -168,6 +267,9 @@ ENTITY_ACTIONS: dict[str, frozenset[str]] = {
         Action.VIEW, Action.PERMISSION_GRANT, Action.PERMISSION_REVOKE,
     }),
     EntityType.STATISTICS_SETTINGS: frozenset({
+        Action.VIEW, Action.UPDATE,
+    }),
+    EntityType.LEGACY_COMPAT: frozenset({
         Action.VIEW, Action.UPDATE,
     }),
 }
@@ -213,6 +315,12 @@ class QueueItemState(StrEnum):
     существу, а не уложился в отведённое время. Для агрегатов исхода
     (статус кампании, СТП/Zephyr, счётчик "упало" в обзоре пула) считается
     провалом наравне с `failed` — см. `FAILURE_QUEUE_STATES`.
+
+    `awaiting_verdict` — SSH-сессия закончилась, но
+    исход ещё не известен: скрипт публикует статус в Zephyr асинхронно, с
+    повторами. Стенд остаётся занят (как в легаси — следующий тест не
+    стартует, пока не закончилась публикация), фоновый опрос
+    (`queue.poll_awaiting_verdicts`) переводит item в `succeeded`/`failed`.
     """
 
     QUEUED = "queued"
@@ -225,13 +333,14 @@ class QueueItemState(StrEnum):
     PAUSED = "paused"
     PREPARED = "prepared"
     TIMED_OUT = "timed_out"
+    AWAITING_VERDICT = "awaiting_verdict"
 
 
 # Состояния, которые занимают место в очереди стенда — пока у стенда есть
 # элемент в одном из них, следующий просто ждёт своей позиции.
 ACTIVE_QUEUE_STATES: frozenset[str] = frozenset({
     QueueItemState.QUEUED, QueueItemState.PREPARING, QueueItemState.RUNNING,
-    QueueItemState.READY, QueueItemState.PAUSED,
+    QueueItemState.READY, QueueItemState.PAUSED, QueueItemState.AWAITING_VERDICT,
 })
 
 # Терминальные исходы, которые для любой агрегации (статус кампании, СТП/
@@ -263,6 +372,7 @@ class QueueInterruptAction(StrEnum):
 # сюда не входят — они просто занимают место в очереди, цикл на них не крутится.
 IN_FLIGHT_QUEUE_STATES: frozenset[str] = frozenset({
     QueueItemState.PREPARING, QueueItemState.READY, QueueItemState.RUNNING,
+    QueueItemState.AWAITING_VERDICT,
 })
 
 
@@ -514,13 +624,39 @@ class GlobalVariableSource(StrEnum):
     `launch_context` — из снэпшота параметров запуска (RC/стенд/ядро/режим).
     `static` — фиксированное значение, заданное в самой переменной.
     `per_test_override` — значение задаётся слотом конкретного теста.
-    `secret_service` — живой reveal-вызов в secret_service по credential_id.
+    `secret_service` — живой reveal-вызов в secret_service по credential_id
+    (своего резолва пока нет — значение берётся из `launch_context`, как у
+    `launch_context`).
+
+    Источники ниже описывают, ЧТО резолвить, через
+    `global_variables.source_ref`; резолвит их `services/variable_resolver.py`:
+
+    `template` — строка с подстановками `{CODE}` других переменных.
+    `test_field` — поле `test_definitions` из белого списка.
+    `stand` — поле стенда (`legacy_token`, `number`, `host`, `id`).
+    `department_integration` — поле настроек интеграций отдела стенда, для
+    `*_credential_id` — reveal через secret_service.
+    `os_version` — производное поле карточки версии ОС (резолв —).
+    `test_account` — поле тестовой учётки отдела (резолв —).
+    `zephyr_folder` — запись `zephyr_folders` (отдел стенда × версия ОС из
+    `launch_context["RC"]`): `folder_tree_id` или `folder_path`.
+    `stand_ref` — поле КОНКРЕТНОГО стенда пула `{"stand_id", "field"}`
+    (`host`, `legacy_token`, `number`), независимо от стенда задания:
+    адрес второго стенда в команде многостендового сценария.
     """
 
     LAUNCH_CONTEXT = "launch_context"
     STATIC = "static"
     PER_TEST_OVERRIDE = "per_test_override"
     SECRET_SERVICE = "secret_service"
+    TEMPLATE = "template"
+    TEST_FIELD = "test_field"
+    STAND = "stand"
+    DEPARTMENT_INTEGRATION = "department_integration"
+    OS_VERSION = "os_version"
+    TEST_ACCOUNT = "test_account"
+    ZEPHYR_FOLDER = "zephyr_folder"
+    STAND_REF = "stand_ref"
 
 
 class GlobalVariableValueType(StrEnum):
@@ -541,3 +677,58 @@ class CommandArgKind(StrEnum):
 
     LITERAL = "literal"
     VARIABLE = "variable"
+
+
+class StepRunMode(StrEnum):
+    """Способ запуска шага теста.
+
+    `full` — команда запуска профиля: `starter.sh` клонирует ветку, готовит
+    стенд (`prepare.sh`) и запускает `run.py`. `rerun` — повторный запуск
+    уже склонированного кода (`launch_profile_versions.rerun_script`), как
+    повторные фазы легаси `db_kernel_changer` (`backup_image.py:934-939`).
+    """
+
+    FULL = "full"
+    RERUN = "rerun"
+
+
+class ScenarioRunState(StrEnum):
+    """Состояние запуска многостендового сценария.
+
+    `waiting_for_stands` — не все стенды свободны (очередь стенда активна,
+    стенд держит другой сценарий или server_service не отдал бронь); взятые
+    брони отпущены, повтор — фоновым тиком. `preparing` — брони всех стендов
+    наши, стенды готовятся параллельно. `running` — действия по `position`.
+    `stopping` — остановка ждёт, пока воркер оборвёт текущее действие.
+    """
+
+    WAITING_FOR_STANDS = "waiting_for_stands"
+    PREPARING = "preparing"
+    RUNNING = "running"
+    STOPPING = "stopping"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    STOPPED = "stopped"
+
+
+ACTIVE_SCENARIO_RUN_STATES: frozenset[str] = frozenset({
+    ScenarioRunState.WAITING_FOR_STANDS, ScenarioRunState.PREPARING,
+    ScenarioRunState.RUNNING, ScenarioRunState.STOPPING,
+})
+
+
+class ScenarioRunStandState(StrEnum):
+    """Стенд запуска сценария. Бронь держится в `acquiring`…`ready`."""
+
+    PENDING = "pending"
+    ACQUIRING = "acquiring"
+    PREPARING = "preparing"
+    READY = "ready"
+    FAILED = "failed"
+    RELEASED = "released"
+
+
+HOLDING_SCENARIO_STAND_STATES: frozenset[str] = frozenset({
+    ScenarioRunStandState.ACQUIRING, ScenarioRunStandState.PREPARING, ScenarioRunStandState.READY,
+})
+

@@ -327,6 +327,31 @@ spec:
           port: 8080
 
 ---
+# testing-service принимает HTTP от Traefik (kube-system): публичный compat
+# /rest/api/* (52-legacy-compat-ingress.yaml). Внутренние вызовы
+# соседей (server_service callback prepare-for-test, testing_worker) и egress
+# testing-service этим файлом пока не описаны — см. k8s/README.md.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: testing-service-ingress
+  namespace: dbos
+spec:
+  podSelector:
+    matchLabels:
+      app: testing-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8004
+
+---
 # ────────────────────────────────────────────────────────────────────────────
 # secret-service: вход от ingress-контроллера и от соседей по namespace
 # (server_service, server_worker и auth_service дёргают /internal/* для

@@ -2,7 +2,7 @@
 
 ### Зачем
 
-Модель безопасности (§7 + §8 в репо-уровневом ``1.txt``) явно разделяет
+Модель безопасности (см. репо-уровневый ``1.txt``) явно разделяет
 **три плоскости администраторов**:
 
 * ``account_admin`` — управляет платформой (пользователи, департаменты,
@@ -113,7 +113,7 @@ from src.services import audit_service
 logger = logging.getLogger(__name__)
 
 # Платформенные роли, которым **запрещён любой доступ** к бизнес-плоскости
-# server_service. По §7 модели account_admin/loging_admin создаются без
+# server_service. По модели account_admin/loging_admin создаются без
 # департамента — у них нет dept-привязки, чтобы вообще видеть business data.
 #
 # loging_reader НЕ блокируется: у него есть department_id (читает логи
@@ -386,7 +386,7 @@ def _build_forbidden_response(request: Request, role: PlatformRole) -> JSONRespo
             "error_code": "PLATFORM_ADMIN_BUSINESS_DATA_DENIED",
             "message": (
                 "Platform admins cannot access business data of "
-                "server_service. See security model § 7-8."
+                "server_service. See security model in 1.txt."
             ),
             "details": {
                 "platform_role": role,

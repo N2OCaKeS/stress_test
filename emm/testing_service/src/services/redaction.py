@@ -4,7 +4,7 @@
 Набор ключей — общий пул, без секрето-специфичных полей (`master_key`,
 `hkdf_salt` и т.п. остаются зоной secret_service). `ssh_private_key`/
 `ssh_public_key`/`test_password` заведены заранее — testing_service будет
-резолвить `TEST_PASSWORD`/`TEST_SSH_KEY` из §2.1 плана миграции в волне 5,
+резолвить `TEST_PASSWORD`/`TEST_SSH_KEY` из §2.1 плана миграции позже,
 маскировка нужна сразу, чтобы не тащить эти поля plaintext в audit-канал
 случайно, как только появится первый вызывающий код.
 """

@@ -1,37 +1,14 @@
-"""Исходящие вызовы в testing_service — очередь заданий и логи (§5.5, §8 плана
-миграции).
+"""Исходящие вызовы в testing_service — очередь заданий и логи.
 
-Четыре эндпоинта, зафиксированные `testing_service` (см. `testing_service/
-src/api/v1/endpoints/internal_queue.py` + `internal_log.py`,
-`src/schemas/queue.py` + `src/schemas/test_log.py`):
-
-* `POST /internal/queue/claim` — без тела, отдаёт готовое задание либо
-  `item: null`, если очередь пуста.
-* `POST /internal/queue/{queue_item_id}/completed` — сообщает исход
-  SSH-исполнения (успех/провал + exit_code + короткая причина), либо факт
-  прерывания по заявке оператора (`interrupted`).
-* `GET /internal/queue/{queue_item_id}/interrupt-check` — просили ли снять
-  текущий тест с исполнения; опрашивается по таймеру, пока тест идёт.
-* `POST /internal/queue/{queue_item_id}/log-chunk` — сырой инкрементальный
-  вывод ещё выполняющейся команды (живое наблюдение, §8.6).
-* `POST /internal/queue/{queue_item_id}/log-segment` — один уже завершённый
-  шаг целиком (formatted-блок собирает сам `testing_service`).
-
-Все четыре идут через один и тот же shared-secret канал: `Authorization:
+`claim()`, `report_completed()`, `interrupt-check`, `log_chunk()`,
+`log_segment()` — все через один shared-secret канал (`Authorization:
 Bearer <TESTING_SERVICE_INTERNAL_API_KEY>` + `X-Service-Identity:
-testing_worker`.
+testing_worker`).
 
-Сетевые сбои (testing_service временно недоступен) не поднимаются как
-исключения наружу ни для одного из четырёх вызовов — они логируются и
-проглатываются, чтобы одна недоступность внешнего сервиса не роняла весь
-polling-loop воркера. Для `claim()`/`report_completed()` это уже было так;
-`log_chunk()`/`log_segment()` следуют тому же принципу тем более строго —
-живой лог это best-effort наблюдаемость, не источник истины об исходе
-теста, и его недоставка не должна мешать `completed` уйти. Это отличает
-данный клиент от `server_client.py` в `testing_service`, который вызывающий
-код (сервисный слой с транзакциями) сам решает как обрабатывать — здесь
-единственный caller — сам polling-loop, и его контракт («не падать на
-транзиентных сбоях») удобнее держать внутри клиента.
+Сетевые сбои не поднимаются как исключения — логируются и проглатываются,
+чтобы недоступность testing_service не роняла polling-loop. Единственный
+caller — сам loop, поэтому «не падать на транзиентных сбоях» держим внутри
+клиента, а не отдаём вызывающему коду.
 """
 
 from __future__ import annotations
@@ -52,18 +29,23 @@ from src.core.http import bearer_header
 logger = logging.getLogger("testing_worker.testing_client")
 
 
-class ClaimedQueueItem(BaseModel):
-    """Форма одного item'а из ответа `claim()` (зеркалит `testing_service`
-    `QueueClaimItem`).
+class ClaimFile(BaseModel):
+    """Файл задания: путь на стенде, содержимое, права, секретность."""
 
-    Раньше `claim()` отдавал сырой `dict`, и рассинхрон контракта (баг в
-    `testing_service`, ручной хотфикс, неполные тестовые данные) валился
-    голым `KeyError` где-то посреди `_run_one_item` — `report_completed`
-    для такого item'а не уходил, и он тихо зависал в `RUNNING` навсегда.
-    Обязательны здесь только поля, к которым код обращается напрямую через
-    `[]` (`queue_item_id`/`host`/`test_username`/`test_ssh_private_key`/
-    `command`) — остальное `_run_one_item` и так читает через `.get()` и
-    переживает отсутствие.
+    model_config = ConfigDict(extra="ignore")
+
+    path: str
+    content: str
+    mode: str = "0644"
+    sensitive: bool = False
+
+
+class ClaimedQueueItem(BaseModel):
+    """Форма одного item'а из ответа `claim()` (зеркалит `testing_service` `QueueClaimItem`).
+
+    Обязательны только поля, к которым код обращается напрямую через `[]`
+    (`queue_item_id`/`host`/`test_username`/`test_ssh_private_key`/
+    `command`) — остальное читается через `.get()`.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -72,24 +54,38 @@ class ClaimedQueueItem(BaseModel):
     host: str
     test_username: str
     test_ssh_private_key: str
-    command: list[str]
-    command_masked: list[str] = Field(default_factory=list)
-    git_token_content: str | None = None
-    git_token_filename: str | None = None
-    dates_content: str | None = None
-    dates_content_masked: str | None = None
-    dates_filename: str | None = None
+    # файлы для SFTP в порядке записи, команды запуска
+    # и остановки — всё собрано testing_service по профилю запуска. Своих
+    # путей и `starter.sh` у воркера нет.
+    files: list[ClaimFile]
+    cleanup_globs: list[str] = Field(default_factory=list)
+    launch_command: str
+    launch_command_masked: str = ""
+    stop_command: str
+    use_pty: bool = True
+    redact_values: list[str] = Field(default_factory=list)
+    launch_profile_version_id: str | None = None
+    log_chunk_interval_seconds: float | None = None
+    log_chunk_max_bytes: int | None = None
     command_timeout_seconds: int | None = None
     debug_mode: bool = False
     is_retry: bool = False
     prepare_only: bool = False
-    starter_suffix: str = ""
+    # настройки preflight отдела стенда. Разбирает
+    # их `preflight.resolve_config`; нет поля — воркер берёт env-фолбэк.
+    preflight: dict | None = None
+    # шаг многоступенчатого теста — `{index, count,
+    # name}`. Воркер им только подписывает сегмент лога: исполнение шага —
+    # то же задание, переходы между шагами делает testing_service.
+    step: dict | None = None
+
 
 _CLAIM_PATH = "/internal/queue/claim"
 _COMPLETED_PATH_TEMPLATE = "/internal/queue/{queue_item_id}/completed"
 _INTERRUPT_CHECK_PATH_TEMPLATE = "/internal/queue/{queue_item_id}/interrupt-check"
 _LOG_CHUNK_PATH_TEMPLATE = "/internal/queue/{queue_item_id}/log-chunk"
 _LOG_SEGMENT_PATH_TEMPLATE = "/internal/queue/{queue_item_id}/log-segment"
+_PREFLIGHT_STATE_PATH_TEMPLATE = "/internal/queue/{queue_item_id}/preflight-state"
 
 # Таймаут HTTP-вызовов к testing_service. Небольшой — это s2s-канал внутри
 # кластера, долгий ответ означает проблему, а не медленную сеть до стенда
@@ -158,18 +154,11 @@ def _base_url() -> str | None:
 async def claim() -> dict | None:
     """POST /internal/queue/claim. Возвращает `item`-словарь или `None`.
 
-    `None` означает «очередь пуста», «testing_service недоступен» и теперь
-    ещё «ответ пришёл, но не прошёл валидацию формы» — во всех случаях
-    вызывающий polling-loop делает одно и то же: спит
-    `queue_poll_interval_seconds` и пробует снова. Различать их в возврате
-    смысла нет, разница видна только в логах (WARNING/ERROR на сбое).
-
-    Валидация — через `ClaimedQueueItem`: `testing_service` уже перевёл
-    item в `RUNNING` к моменту, когда собрал этот ответ, так что провал
-    формы здесь — не молчаливая потеря item'а, а явный `report_completed`
-    с провалом, если `queue_item_id` вообще удалось прочитать (без него
-    сообщать некому — это предельный случай, дальше уже ловит staleness на
-    стороне `testing_service`).
+    `None` — очередь пуста, testing_service недоступен или ответ не прошёл
+    валидацию (`ClaimedQueueItem`); во всех случаях polling-loop просто
+    спит и пробует снова, разница видна только в логах. Провал валидации,
+    если удалось прочитать `queue_item_id`, уходит явным `report_completed`
+    с провалом, а не молчаливой потерей item'а.
     """
     base = _base_url()
     headers = _headers()
@@ -209,9 +198,14 @@ async def claim() -> dict | None:
         logger.error("testing_client.claim: malformed item in response: %s", exc)
         queue_item_id = raw_item.get("queue_item_id") if isinstance(raw_item, dict) else None
         if queue_item_id:
+            if isinstance(raw_item, dict) and "command" in raw_item and "files" not in raw_item:
+                # Задание до (argv + git_token_*/dates_*): переходный формат
+                # удалён вместе с `starter.sh` воркера.
+                error = "claim in legacy format (command/dates_*): update testing_service"
+            else:
+                error = f"malformed claim response: {exc}"
             await report_completed(
-                queue_item_id, succeeded=False, exit_code=None,
-                error=f"malformed claim response: {exc}"[:2048],
+                queue_item_id, succeeded=False, exit_code=None, error=error[:2048],
             )
         return None
 
@@ -273,20 +267,15 @@ async def report_completed(
 ) -> None:
     """POST /internal/queue/{queue_item_id}/completed.
 
-    `interrupted` (`"skip"`/`"pause"`) — сессия оборвана по заявке оператора;
-    в этом случае testing_service игнорирует `succeeded`/`exit_code`/`error`,
-    исхода у теста нет.
+    `interrupted` (`"skip"`/`"pause"`) — сессия оборвана оператором,
+    `succeeded`/`exit_code`/`error` игнорируются. `timed_out=True` — провал
+    от `command_timeout`, а не от кода возврата; заводит item как
+    `timed_out`, а не generic `failed`.
 
-    `timed_out=True` — провал вызван `command_timeout` в `ssh_executor`
-    (`ExecutionResult.timed_out`), а не ненулевым кодом возврата/обрывом
-    соединения; testing_service заводит item как `timed_out`, а не generic
-    `failed`. Игнорируется при `succeeded=True`.
-
-    Best-effort: сетевой сбой логируется как WARNING и проглатывается —
-    следующий цикл всё равно уйдёт на новый `claim()`, а зависший
-    `running`-item на стороне testing_service — известный tech debt
-    (нет symmetричного sweep-механизма, см. отчёт предыдущей волны),
-    падать самому воркеру из-за этого незачем.
+    Best-effort: сетевой сбой логируется как WARNING и проглатывается,
+    следующий цикл уйдёт на новый `claim()`. Зависший `running`-item на
+    стороне testing_service без symmetричного sweep-механизма — известный
+    tech debt, не повод падать воркеру.
     """
     base = _base_url()
     headers = _headers()
@@ -414,6 +403,40 @@ async def log_segment(
     if response.status_code != 200:
         logger.warning(
             "testing_client.log_segment: testing_service returned %s for queue_item_id=%s",
+            response.status_code,
+            queue_item_id,
+        )
+
+
+async def report_preflight_state(queue_item_id: str, *, waiting: bool, unavailable: list[str] | None = None) -> None:
+    """POST /internal/queue/{queue_item_id}/preflight-state.
+
+    `waiting=True` — ждём внешние сервисы перед запуском item'а (UI показывает
+    «тестирование приостановлено»), `False` — ожидание закончено. Best-effort:
+    статус для UI не повод срывать ни ожидание, ни сам тест; запись на стороне
+    testing_service живёт с TTL, так что потерянное `ok` само истечёт.
+    """
+    base = _base_url()
+    headers = _headers()
+    if base is None or headers is None:
+        return
+
+    path = _PREFLIGHT_STATE_PATH_TEMPLATE.format(queue_item_id=queue_item_id)
+    body = {"state": "waiting" if waiting else "ok", "unavailable": list(unavailable or [])}
+    try:
+        async with _client_ctx() as client:
+            response = await client.post(f"{base}{path}", headers=headers, json=body)
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "testing_client.report_preflight_state: unreachable (%s), queue_item_id=%s",
+            type(exc).__name__,
+            queue_item_id,
+        )
+        return
+
+    if response.status_code != 200:
+        logger.warning(
+            "testing_client.report_preflight_state: testing_service returned %s for queue_item_id=%s",
             response.status_code,
             queue_item_id,
         )

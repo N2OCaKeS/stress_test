@@ -18,16 +18,29 @@ import type {
 
 const BASE = "/testing/v1";
 
-/** Заменить параметры теста копией параметров источника одной операцией. */
-export function copyTestCommandArgs(testId: string, sourceTestId: string): Promise<TestCommandArg[]> {
+/**
+ * Заменить параметры шага теста копией параметров шага источника одной
+ * операцией. Шаги не заданы — первые шаги обоих тестов.
+ */
+export function copyTestCommandArgs(
+  testId: string,
+  sourceTestId: string,
+  opts: { stepId?: string | null; sourceStepId?: string | null } = {},
+): Promise<TestCommandArg[]> {
   return apiPost<TestCommandArg[]>(`${BASE}/test-definitions/${testId}/args/copy-from`, {
     source_test_id: sourceTestId,
+    ...(opts.stepId ? { step_id: opts.stepId } : {}),
+    ...(opts.sourceStepId ? { source_step_id: opts.sourceStepId } : {}),
   });
 }
 
-/** `GET /test-definitions/{test_id}/args` — слоты теста по порядку `position`. */
-export function listTestCommandArgs(testId: string): Promise<TestCommandArg[]> {
-  return apiGet<TestCommandArg[]>(`${BASE}/test-definitions/${testId}/args`);
+/**
+ * `GET /test-definitions/{test_id}/args` — слоты шага по порядку `position`;
+ * без `stepId` — первого шага.
+ */
+export function listTestCommandArgs(testId: string, stepId?: string | null): Promise<TestCommandArg[]> {
+  const query = stepId ? `?step_id=${encodeURIComponent(stepId)}` : "";
+  return apiGet<TestCommandArg[]>(`${BASE}/test-definitions/${testId}/args${query}`);
 }
 
 /**

@@ -20,8 +20,10 @@
   на каждый одиночный тест — здесь тоже нет автотриггера на одиночный тест,
   только явный запрос оператора; индикатор состояния (`get_status`) виден
   независимо от того, что именно запустило пересчёт. Ручной триггер умеет и
-  одно семейство тестов (`category`) — восемь пер-категорийных кнопок легаси
-  (`allta_app/allta_front.py:729-880`) плюс «всё сразу» = те же девять.
+  отдельные семейства тестов (`category`/`categories`) — пер-категорийные
+  кнопки легаси (`allta_app/allta_front.py:729-880`), с это справочник
+  `statistics_categories` в БД, и в модалке можно выбрать несколько семейств
+  сразу: они считаются последовательно одной фоновой задачей.
 
 Статус текущего/последнего пересчёта — одна платформенная строка
 `statistics_recalc_status` (индикатор, не журнал попыток): сам внешний
@@ -34,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +45,7 @@ from src.core.constants import Action, EntityType
 from src.core.exceptions import AppException, AuthorizationError, DomainValidationError
 from src.dependencies.auth import Identity
 from src.repositories import department_integration_settings as dis_repo
+from src.repositories import statistics_category as category_repo
 from src.repositories import statistics_recalc as recalc_repo
 from src.repositories import statistics_settings as settings_repo
 from src.repositories import test_run as test_run_repo
@@ -61,7 +65,7 @@ async def schedule_recalc(
     *,
     test_run_id: str | None = None,
     department_id: str | None = None,
-    category: str | None = None,
+    categories: "Sequence[statistics_client.CategorySpec] | None" = None,
 ) -> "asyncio.Task | None":
     """Best-effort шедулинг фонового пересчёта. Никогда не поднимает исключение.
 
@@ -72,9 +76,10 @@ async def schedule_recalc(
     reveal-сбой credential логируется WARNING — тот же приём, что
     `run_summary.py::_resolve_confluence_bearer`.
 
-    `category` — ключ семейства тестов (`services/statistics_client.CATEGORIES`)
-    либо `None` для полного пересчёта. Автотриггер по кампании всегда полный,
-    категорию передаёт только ручная кнопка.
+    `categories` — уже разрешённые из справочника `statistics_categories`
+    семейства (снимки `CategorySpec`, не ORM-строки — задача переживёт сессию)
+    либо `None`/пусто для полного пересчёта. Автотриггер по кампании всегда
+    полный, семейства передаёт только ручной триггер.
 
     `test_run_id`/`department_id` — ровно один из них задаётся вызывающим
     (для `triggered_by="test_run"` department резолвится из самой кампании;
@@ -122,7 +127,8 @@ async def schedule_recalc(
     task = loop.create_task(
         _run_recalc(
             base_url=base_url, username=username, token=token, timeout=timeout,
-            triggered_by=triggered_by, test_run_id=test_run_id, category=category,
+            triggered_by=triggered_by, test_run_id=test_run_id,
+            categories=tuple(categories or ()),
         )
     )
     _pending_recalc_tasks.add(task)
@@ -132,7 +138,8 @@ async def schedule_recalc(
 
 async def _run_recalc(
     *, base_url: str, username: str, token: str, timeout: float,
-    triggered_by: str, test_run_id: str | None, category: str | None = None,
+    triggered_by: str, test_run_id: str | None,
+    categories: "Sequence[statistics_client.CategorySpec]" = (),
 ) -> None:
     """Тело фоновой задачи — своя сессия БД, независимая от caller'а.
 
@@ -140,32 +147,48 @@ async def _run_recalc(
     реального исполнения сессия caller'а могла уже закрыться, поэтому здесь
     всегда открывается свежий `AsyncSessionLocal()` (тот же приём, что
     `main.py::_log_rotation_loop`).
+
+    Несколько семейств считаются последовательно (внешний сервис синхронный
+    и один на платформу — параллелить нечего). Сбой одного семейства не
+    останавливает остальные: они независимы, а оператор выбрал их все.
+    Итог — `failed`, если упало хотя бы одно, текст ошибки перечисляет какие.
     """
     from src.db.session import AsyncSessionLocal
 
+    keys = [spec.key for spec in categories]
     async with AsyncSessionLocal() as db:
         await recalc_repo.mark_running(
-            db, triggered_by=triggered_by, test_run_id=test_run_id, category=category,
+            db, triggered_by=triggered_by, test_run_id=test_run_id,
+            category=keys[0] if keys else None, categories=keys or None,
         )
         await db.commit()
 
-    error: str | None = None
-    try:
-        if category is None:
-            await statistics_client.trigger_all_statistics(
+    errors: list[str] = []
+    if not categories:
+        message = await _call_safely(
+            lambda: statistics_client.trigger_all_statistics(
                 base_url=base_url, username=username, token=token, timeout=timeout,
+            ),
+            category=None,
+        )
+        if message is not None:
+            errors.append(message)
+    else:
+        for index, spec in enumerate(categories):
+            if index > 0:
+                async with AsyncSessionLocal() as db:
+                    await recalc_repo.set_current_category(db, spec.key)
+                    await db.commit()
+            message = await _call_safely(
+                lambda spec=spec: statistics_client.trigger_category_statistics(
+                    base_url=base_url, username=username, token=token, timeout=timeout,
+                    spec=spec,
+                ),
+                category=spec.key,
             )
-        else:
-            await statistics_client.trigger_category_statistics(
-                base_url=base_url, username=username, token=token, timeout=timeout,
-                category=category,
-            )
-    except AppException as exc:
-        error = exc.message
-        logger.warning("statistics_recalc: recalc call failed (category=%s): %s", category, exc.message)
-    except Exception as exc:  # noqa: BLE001 — фоновая задача не должна ронять event loop
-        error = str(exc) or type(exc).__name__
-        logger.warning("statistics_recalc: recalc call failed (category=%s): %s", category, exc)
+            if message is not None:
+                errors.append(f"{spec.key}: {message}" if len(categories) > 1 else message)
+    error = "; ".join(errors) if errors else None
 
     async with AsyncSessionLocal() as db:
         await recalc_repo.mark_finished(db, succeeded=error is None, error=error)
@@ -178,9 +201,25 @@ async def _run_recalc(
         allowed=True,
         details={
             "triggered_by": triggered_by, "test_run_id": test_run_id,
-            "category": category, "error": error,
+            "category": keys[0] if len(keys) == 1 else None,
+            "categories": keys or None, "error": error,
         },
     )
+
+
+async def _call_safely(
+    call: "Callable[[], Awaitable[None]]", *, category: str | None,
+) -> str | None:
+    """Выполнить один вызов внешнего сервиса; вернуть текст ошибки или None."""
+    try:
+        await call()
+    except AppException as exc:
+        logger.warning("statistics_recalc: recalc call failed (category=%s): %s", category, exc.message)
+        return exc.message
+    except Exception as exc:  # noqa: BLE001 — фоновая задача не должна ронять event loop
+        logger.warning("statistics_recalc: recalc call failed (category=%s): %s", category, exc)
+        return str(exc) or type(exc).__name__
+    return None
 
 
 async def get_status(db: AsyncSession) -> dict:
@@ -191,6 +230,7 @@ async def get_status(db: AsyncSession) -> dict:
             "status": "idle",
             "triggered_by": None,
             "category": None,
+            "categories": None,
             "test_run_id": None,
             "started_at": None,
             "finished_at": None,
@@ -201,6 +241,7 @@ async def get_status(db: AsyncSession) -> dict:
         "status": row.status,
         "triggered_by": row.triggered_by,
         "category": row.category,
+        "categories": row.categories,
         "test_run_id": row.test_run_id,
         "started_at": row.started_at,
         "finished_at": row.finished_at,
@@ -209,19 +250,53 @@ async def get_status(db: AsyncSession) -> dict:
     }
 
 
+async def resolve_categories(
+    db: AsyncSession, keys: Sequence[str],
+) -> list[statistics_client.CategorySpec]:
+    """Ключи из запроса → снимки строк справочника в порядке `sort_order`.
+
+    Дубли схлопываются. Неизвестный ключ → 422 STATISTICS_CATEGORY_UNKNOWN,
+    выключенный → 422 STATISTICS_CATEGORY_DISABLED (в модалке его нет, но
+    старый клиент/скрипт мог прислать).
+    """
+    wanted = list(dict.fromkeys(key.strip() for key in keys if key and key.strip()))
+    if not wanted:
+        return []
+    rows = await category_repo.list_by_keys(db, wanted)
+    found = {row.key for row in rows}
+    unknown = [key for key in wanted if key not in found]
+    if unknown:
+        known = [spec.key for spec in await statistics_client.load_categories(db)]
+        raise DomainValidationError(
+            error_code="STATISTICS_CATEGORY_UNKNOWN",
+            message=f"unknown statistics category: {', '.join(unknown)}",
+            details={"unknown": unknown, "known": known},
+        )
+    disabled = [row.key for row in rows if not row.enabled]
+    if disabled:
+        raise DomainValidationError(
+            error_code="STATISTICS_CATEGORY_DISABLED",
+            message=f"statistics category is disabled: {', '.join(disabled)}",
+            details={"disabled": disabled},
+        )
+    return [statistics_client.spec_from_row(row) for row in rows]
+
+
 async def trigger_manual(
     db: AsyncSession, identity: Identity, department_id: str | None,
     category: str | None = None,
+    categories: Sequence[str] | None = None,
 ) -> "asyncio.Task | None":
-    """`POST /statistics/recalculate` — ручной триггер для одиночных тестов.
+    """`POST /statistics/recalculate` — ручной триггер (debug-страница, модалка).
 
     Право: `(statistics_settings, *, update)` — тот же гейт, что редактирование
     платформенных настроек; операция дорогая/редкая, отдельного действия под
     неё не заводили. `department_id` не передан → берётся отдел вызывающего;
     если и у вызывающего его нет (platform-bound identity) — 422.
 
-    `category` не передана — полный пересчёт (`/all-statistics`), как и было.
-    Передана — одно семейство тестов, как в легаси-меню из девяти кнопок.
+    `category`/`categories` не переданы — полный пересчёт (`/all-statistics`).
+    Переданы — выбранные семейства справочника `statistics_categories`
+    (объединение обоих полей), последовательно одной фоновой задачей.
     """
     try:
         await permissions.require_action(db, identity, EntityType.STATISTICS_SETTINGS, Action.UPDATE)
@@ -234,12 +309,8 @@ async def trigger_manual(
         )
         raise
 
-    if category is not None and category not in statistics_client.CATEGORIES:
-        raise DomainValidationError(
-            error_code="STATISTICS_CATEGORY_UNKNOWN",
-            message=f"unknown statistics category: {category}",
-            details={"known": sorted(statistics_client.CATEGORIES)},
-        )
+    requested = [*([category] if category else []), *(categories or [])]
+    specs = await resolve_categories(db, requested)
 
     resolved = department_id or identity.department_id
     if resolved is None:
@@ -248,10 +319,15 @@ async def trigger_manual(
             message="department_id is required when the caller has no department of their own",
         )
 
+    keys = [spec.key for spec in specs]
     audit_service.emit(
         "statistics_recalc.triggered",
         target_type="statistics_recalc_status",
         status="success", allowed=True,
-        details={"department_id": resolved, "triggered_by": "manual", "category": category},
+        details={
+            "department_id": resolved, "triggered_by": "manual",
+            "category": keys[0] if len(keys) == 1 else None,
+            "categories": keys or None,
+        },
     )
-    return await schedule_recalc(db, "manual", department_id=resolved, category=category)
+    return await schedule_recalc(db, "manual", department_id=resolved, categories=specs)

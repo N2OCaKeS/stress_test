@@ -24,8 +24,9 @@
 # вне периметра testing_service. `command` ниже — это содержимое файла
 # `dates_<queue_item_id>.conf`, которое `testing_worker` кладёт по SFTP на
 # стенд (`/home/u/<файл>`) ПЕРЕД единственным SSH-вызовом
-# `sudo bash /home/u/starter.sh <category> <git_token> <dates_filename> <RC>
-# <starter_suffix>` (см. testing_service `services/queue.py::claim_next` и
+# `sudo bash /home/u/starter.sh <category> <git_token> <dates_filename> <RC_NAME>
+# <starter_suffix>` (шаблон — переменная `STARTER_ARGS_TEMPLATE`; см.
+# testing_service `services/queue.py::claim_next` и
 # testing_worker `services/queue_loop.py`/`services/ssh_executor.py`).
 #
 # `category` = git-ветка монорепо stress_test с реальным кодом теста
@@ -38,8 +39,8 @@
 # позовёт конечный скрипт (`-kn`/`-bl`/`-oom`/ничего). Источник —
 # `backup_image.py` `remote_test_run()`: `args.DB_KERNELS in ('psql',
 # 'tantor')` → отдельный 4-фазный grub-цикл (`postgresql.kernels`/
-# `postgresql.tantor_kernels` ниже, `readiness: draft` — не сводится к одной
-# команде), `elif args.PSQL_BALANCE:` → `"balance"` (буквально литерал, не
+# `postgresql.tantor_kernels` ниже — многоступенчатые тесты, `steps:`),
+# `elif args.PSQL_BALANCE:` → `"balance"` (буквально литерал, не
 # значение флага — задокументированный баг легаси, отсюда `starter_suffix:
 # balance` и у info-sys/info-sys-orel), `elif args.PSQL_OOM:` → `"oom"`,
 # иначе — суффикс не передаётся (`null`).
@@ -80,34 +81,58 @@
 #   что `virt/test_run.py` называет ровно этот параметр `rc_vbox`, а
 #   `parsec/ps_run.py` независимо делает `rc=str(args.TCYC).split('_')[0]`
 #   для той же Digsig-развилки — НЕ подтверждено литералом в backup_image.py
-#   самом по себе; (б) многошаговый сценарий (`db_kernel_changer` — 4 фазы
-#   grub maxcpus + reboot), не сводится к одной команде; (в) легаси-баг —
+#   самом по себе; (б) многошаговый сценарий — заводится шагами
+#   (`steps:`, см. ниже) и в draft больше не держится; (в) легаси-баг —
 #   транскрипция дословна и детерминирована, но реальный скрипт откажется
 #   стартовать (не хватает required-аргумента либо флаг ему неизвестен).
 #
+# `steps:` (D14) — многоступенчатый тест: шаги исполняются по
+# порядку на одной брони стенда. `command` теста — общее начало команды всех
+# шагов, `steps[].command` — окончание команды шага; у шага свои `name`,
+# `run_mode` (`full` — starter.sh с клонированием, `rerun` — повторный запуск
+# склонированной ветки скриптом профиля запуска), `stand_setup` (как у
+# теста: у первого шага — в prepare-for-test, у остальных —
+# настройка стенда без restore перед шагом) и `starter_suffix` (по умолчанию
+# — теста). Нет `steps` — тест одношаговый.
+#
 # `-tcv {RC}` (test cycle version = версия релиза) присутствует практически
 # во всех ветках `dates` в backup_image.py — универсальный суффикс команды.
+# `-tcv`/`-vbox` ссылаются на `RC_NAME` — имя версии ОС (`1.8.1.6`) из
+# карточки версии, а не на `RC` (id карточки `osv_<hex>`).
 # `-sn {ST}` (`args.ST`, dest численного `-sn/--stand-num`, 1..14 — НЕ то же
 # самое, что `args.STAND`, которое просто строка вида "stand4" для
 # `stands_ip`/сообщений) присутствует почти везде тоже — смоделирован как
 # `variable_code: STAND` (единственная существующая "стенд"-переменная
-# testing_service). Резолвер — `services/launch_context.py::stand_number`:
-# берёт цифры из `test_stands.legacy_token`, то есть отдаёт именно "голый"
-# номер, как требует `choices=[...]` целевых скриптов.
+# testing_service). Источник переменной — `stand` с `source_ref
+# {"field": "number"}` (`services/variable_resolver.py`): цифры из
+# `test_stands.legacy_token`, то есть именно "голый" номер, как требует
+# `choices=[...]` целевых скриптов.
 #
 # Jira/Confluence-флаги (`--username`/`--token`/`--confluence-space`/
 # `--confluence-parent-page`/`--confluence-new-page`/`-fti`/`-tcyc`/`-tcas`/
-# `-ba`, литералы дословно из `backup_image.py:293-297,304-310`) — вернулись
-# в начало command как безопасные плейсхолдеры (`"none"`), потому что
-# некоторые легаси-скрипты (например `bl_run.py`) объявляют их в своём
-# argparse как `required=True`, а testing_service намеренно НЕ хочет, чтобы
-# сам конечный скрипт стучался в Jira/Confluence — своя репортинг-логика уже
-# есть отдельно (§6.3 ALLTA MIGRATION.md). Резолв этих флагов реальными
-# credential'ами (`source=secret_service` в конструкторе слотов, §3.5 плана)
-# НЕ реализован — открытый пункт, см. отчёт. `overflow.*` — тесты из
-# отдельной ветки (`ovf_run.py`), где легаси не подставляет confluence-*
-# поля вообще (`backup_image.py:354-355`), поэтому их плейсхолдер-набор
-# короче (без `--confluence-*`).
+# `-ba`, литералы дословно из `backup_image.py:293-297,304-310`) — в начале
+# command, как в легаси. Учётные данные и пространство — переменные источника
+# `department_integration` (D2, миграция `catalog_parity_data`):
+# значение берётся из настроек интеграций отдела СТЕНДА на claim.
+#   `--username`         → `CONFLUENCE_USER`  (login `confluence_credential_id`,
+#                           пусто — `credential_id`; легаси `tokens['username']`)
+#   `--token`            → `CONFLUENCE_TOKEN` (secret той же учётки, sensitive;
+#                           легаси `tokens['conf_token']`)
+#   `--confluence-space` → `CONFLUENCE_SPACE` (`stp_matrix_confluence_space`;
+#                           легаси литерал `'DEVQA'`, backup_image.py:295)
+#   `-ba`                → `JIRA_BASIC_AUTH`  (secret `credential_id`, sensitive;
+#                           легаси `tokens['jira_token']`)
+# Раньше здесь стояли плейсхолдеры `"none"`: скрипт ждал Jira/Confluence
+# ≥60 минут и ничего не публиковал. `overflow.*` — тесты из отдельной ветки
+# (`ovf_run.py`), где легаси не подставляет confluence-* поля вообще
+# (`backup_image.py:354-355`), поэтому их набор короче (без `--confluence-*`).
+#
+# `short_name` — легаси-ключ словаря `tests` (`allta_image_conf.py:237-305`:
+# `XFS`, `postgresql-sm`, `auditd-p`…), то самое `args.TEST`, из которого
+# `backup_image.py:297` собирал `--confluence-new-page`. Подставляется через
+# переменную `TEST_SHORT_NAME` (D6). Значения с пробелами (`psql balance`)
+# в `dates.conf` экранируются по `dates_quoting` теста (D4, по умолчанию
+# `shell` — `shlex.quote` каждого токена).
 #
 # Zephyr-ключи (tests_case_zefir_key) НЕ импортированы этим файлом — в схеме
 # test_definitions нет такого поля, зато есть отдельная таблица
@@ -126,18 +151,20 @@
 # имеют легаси-привязку; у tantor vanilla/kernels и обоих overflow её не было
 # и в легаси (их гоняли вручную).
 #
-# `-fti` (`FOLDER_TREE_ID`) получил статический `override_value: "none"`.
-# Легаси брал его из `cycle_tree_index()` — словаря «версия → id папки
-# Zephyr», который наполнял отдельный бот; в emm такого словаря нет и он не
-# нужен: конечный скрипт всё равно ходит в Jira с `--username none`, а своя
-# отчётность в Zephyr живёт в `services/stp*.py`. Тот же приём, что уже
-# применён к `--username`/`--token`/`--confluence-space`/`-ba`.
+# `-fti` (`FOLDER_TREE_ID`) — переменная без `override_value`. Легаси брал id
+# папки Zephyr из `cycle_tree_index()` (словарь «версия → id папки»); в emm
+# его даёт источник `zephyr_folder`. Значение можно передать
+# в `launch_context["FOLDER_TREE_ID"]` при постановке, иначе claim падает с
+# понятной ошибкой `LAUNCH_CONTEXT_VARIABLE_MISSING` (раньше тут стоял
+# плейсхолдер `none`).
 #
 # Остальные четыре переменные (`PARENT_PAGE`, `CONFLUENCE_NEW_PAGE`,
 # `TEST_CYCLE_NAME`, `TEST_CASE_NAME`, `STAND`) НЕ имеют `override_value` — они
-# зависят от РЦ/ядра/режима/стенда конкретного запуска и считаются в
-# `services/launch_context.py` в момент `claim_next`, буквально по формулам
-# легаси. `STAND` при этом требует, чтобы у стенда был заполнен
+# зависят от РЦ/ядра/режима/стенда конкретного запуска и резолвятся в момент
+# `claim_next` из своих источников (`template`/`test_field`/`stand`,
+# `services/variable_resolver.py`); формулы легаси лежат данными в
+# `global_variables.source_ref` (миграция `tp01_seed_legacy_formulas`).
+# `STAND` при этом требует, чтобы у стенда был заполнен
 # `legacy_token`: целевые скрипты объявляют `-sn` через
 # `choices=['1','3','4',…]` и голого номера, кроме как из имени стенда, взять
 # неоткуда.
@@ -162,6 +189,7 @@ tests:
 
   - code: postgresql.base
     full_name: "postgresql benchmark"
+    short_name: "postgresql"
     matrix_label: "PostgreSQL"
     changelog_component: "PostgreSQL"
     category: postgresql
@@ -174,16 +202,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:333-335 (dates) + postgresql:postgresql/run.py:1-13 (else) + postgresql:postgresql/psb_run.py argparse
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -196,7 +224,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -207,8 +234,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -218,7 +245,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-c"
       - kind: literal
@@ -228,6 +255,7 @@ tests:
 
   - code: postgresql.vanilla
     full_name: "postgresql benchmark vanilla"
+    short_name: "psql vanilla"
     matrix_label: "PSQL_vanilla"
     changelog_component: "PostgreSQL"
     category: postgresql
@@ -240,16 +268,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:336-338
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -262,7 +290,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -273,8 +300,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -284,7 +311,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-c"
       - kind: literal
@@ -298,6 +325,7 @@ tests:
 
   - code: postgresql.tantor_vanilla
     full_name: "tantor benchmark vanilla"
+    short_name: "tantor vanilla"
     matrix_label: "Tantor_vanilla"
     changelog_component: "PostgreSQL"
     category: postgresql
@@ -310,16 +338,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:339-341
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -332,7 +360,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -343,8 +370,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -354,7 +381,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-c"
       - kind: literal
@@ -368,6 +395,7 @@ tests:
 
   - code: postgresql.parsec
     full_name: "postgresql benchmark parsec"
+    short_name: "psql parsec"
     matrix_label: "PSQL_parsec"
     changelog_component: "PostgreSQL"
     category: postgresql
@@ -380,16 +408,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:348-350
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -402,7 +430,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -413,8 +440,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -424,7 +451,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-c"
       - kind: literal
@@ -438,6 +465,7 @@ tests:
 
   - code: postgresql.audit_off
     full_name: "postgresql benchmark audit-off"
+    short_name: "postgresql-aud-off"
     matrix_label: "PSQL_audit-off"
     changelog_component: "PostgreSQL"
     category: postgresql
@@ -454,16 +482,16 @@ tests:
       # это провижининг стенда, не аргумент теста.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -476,7 +504,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -487,8 +514,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -498,7 +525,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-c"
       - kind: literal
@@ -512,39 +539,35 @@ tests:
 
   - code: postgresql.smolensk
     full_name: "postgresql benchmark smol"
+    short_name: "postgresql-sm"
     matrix_label: "PostgreSQL_smol"
     changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
-    readiness: draft
+    readiness: ready
     mode: smolensk
     department_id: null
     pinned_stand_token: stand4
     starter_suffix: null
     command:
-      # source: dev_allta_app:allta_app/backup_image.py:299-302,422-424 (final else — НИ ОДИН
-      # elif не матчит TEST=='postgresql-sm')
-      # ЛЕГАСИ-БАГ, не наша ошибка: TEST='postgresql-sm' не совпадает ни с
-      # одним explicit-elif в backup_image.py, поэтому dates строится final
-      # else-веткой для файловых систем: `-fs {TEST.lower()} -sn .. -tcv ..`
-      # → `-fs postgresql-sm`. Но psb_run.py (реальный скрипт ветки
-      # postgresql) НЕ ИМЕЕТ аргумента `-fs` вообще (postgresql:postgresql/psb_run.py
-      # argparse) — вызов упадёт с "unrecognized arguments: -fs postgresql-sm".
-      # Ниже — байт-точная транскрипция того, что легаси реально пришлёт;
-      # тест как таковой в легаси нерабочий. См. отчёт — решение за владельцем
-      # (исключить тест из каталога или считать, что он никогда не запускался).
+      # source: allta_app_full/allta_back.py:29 (`'postgresql-sm': '-ps psql'`) →
+      # backup_image.py:333-335 (ветка `if args.PSQL:`) — те же флаги, что у
+      # postgresql.base, отличается только режим (smolensk). Раньше здесь
+      # стояла final else-ветка `-fs postgresql-sm` (T6): её psb_run.py не
+      # принимает. Короткое имя `postgresql-sm` (allta_image_conf.py:252) даёт
+      # CONFLUENCE_NEW_PAGE, а не флаг.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -557,7 +580,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -568,12 +590,10 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
-        literal_value: "none"
-      - kind: literal
-        literal_value: "-fs"
-      - kind: literal
-        literal_value: "postgresql-sm"
+        literal_value: "-db"
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -581,10 +601,17 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
+      - kind: literal
+        literal_value: "-c"
+      - kind: literal
+        literal_value: "--package"
+      - kind: literal
+        literal_value: "postgresql-11"
 
   - code: postgresql.balance
     full_name: "postgresql benchmark balance"
+    short_name: "psql balance"
     matrix_label: "PSQL_balance"
     changelog_component: "PostgreSQL"
     category: postgresql
@@ -601,19 +628,19 @@ tests:
       # argparse (-tt/--test-type default='balance', поэтому явный -tt не
       # нужен для простого balance).
       # -vbox: см. легенду readiness: draft выше (TCYCLE.split('_')[0]),
-      # best-effort = RC.
+      # best-effort = RC_NAME.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -626,7 +653,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -637,8 +663,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -646,14 +672,15 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: postgresql.oom
     full_name: "postgresql benchmark oom"
+    short_name: "psql oom"
     matrix_label: "PSQL_OOM"
     changelog_component: "PostgreSQL"
     category: postgresql
@@ -667,16 +694,16 @@ tests:
       # и balance) + backup_image.py:1035-1036 (starter.sh "oom" ветка → oom_run.py)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -689,7 +716,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -700,8 +726,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -709,14 +735,15 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: postgresql.info_sys
     full_name: "postgresql benchmark info-sys"
+    short_name: "psql info-sys"
     matrix_label: "PSQL_info-sys"
     changelog_component: "PostgreSQL"
     category: postgresql
@@ -731,16 +758,16 @@ tests:
       # -tt/--test-type choices включает 'info-sys' (postgresql:postgresql/bl_run.py:109-117)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -753,7 +780,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -764,8 +790,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -773,11 +799,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-tt"
       - kind: literal
@@ -785,6 +811,7 @@ tests:
 
   - code: postgresql.info_sys_orel
     full_name: "postgresql benchmark info-sys-orel"
+    short_name: "psql info-sys-orel"
     matrix_label: "PSQL_info-sys_orel"
     changelog_component: "PostgreSQL"
     category: postgresql
@@ -797,16 +824,16 @@ tests:
       # source: тот же elif, что и info_sys (backup_image.py:342-344), -tt info-sys-orel
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -819,7 +846,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -830,8 +856,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -839,11 +865,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-tt"
       - kind: literal
@@ -851,38 +877,41 @@ tests:
 
   - code: postgresql.kernels
     full_name: "postgresql benchmark kernels"
+    short_name: "psql kernels"
     matrix_label: "PSQL_kernels"
     changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
-    readiness: draft
+    readiness: ready
     department_id: null
     pinned_stand_token: stand14
     starter_suffix: kernel
+    # source: dev_allta_app:allta_app/backup_image.py:895-941 (db_kernel_changer),
+    # вызов 1028-1032, + postgresql:postgresql/diff_kernel_quantity.py argparse.
+    # Многоступенчатый тест (D14): 4 фазы на одной брони стенда.
+    # Перед каждой — `maxcpus=N` в GRUB_CMDLINE_LINUX_DEFAULT + update-grub +
+    # перезагрузка (`kernel_cmdline_extra` шага; легаси дописывал параметр
+    # `sed`-ом, :896-897,922-925 — параметры копятся, ядро берёт последний).
+    # Первая фаза — через starter.sh … kernel (run_mode: full, :931-933),
+    # остальные — повторный запуск склонированной ветки `run.py -n <dates>
+    # -kn kernel` (run_mode: rerun, :934-939). dates фазы:
+    # `… -tcv .. -q N [-sf begin|end] --package postgresql-` (psql не
+    # передаёт -db, :907-908,912-913,917-918); вердикт diff_kernel_quantity.py
+    # ставит на `-sf end`. `command` — общее начало, `steps[].command` —
+    # окончание команды шага.
     command:
-      # source: dev_allta_app:allta_app/backup_image.py:895-941 (db_kernel_changer) +
-      # postgresql:postgresql/diff_kernel_quantity.py argparse
-      # db_kernel_changer() — 4-фазный сценарий (maxcpus=8/16/24/32 через grub,
-      # reboot между фазами), НЕ одна команда. Первая фаза (begin, cpu=8, через
-      # starter.sh -kn kernel → run.py -kn kernel → diff_kernel_quantity.py):
-      # `-sn .. -tcv .. -q 8 -sf begin --package postgresql-` (без -db — psql
-      # не передаёт -db явно, backup_image.py:907-908). Фазы 16/24/end(32) —
-      # повторные send_remote_command с -sf end на последней, БЕЗ повторного
-      # git-clone/starter.sh. Ниже — только представительный (первый) шаг,
-      # не вся последовательность. См. отчёт: architecture-gap, не сводится к
-      # одному test_definition в текущей модели.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -895,7 +924,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -906,8 +934,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -915,45 +943,98 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
-      - kind: literal
-        literal_value: "-q"
-      - kind: literal
-        literal_value: "8"
-      - kind: literal
-        literal_value: "-sf"
-      - kind: literal
-        literal_value: "begin"
-      - kind: literal
-        literal_value: "--package"
-      - kind: literal
-        literal_value: "postgresql-"
+        variable_code: RC_NAME
+    steps:
+      - name: "maxcpus=8 · begin"
+        run_mode: full
+        stand_setup:
+          kernel_cmdline_extra: ["maxcpus=8"]
+        command:
+          - kind: literal
+            literal_value: "-q"
+          - kind: literal
+            literal_value: "8"
+          - kind: literal
+            literal_value: "-sf"
+          - kind: literal
+            literal_value: "begin"
+          - kind: literal
+            literal_value: "--package"
+          - kind: literal
+            literal_value: "postgresql-"
+      - name: "maxcpus=16"
+        run_mode: rerun
+        stand_setup:
+          kernel_cmdline_extra: ["maxcpus=16"]
+        command:
+          - kind: literal
+            literal_value: "-q"
+          - kind: literal
+            literal_value: "16"
+          - kind: literal
+            literal_value: "--package"
+          - kind: literal
+            literal_value: "postgresql-"
+      - name: "maxcpus=24"
+        run_mode: rerun
+        stand_setup:
+          kernel_cmdline_extra: ["maxcpus=24"]
+        command:
+          - kind: literal
+            literal_value: "-q"
+          - kind: literal
+            literal_value: "24"
+          - kind: literal
+            literal_value: "--package"
+          - kind: literal
+            literal_value: "postgresql-"
+      - name: "maxcpus=32 · end"
+        run_mode: rerun
+        stand_setup:
+          kernel_cmdline_extra: ["maxcpus=32"]
+        command:
+          - kind: literal
+            literal_value: "-q"
+          - kind: literal
+            literal_value: "32"
+          - kind: literal
+            literal_value: "-sf"
+          - kind: literal
+            literal_value: "end"
+          - kind: literal
+            literal_value: "--package"
+          - kind: literal
+            literal_value: "postgresql-"
 
   - code: postgresql.tantor_kernels
     full_name: "tantor benchmark kernels"
+    short_name: "tantor kernels"
     matrix_label: "Tantor_kernels"
     changelog_component: "PostgreSQL"
     category: postgresql
     owner: null
-    readiness: draft
+    readiness: ready
     department_id: null
     pinned_stand_token: null   # в stands_groups легаси этого теста нет
     starter_suffix: kernel
+    # source: см. postgresql.kernels — тот же 4-фазный db_kernel_changer,
+    # database='tantor' (backup_image.py:905-906,910-911,915-916 добавляют
+    # `--package tantor-se-server-15 -db tantor`); перед повторными фазами
+    # легаси перезапускал tantor (:935-936) — скрипт настройки шага, без
+    # перезагрузки после.
     command:
-      # source: см. postgresql.kernels — тот же 4-фазный сценарий, database='tantor'
-      # (backup_image.py:905-906,910-911 добавляют `-db tantor`)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -966,7 +1047,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -977,8 +1057,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -986,26 +1066,94 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
-      - kind: literal
-        literal_value: "-q"
-      - kind: literal
-        literal_value: "8"
-      - kind: literal
-        literal_value: "-sf"
-      - kind: literal
-        literal_value: "begin"
-      - kind: literal
-        literal_value: "--package"
-      - kind: literal
-        literal_value: "tantor-se-server-15"
-      - kind: literal
-        literal_value: "-db"
-      - kind: literal
-        literal_value: "tantor"
+        variable_code: RC_NAME
+    steps:
+      - name: "maxcpus=8 · begin"
+        run_mode: full
+        stand_setup:
+          kernel_cmdline_extra: ["maxcpus=8"]
+        command:
+          - kind: literal
+            literal_value: "-q"
+          - kind: literal
+            literal_value: "8"
+          - kind: literal
+            literal_value: "-sf"
+          - kind: literal
+            literal_value: "begin"
+          - kind: literal
+            literal_value: "--package"
+          - kind: literal
+            literal_value: "tantor-se-server-15"
+          - kind: literal
+            literal_value: "-db"
+          - kind: literal
+            literal_value: "tantor"
+      - name: "maxcpus=16"
+        run_mode: rerun
+        stand_setup:
+          kernel_cmdline_extra: ["maxcpus=16"]
+          script: "systemctl restart tantor-se-server-15.service\n"
+          reboot_after: false
+        command:
+          - kind: literal
+            literal_value: "-q"
+          - kind: literal
+            literal_value: "16"
+          - kind: literal
+            literal_value: "--package"
+          - kind: literal
+            literal_value: "tantor-se-server-15"
+          - kind: literal
+            literal_value: "-db"
+          - kind: literal
+            literal_value: "tantor"
+      - name: "maxcpus=24"
+        run_mode: rerun
+        stand_setup:
+          kernel_cmdline_extra: ["maxcpus=24"]
+          script: "systemctl restart tantor-se-server-15.service\n"
+          reboot_after: false
+        command:
+          - kind: literal
+            literal_value: "-q"
+          - kind: literal
+            literal_value: "24"
+          - kind: literal
+            literal_value: "--package"
+          - kind: literal
+            literal_value: "tantor-se-server-15"
+          - kind: literal
+            literal_value: "-db"
+          - kind: literal
+            literal_value: "tantor"
+      - name: "maxcpus=32 · end"
+        run_mode: rerun
+        stand_setup:
+          kernel_cmdline_extra: ["maxcpus=32"]
+          script: "systemctl restart tantor-se-server-15.service\n"
+          reboot_after: false
+        command:
+          - kind: literal
+            literal_value: "-q"
+          - kind: literal
+            literal_value: "32"
+          - kind: literal
+            literal_value: "-sf"
+          - kind: literal
+            literal_value: "end"
+          - kind: literal
+            literal_value: "--package"
+          - kind: literal
+            literal_value: "tantor-se-server-15"
+          - kind: literal
+            literal_value: "-db"
+          - kind: literal
+            literal_value: "tantor"
 
   - code: postgresql.olap_hq
     full_name: "postgresql benchmark olap"
+    short_name: "PSQL OLAP-hq"
     matrix_label: "PSQL_OLAP-hq"
     changelog_component: "PostgreSQL"
     category: postgresql
@@ -1021,16 +1169,16 @@ tests:
       # совпадает с суффиксом "-hq" в TEST='PSQL OLAP-hq'.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1043,7 +1191,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1054,8 +1201,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-db"
       - kind: literal
@@ -1065,7 +1212,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-c"
       - kind: literal
@@ -1081,6 +1228,7 @@ tests:
 
   - code: file_systems.ext4
     full_name: "file system benchmark. EXT4"
+    short_name: "EXT4"
     matrix_label: "FS_EXT4"
     changelog_component: "Файловые системы"
     category: file_systems
@@ -1094,16 +1242,16 @@ tests:
       # file_systems:file_systems/fsb_run.py argparse (-fs choices incl. 'ext4')
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1116,7 +1264,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1127,8 +1274,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1140,10 +1287,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: file_systems.xfs
     full_name: "file system benchmark. XFS"
+    short_name: "XFS"
     matrix_label: "FS_XFS"
     changelog_component: "Файловые системы"
     category: file_systems
@@ -1155,16 +1303,16 @@ tests:
     command:
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1177,7 +1325,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1188,8 +1335,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1201,10 +1348,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: file_systems.ntfs
     full_name: "file system benchmark. NTFS"
+    short_name: "NTFS"
     matrix_label: "FS_NTFS"
     changelog_component: "Файловые системы"
     category: file_systems
@@ -1216,16 +1364,16 @@ tests:
     command:
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1238,7 +1386,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1249,8 +1396,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1262,10 +1409,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: file_systems.ext3
     full_name: "file system benchmark. EXT3"
+    short_name: "EXT3"
     matrix_label: "FS_EXT3"
     changelog_component: "Файловые системы"
     category: file_systems
@@ -1277,16 +1425,16 @@ tests:
     command:
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1299,7 +1447,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1310,8 +1457,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1323,10 +1470,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: file_systems.ext2
     full_name: "file system benchmark. EXT2"
+    short_name: "EXT2"
     matrix_label: "FS_EXT2"
     changelog_component: "Файловые системы"
     category: file_systems
@@ -1338,16 +1486,16 @@ tests:
     command:
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1360,7 +1508,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1371,8 +1518,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1384,10 +1531,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: file_systems.fat
     full_name: "file system benchmark. FAT"
+    short_name: "FAT"
     matrix_label: "FS_FAT"
     changelog_component: "Файловые системы"
     category: file_systems
@@ -1399,16 +1547,16 @@ tests:
     command:
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1421,7 +1569,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1432,8 +1579,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1445,10 +1592,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: file_systems.exfat
     full_name: "file system benchmark. EXFAT"
+    short_name: "EXFAT"
     matrix_label: "FS_EXFAT"
     changelog_component: "Файловые системы"
     category: file_systems
@@ -1460,16 +1608,16 @@ tests:
     command:
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1482,7 +1630,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1493,8 +1640,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1506,10 +1653,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: file_systems.ext4_parsec
     full_name: "file system benchmark. EXT4 parsec"
+    short_name: "EXT4 parsec"
     matrix_label: "FS_EXT4_parsec"
     changelog_component: "Файловые системы"
     category: file_systems
@@ -1522,16 +1670,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:299-302,359-361
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1544,7 +1692,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1555,8 +1702,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1568,12 +1715,13 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "--parsec"
 
   - code: file_systems.xfs_parsec
     full_name: "file system benchmark. XFS parsec"
+    short_name: "XFS parsec"
     matrix_label: "FS_XFS_parsec"
     changelog_component: "Файловые системы"
     category: file_systems
@@ -1585,16 +1733,16 @@ tests:
     command:
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1607,7 +1755,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1618,8 +1765,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1631,7 +1778,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "--parsec"
 
@@ -1639,6 +1786,7 @@ tests:
 
   - code: cluster_file_systems.ocfs2
     full_name: "file system benchmark. OCFS2"
+    short_name: "OCFS2"
     matrix_label: "FS_OCFS2"
     changelog_component: "Файловые системы"
     category: cluster_file_systems
@@ -1653,16 +1801,16 @@ tests:
       # Здесь -vbox = {args.RELEASE} НАПРЯМУЮ (не через TCYCLE) — это ready, не draft.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1675,7 +1823,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1686,8 +1833,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1699,11 +1846,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-kernel"
       - kind: variable
@@ -1713,6 +1860,7 @@ tests:
 
   - code: cluster_file_systems.ceph
     full_name: "ceph benchmark"
+    short_name: "CEPH"
     matrix_label: "FS_CEPH"
     changelog_component: "Файловые системы"
     category: cluster_file_systems
@@ -1725,16 +1873,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:365-367
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1747,7 +1895,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1758,8 +1905,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1771,11 +1918,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-kernel"
       - kind: variable
@@ -1783,6 +1930,7 @@ tests:
 
   - code: cluster_file_systems.ceph_fio
     full_name: "ceph fio benchmark"
+    short_name: "CEPH fio"
     matrix_label: "FS_CEPH_fio"
     changelog_component: "Файловые системы"
     category: cluster_file_systems
@@ -1795,16 +1943,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:368-370
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1817,7 +1965,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1828,8 +1975,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1841,11 +1988,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-kernel"
       - kind: variable
@@ -1857,6 +2004,7 @@ tests:
 
   - code: cluster_file_systems.ceph_parsec
     full_name: "ceph parsec benchmark"
+    short_name: "CEPH parsec"
     matrix_label: "FS_CEPH_parsec"
     changelog_component: "Файловые системы"
     category: cluster_file_systems
@@ -1869,16 +2017,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:371-373
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1891,7 +2039,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1902,8 +2049,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-fs"
       - kind: literal
@@ -1915,11 +2062,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-kernel"
       - kind: variable
@@ -1931,6 +2078,7 @@ tests:
 
   - code: auditd.psaud
     full_name: "auditd benchmark. psaud"
+    short_name: "auditd-p"
     matrix_label: "Auditd_psaud"
     changelog_component: "Системные службы"
     category: auditd
@@ -1948,16 +2096,16 @@ tests:
       # однозначно.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -1970,7 +2118,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -1981,8 +2128,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -1994,10 +2141,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: auditd.fileaud
     full_name: "auditd benchmark. fileaud"
+    short_name: "auditd-f"
     matrix_label: "Auditd_fileaud"
     changelog_component: "Системные службы"
     category: auditd
@@ -2009,16 +2157,16 @@ tests:
     command:
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2031,7 +2179,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2042,8 +2189,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2055,10 +2202,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: auditd.useraud
     full_name: "auditd benchmark. useraud"
+    short_name: "auditd-u"
     matrix_label: "Auditd_useraud"
     changelog_component: "Системные службы"
     category: auditd
@@ -2072,16 +2220,16 @@ tests:
     command:
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2094,7 +2242,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2105,8 +2252,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2118,12 +2265,13 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   # --- syslog_ng (branch: syslog_ng, script: sng_run.py) ---------------------
 
   - code: syslog_ng.base
     full_name: "syslog-ng benchmark"
+    short_name: "syslog-ng"
     matrix_label: "Syslog-NG"
     changelog_component: "Системные службы"
     category: syslog_ng
@@ -2136,16 +2284,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:377-379 (TEST=='syslog-ng' or 'unix')
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2158,7 +2306,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2169,8 +2316,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2178,10 +2325,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: syslog_ng.check_write_log
     full_name: "syslog-ng benchmark check-write-log"
+    short_name: "syslog-ng-cwl"
     matrix_label: "Syslog-NG-cwl"
     changelog_component: "Системные службы"
     category: syslog_ng
@@ -2196,16 +2344,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:374-376 (-cwl идёт ПОСЛЕ -tcv)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2218,7 +2366,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2229,8 +2376,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2238,7 +2385,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-cwl"
 
@@ -2246,6 +2393,7 @@ tests:
 
   - code: linux_system.unixbench
     full_name: "linux_system_benchmark. UnixBench"
+    short_name: "unix"
     matrix_label: "UnixBench"
     changelog_component: "UnixBench"
     category: linux_system
@@ -2258,16 +2406,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:377-379 (TEST=='unix')
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2280,7 +2428,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2291,8 +2438,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2300,10 +2447,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: linux_system.unixbench_parsec
     full_name: "linux_system_benchmark. UnixBench parsec"
+    short_name: "unix parsec"
     matrix_label: "UnixBench_parsec"
     changelog_component: "UnixBench"
     category: linux_system
@@ -2317,16 +2465,16 @@ tests:
       # linux_system:linux_system/lsb_run.py argparse (-p/--parsec action='store', требует значение)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2339,7 +2487,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2350,8 +2497,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2359,7 +2506,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-p"
       - kind: literal
@@ -2369,6 +2516,7 @@ tests:
 
   - code: overflow.ram
     full_name: "ram overflow"
+    short_name: "RAM-overflow"
     matrix_label: "RAM_overflow"
     changelog_component: "Системные службы"
     category: overflow
@@ -2383,17 +2531,16 @@ tests:
       # origin/overflow:overflow/ovf_run.py:265 (`if args.OVF == 'ram':` — литеральное сравнение)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2404,12 +2551,12 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-ovf"
       - kind: literal
@@ -2417,6 +2564,7 @@ tests:
 
   - code: overflow.storage_drive
     full_name: "storage drive overflow"
+    short_name: "SD-overflow"
     matrix_label: "SD_overflow"
     changelog_component: "Системные службы"
     category: overflow
@@ -2429,17 +2577,16 @@ tests:
       # source: origin/overflow:overflow/ovf_run.py:268 (`elif args.OVF == 'sd':`)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2450,12 +2597,12 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-ovf"
       - kind: literal
@@ -2465,6 +2612,7 @@ tests:
 
   - code: parsec.impact_fs
     full_name: "Parsec impact fs benchmark"
+    short_name: "parsec impact-fs"
     matrix_label: "Parsec_impact-fs"
     changelog_component: "Parsec"
     category: parsec
@@ -2477,16 +2625,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:386-388 (elif PARSEC_IMPACT or PARSEC_IMPACT_AO)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2499,7 +2647,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2510,8 +2657,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2519,10 +2666,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: parsec.impact_fs_audit_off
     full_name: "Parsec impact fs benchmark audit-off"
+    short_name: "parsec impact-fs aud-off"
     matrix_label: "Parsec_imp-fs_aud-off"
     changelog_component: "Parsec"
     category: parsec
@@ -2539,16 +2687,16 @@ tests:
       # знать про audit-off — само ядро грузится с audit=0.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2561,7 +2709,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2572,8 +2719,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2581,10 +2728,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
 
   - code: parsec.digsig_cdt
     full_name: "DIGSIG. Check digsig time"
+    short_name: "digsig-cdt"
     matrix_label: "DIGSIG-cdt"
     changelog_component: "Parsec"
     category: parsec
@@ -2597,16 +2745,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:389-391 (-ds идёт ПОСЛЕ -tcv)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2619,7 +2767,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2630,8 +2777,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2639,12 +2786,13 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-ds"
 
   - code: parsec.raw_spin_lock
     full_name: "Raw spin lock benchmark"
+    short_name: "raw-spin-lock"
     matrix_label: "Raw_spin-lock"
     changelog_component: "Parsec"
     category: parsec
@@ -2657,16 +2805,16 @@ tests:
       # source: dev_allta_app:allta_app/backup_image.py:392-394 (-rsl идёт ПОСЛЕ -tcv)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2679,7 +2827,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2690,8 +2837,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2699,7 +2846,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-rsl"
 
@@ -2707,6 +2854,7 @@ tests:
 
   - code: apache2.reverse_proxy
     full_name: "Apache_ReverseProxy"
+    short_name: "apache-rp"
     matrix_label: "Apache_RP"
     changelog_component: "Apache"
     category: apache2
@@ -2720,16 +2868,16 @@ tests:
       # apache2:apache2/apache_run.py:164 (`elif args.TESTNAME == 'rp':`)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2742,7 +2890,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2753,8 +2900,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2762,7 +2909,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -2770,6 +2917,7 @@ tests:
 
   - code: apache2.bench_pam
     full_name: "Apache_BenchPam"
+    short_name: "apache-bp"
     matrix_label: "Apache_BP"
     changelog_component: "Apache"
     category: apache2
@@ -2782,16 +2930,16 @@ tests:
       # source: apache2:apache2/apache_run.py:104 (`if args.TESTNAME == 'apache_pam':`)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2804,7 +2952,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2815,8 +2962,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2824,7 +2971,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -2832,6 +2979,7 @@ tests:
 
   - code: apache2.balance
     full_name: "Apache_Balance"
+    short_name: "apache-balance"
     matrix_label: "Apache_Balance"
     changelog_component: "Apache"
     category: apache2
@@ -2847,16 +2995,16 @@ tests:
       # предыдущая попытка ошибочно решила, что ключа нет.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2869,7 +3017,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2880,8 +3027,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2889,7 +3036,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -2899,6 +3046,7 @@ tests:
 
   - code: virt.steal_time
     full_name: "Steal time"
+    short_name: "steal time"
     matrix_label: "Steal_time"
     changelog_component: "Qemu/KVM/Libvirt"
     category: virt
@@ -2910,20 +3058,20 @@ tests:
     command:
       # source: dev_allta_app:allta_app/backup_image.py:401-403 (-vbox {TCYCLE.split('_')[0]}
       # -testname {LVIRT}, оба ПОСЛЕ -tcv) + virt:virt/test_run.py:109 (`if args.TESTNAME == 'stealtime':`,
-      # без пробела — не 'steal time'!). -vbox: см. легенду draft (TCYCLE-предположение = RC);
+      # без пробела — не 'steal time'!). -vbox: см. легенду draft (TCYCLE-предположение = RC_NAME);
       # virt/test_run.py называет этот параметр `rc_vbox` — подтверждает гипотезу, не доказывает.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -2936,7 +3084,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -2947,8 +3094,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -2956,11 +3103,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -2968,6 +3115,7 @@ tests:
 
   - code: virt.steal_time_smolensk
     full_name: "Steal time smolensk"
+    short_name: "steal time-sm"
     matrix_label: "Steal_time-sm"
     changelog_component: "Qemu/KVM/Libvirt"
     category: virt
@@ -2981,16 +3129,16 @@ tests:
       # source: virt:virt/test_run.py:151 (`elif args.TESTNAME == 'stealtime_sm':`)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3003,7 +3151,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3014,8 +3161,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3023,11 +3170,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -3035,6 +3182,7 @@ tests:
 
   - code: virt.fio
     full_name: "FIO benchmark"
+    short_name: "FIO"
     matrix_label: "FIO"
     changelog_component: "Qemu/KVM/Libvirt"
     category: virt
@@ -3047,16 +3195,16 @@ tests:
       # source: virt:virt/test_run.py:195 (`elif args.TESTNAME == 'fio':`, строчными — не 'FIO')
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3069,7 +3217,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3080,8 +3227,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3089,11 +3236,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -3101,6 +3248,7 @@ tests:
 
   - code: virt.fio_large
     full_name: "Large FIO benchmark"
+    short_name: "FIO large"
     matrix_label: "FIO_large"
     changelog_component: "Qemu/KVM/Libvirt"
     category: virt
@@ -3113,16 +3261,16 @@ tests:
       # source: virt:virt/test_run.py:227 (`elif args.TESTNAME == 'fio_large':`)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3135,7 +3283,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3146,8 +3293,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3155,11 +3302,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -3167,6 +3314,7 @@ tests:
 
   - code: virt.unixbench
     full_name: "Virt UnixBench"
+    short_name: "vUnixBench"
     matrix_label: "vUnixBench"
     changelog_component: "Qemu/KVM/Libvirt"
     category: virt
@@ -3179,16 +3327,16 @@ tests:
       # source: virt:virt/test_run.py:246 (`elif args.TESTNAME == 'unixbench':`, не 'vUnixBench')
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3201,7 +3349,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3212,8 +3359,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3221,11 +3368,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -3233,6 +3380,7 @@ tests:
 
   - code: virt.pingpong
     full_name: "vPingPong"
+    short_name: "vPingPong"
     matrix_label: "vPingPong"
     changelog_component: "Qemu/KVM/Libvirt"
     category: virt
@@ -3245,16 +3393,16 @@ tests:
       # source: virt:virt/test_run.py:265 (`elif args.TESTNAME == 'pingpong':`, не 'vPingPong')
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3267,7 +3415,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3278,8 +3425,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3287,11 +3434,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -3301,6 +3448,7 @@ tests:
 
   - code: docker.web_application
     full_name: "docker web-application"
+    short_name: "docker-wa"
     matrix_label: "Docker-WA"
     changelog_component: "Docker/Podman/LXC"
     category: docker
@@ -3316,16 +3464,16 @@ tests:
       # итоговый бинарь тот же, что и у всех остальных веток)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3338,7 +3486,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3349,8 +3496,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3358,7 +3505,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-wa"
 
@@ -3366,6 +3513,7 @@ tests:
 
   - code: astra_openvpn.client_connections
     full_name: "astra openvpn client connections"
+    short_name: "AOpenVPNcc"
     matrix_label: "AOpenVPNcc"
     changelog_component: "Системные службы"
     category: astra_openvpn
@@ -3380,16 +3528,16 @@ tests:
       # — единственное допустимое значение, closed enum с одним элементом).
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3402,7 +3550,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3413,8 +3560,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3422,7 +3569,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "--test"
       - kind: literal
@@ -3432,6 +3579,7 @@ tests:
 
   - code: exim.dovecot_imap
     full_name: "dovecot benchmark"
+    short_name: "Dovecot-IMAP"
     matrix_label: "Dovecot-IMAP"
     changelog_component: "Системные службы"
     category: exim
@@ -3446,16 +3594,16 @@ tests:
       # (-tt/--type-test choices=['smtp','imap'])
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3468,7 +3616,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3479,8 +3626,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3488,7 +3635,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-tt"
       - kind: literal
@@ -3496,6 +3643,7 @@ tests:
 
   - code: exim.exim_smtp
     full_name: "exim benchmark"
+    short_name: "Exim4-SMTP"
     matrix_label: "Exim4-SMTP"
     changelog_component: "Системные службы"
     category: exim
@@ -3507,16 +3655,16 @@ tests:
     command:
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3529,7 +3677,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3540,8 +3687,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3549,7 +3696,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-tt"
       - kind: literal
@@ -3559,6 +3706,7 @@ tests:
 
   - code: network.init_on_free
     full_name: "Network benchmark. Init_on_free"
+    short_name: "InitOnFree"
     matrix_label: "InitOnFree"
     changelog_component: "Network"
     category: network
@@ -3573,16 +3721,16 @@ tests:
       # (`if args.TESTNAME == 'iof':`). -vbox: см. легенду draft.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3595,7 +3743,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3606,8 +3753,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3615,11 +3762,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -3627,6 +3774,7 @@ tests:
 
   - code: network.dhcp
     full_name: "Network benchmark. DHCP"
+    short_name: "DHCP"
     matrix_label: "DHCP"
     changelog_component: "Network"
     category: network
@@ -3639,16 +3787,16 @@ tests:
       # source: network:network/test_run.py:142 (`elif args.TESTNAME == 'dhcp':`)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3661,7 +3809,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3672,8 +3819,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3681,11 +3828,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -3695,6 +3842,7 @@ tests:
 
   - code: kernel.segfault
     full_name: "segmentation_fault"
+    short_name: "SegFault"
     matrix_label: "SegFault"
     changelog_component: "Системные службы"
     category: kernel
@@ -3709,16 +3857,16 @@ tests:
       # (`if args.TESTNAME == 'segfault':`). -vbox: см. легенду draft.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3731,7 +3879,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3742,8 +3889,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3751,11 +3898,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -3763,6 +3910,7 @@ tests:
 
   - code: kernel.xfs_memleak
     full_name: "xfs memory leak"
+    short_name: "XFS mem leak"
     matrix_label: "XFS_mem_leak"
     changelog_component: "Системные службы"
     category: kernel
@@ -3775,16 +3923,16 @@ tests:
       # source: kernel:kernel/test_run.py:138 (`elif args.TESTNAME == 'xfs_memory_leak':`)
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3797,7 +3945,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3808,8 +3955,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3817,11 +3964,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -3829,6 +3976,7 @@ tests:
 
   - code: kernel.os_usage
     full_name: "OS usage"
+    short_name: "OS usage"
     matrix_label: "OS_usage"
     changelog_component: "Системные службы"
     category: kernel
@@ -3845,16 +3993,16 @@ tests:
       # `stand10_group`), НЕ stand12, где сидят segfault/xfs_memleak.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3867,7 +4015,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3878,8 +4025,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3887,11 +4034,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -3901,9 +4048,12 @@ tests:
 
   - code: freeipa.auth
     full_name: "freeipa authentication test"
+    short_name: "FreeIPA auth"
     matrix_label: "FreeIPA_auth"
     changelog_component: "FreeIPA"
     category: freeipa
+    # Профиль «FreeIPA (ipa_run.py)» (миграция freeipa_scenario).
+    launch_profile_id: lp_freeipa
     owner: null
     readiness: draft
     department_id: null
@@ -3925,16 +4075,16 @@ tests:
       # См. отчёт.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -3947,7 +4097,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -3958,8 +4107,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -3967,7 +4116,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-tt"
       - kind: literal
@@ -3975,9 +4124,12 @@ tests:
 
   - code: freeipa.create_users
     full_name: "freeipa create users test"
+    short_name: "FreeIPA c-users"
     matrix_label: "FreeIPA_c-users"
     changelog_component: "FreeIPA"
     category: freeipa
+    # Профиль «FreeIPA (ipa_run.py)» (миграция freeipa_scenario).
+    launch_profile_id: lp_freeipa
     owner: null
     readiness: draft
     department_id: null
@@ -3989,16 +4141,16 @@ tests:
       # тот же stand1-хардкод и нестандартный путь, что у freeipa.auth.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -4011,7 +4163,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -4022,8 +4173,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -4031,7 +4182,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-tt"
       - kind: literal
@@ -4039,9 +4190,12 @@ tests:
 
   - code: freeipa.plugin
     full_name: "freeipa plugin test"
+    short_name: "FreeIPA plugin"
     matrix_label: "FreeIPA_plugin"
     changelog_component: "FreeIPA"
     category: freeipa
+    # Профиль «FreeIPA (ipa_run.py)» (миграция freeipa_scenario).
+    launch_profile_id: lp_freeipa
     owner: null
     readiness: draft
     department_id: null
@@ -4050,16 +4204,16 @@ tests:
     command:
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -4072,7 +4226,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -4083,8 +4236,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -4092,7 +4245,7 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-tt"
       - kind: literal
@@ -4102,6 +4255,7 @@ tests:
 
   - code: astraevents.base
     full_name: "astraeventsd benchmark"
+    short_name: "astraevents"
     matrix_label: "Astraevents"
     changelog_component: "Системные службы"
     category: astraevents
@@ -4117,16 +4271,16 @@ tests:
       # нет отдельного случая под smolensk). -vbox: см. легенду draft.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -4139,7 +4293,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -4150,8 +4303,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -4159,11 +4312,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal
@@ -4171,6 +4324,7 @@ tests:
 
   - code: astraevents.smolensk
     full_name: "astraeventsd benchmark smolensk"
+    short_name: "astraevents-sm"
     matrix_label: "Astraevents_sm"
     changelog_component: "Системные службы"
     category: astraevents
@@ -4190,16 +4344,16 @@ tests:
       # запуска теста (провижининг стенда), а не аргументом aeb_run.py.
       - kind: literal
         literal_value: "--username"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_USER
       - kind: literal
         literal_value: "--token"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_TOKEN
       - kind: literal
         literal_value: "--confluence-space"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: CONFLUENCE_SPACE
       - kind: literal
         literal_value: "--confluence-parent-page"
       - kind: variable
@@ -4212,7 +4366,6 @@ tests:
         literal_value: "-fti"
       - kind: variable
         variable_code: FOLDER_TREE_ID
-        override_value: "none"
       - kind: literal
         literal_value: "-tcyc"
       - kind: variable
@@ -4223,8 +4376,8 @@ tests:
         variable_code: TEST_CASE_NAME
       - kind: literal
         literal_value: "-ba"
-      - kind: literal
-        literal_value: "none"
+      - kind: variable
+        variable_code: JIRA_BASIC_AUTH
       - kind: literal
         literal_value: "-sn"
       - kind: variable
@@ -4232,11 +4385,11 @@ tests:
       - kind: literal
         literal_value: "-tcv"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-vbox"
       - kind: variable
-        variable_code: RC
+        variable_code: RC_NAME
       - kind: literal
         literal_value: "-testname"
       - kind: literal

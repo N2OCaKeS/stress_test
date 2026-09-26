@@ -53,6 +53,11 @@ from src.api.v1.endpoints.internal_prepare_for_test import (
 from src.api.v1.endpoints.internal_service_reservation import (
     router as internal_service_reservation_router,
 )
+from src.api.v1.endpoints.internal_vm_service import (
+    router as internal_vm_service_router,
+    settings_router as vm_test_settings_router,
+    worker_router as internal_vm_service_worker_router,
+)
 from src.api.v1.endpoints.inventory import users_router as users_inventory_router
 from src.api.v1.endpoints.management_user_config import (
     router as management_user_config_router,
@@ -166,6 +171,12 @@ router.include_router(internal_service_reservation_router)
 # shared-secret канал) + callback воркера о новых шагах пайплайна.
 router.include_router(internal_prepare_for_test_router)
 router.include_router(internal_prepare_for_test_worker_router)
+# ВМ-стенды: зеркальный s2s-канал `/internal/vms/{id}/…`
+# (бронь, connection-info, снимки, prepare-for-test) + callback воркера.
+router.include_router(internal_vm_service_router)
+router.include_router(internal_vm_service_worker_router)
+# Шаблоны имени снимка ВМ для отката перед тестом — singleton под account_admin.
+router.include_router(vm_test_settings_router)
 # Admin-эндпоинты ротации ключей шифрования для account_admin. Инфраструктура,
 # не бизнес-данные — явное исключение из platform_admin_guard business-блока.
 router.include_router(admin_encryption_router)

@@ -964,11 +964,25 @@ class AcsSnapshotItem(BaseModel):
 
     name: str = Field(description="Полное имя снимка на ACS (`{hostname}-{version_name}`).")
     version_name: str = Field(description="Хвост имени после `{hostname}-` — версия РЦ снимка.")
+    normalized_version: str = Field(
+        description=(
+            "Хвост после `normalize_os_version_name` (`1710rc52` → `1.7.10.52`) — "
+            "в этой форме хранит имена каталог версий ОС; сравнивать с "
+            "`os_version.name` нужно по нему."
+        ),
+    )
 
 
 class AcsSnapshotListResponse(BaseModel):
     """Ответ GET /servers/{id}/acs-snapshots — снимки этого сервера на ACS."""
 
+    hostname: str | None = Field(
+        default=None,
+        description=(
+            "Hostname сервера — префикс имён его снимков (`{hostname}-{version}`); "
+            "нужен вызывающему, чтобы назвать искомый снимок в ошибке."
+        ),
+    )
     snapshots: list[AcsSnapshotItem] = Field(
         default_factory=list,
         description="Снимки этого сервера (по префиксу hostname), отсортированы по имени.",
@@ -1236,7 +1250,7 @@ class AcsSnapshotRestoreDoneCallbackResponse(BaseModel):
 
 
 class ServerTestCredentialsResponse(BaseModel):
-    """Учётка исполнения теста сервера (§5.3 плана ALLTA MIGRATION).
+    """Учётка исполнения теста сервера.
 
     Живая отладка стенда для админа: `reveal=false` (или отсутствует) отдаёт
     только метаданные (`username`/`rotated_at`/`exists`); `reveal=true`

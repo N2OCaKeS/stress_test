@@ -7,6 +7,7 @@
 
 import re
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -47,7 +48,23 @@ class GlobalVariableCreate(BaseModel):
         description=(
             "Откуда берётся значение: launch_context (снэпшот запуска), "
             "static (фиксированное), per_test_override (задаётся слотом теста), "
-            "secret_service (живой reveal по credential_id)."
+            "secret_service (живой reveal по credential_id), template (шаблон "
+            "с подстановками {CODE}), test_field (поле теста), stand (поле "
+            "стенда), department_integration (настройки интеграций отдела "
+            "стенда), os_version (карточка версии ОС), test_account (тестовая "
+            "учётка отдела)."
+        ),
+    )
+    source_ref: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "На что ссылается переменная в своём источнике (CONTRACTS.md C1): "
+            '`{"template": "STRESS_report {RC_NAME} ⬝ {TEST_TOPIC}"}`, '
+            '`{"field": "short_name", "fallback": "full_name"}`, '
+            '`{"field": "credential_id", "credential_part": "secret"}`, '
+            '`{"field": "confluence_credential_id", "fallback": "credential_id", "credential_part": "login"}`, … '
+            "Проверяется при сохранении: 422 VARIABLE_SOURCE_REF_INVALID / "
+            "VARIABLE_TEMPLATE_UNKNOWN / VARIABLE_TEMPLATE_CYCLE."
         ),
     )
     value_type: GlobalVariableValueType = Field(
@@ -86,6 +103,10 @@ class GlobalVariableUpdate(BaseModel):
         default=None, min_length=1, max_length=128, description="Сменить отображаемое имя.",
     )
     source: GlobalVariableSource | None = Field(default=None, description="Сменить источник значения.")
+    source_ref: dict[str, Any] | None = Field(
+        default=None,
+        description="Сменить ссылку источника. `null` — убрать (для источников без ссылки).",
+    )
     value_type: GlobalVariableValueType | None = Field(default=None, description="Сменить тип значения.")
     choices_source: str | None = Field(
         default=None, max_length=MAX_CHOICES_SOURCE_LEN,
@@ -105,9 +126,11 @@ class GlobalVariableUpdate(BaseModel):
 class GlobalVariableResponse(BaseModel):
     """Карточка переменной в ответе.
 
-    Значения переменной в каталоге нет ни для одной `source` — маскировать
-    в ответе нечего; `is_sensitive` едет наружу как метаданные, по которым
-    воркер и логи прячут уже зарезолвленный аргумент.
+    Значения переменной в каталоге нет (кроме `static` c `source_ref.value`
+    и шаблонов — это описание формулы, а не секрет); секреты живут в
+    secret_service и в `source_ref` едут только ссылкой на поле.
+    `is_sensitive` — метаданные, по которым воркер и логи прячут уже
+    зарезолвленный аргумент.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -116,6 +139,7 @@ class GlobalVariableResponse(BaseModel):
     code: str = Field(description="Машинный код переменной.")
     label: str = Field(description="Отображаемое имя.")
     source: str = Field(description="Источник значения.")
+    source_ref: dict[str, Any] | None = Field(default=None, description="Ссылка источника (CONTRACTS.md C1).")
     value_type: str = Field(description="Тип значения.")
     choices_source: str | None = Field(default=None, description="Способ получить список значений.")
     is_sensitive: bool = Field(description="Маскировать значение в логах.")
@@ -137,3 +161,33 @@ class ChoicesResponse(BaseModel):
 
     items: list[ChoiceItem] = Field(description="Варианты значений на момент запроса.")
     choices_source: str = Field(description="Строка-источник, из которой собран список.")
+
+
+class DepartmentIntegrationFieldOption(BaseModel):
+    """Колонка `department_integration_settings`, на которую может сослаться переменная."""
+
+    field: str = Field(description="Имя колонки.")
+    is_credential: bool = Field(
+        description="Ссылка на credential secret_service (`*_credential_id`): нужен `credential_part`.",
+    )
+
+
+class GlobalVariableSourceOptions(BaseModel):
+    """Ответ `GET /global-variables/source-options` — допустимые значения `source_ref`.
+
+    UI строит по нему форму ссылки источника; те же множества проверяет
+    сервис при сохранении (`variable_resolver._REF_VALIDATORS`).
+    """
+
+    sources: list[str] = Field(description="Все значения `source`.")
+    test_fields: list[str] = Field(description="`test_field.field`/`fallback`.")
+    stand_fields: list[str] = Field(description="`stand.field`/`fallback`.")
+    stand_ref_fields: list[str] = Field(description="`stand_ref.field`; стенд — `stand_ref.stand_id`.")
+    department_integration_fields: list[DepartmentIntegrationFieldOption] = Field(
+        description="`department_integration.field`/`fallback`.",
+    )
+    credential_parts: list[str] = Field(description="`department_integration.credential_part`.")
+    os_version_fields: list[str] = Field(description="`os_version.field`.")
+    test_account_fields: list[str] = Field(description="`test_account.field`.")
+    zephyr_folder_fields: list[str] = Field(description="`zephyr_folder.field`.")
+    template_conditions: list[str] = Field(description="`template.when`.")

@@ -20,7 +20,11 @@ import { type BadgeKind } from "./_shared";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 
-export type AdhocStatus = "queued" | "running" | "done" | "failed";
+/**
+ * `unknown` — сессия завершилась, но исход не определён: у
+ * debug-запуска нет прогона в Zephyr, а код выхода run.py всегда 0.
+ */
+export type AdhocStatus = "queued" | "running" | "done" | "unknown" | "failed";
 export type AdhocMode = "orel" | "smolensk";
 
 export interface AdhocRun {
@@ -46,10 +50,18 @@ const ADHOC_STATUS_META: Record<AdhocStatus, { label: string; badge: BadgeKind }
   queued: { label: "В очереди", badge: "warn" },
   running: { label: "Выполняется", badge: "accent" },
   done: { label: "Успешно", badge: "ok" },
+  unknown: { label: "Результат не определён", badge: "warn" },
   failed: { label: "Провален", badge: "danger" },
 };
 
 const STATUS_FILTER_OPTIONS: (AdhocStatus | "all")[] = ["all", "queued", "running", "done", "failed"];
+
+function adhocStatus(state: string, verdict?: string | null): AdhocStatus {
+  if (state === "succeeded") return verdict === "unknown" ? "unknown" : "done";
+  if (state === "failed" || state === "timed_out") return "failed";
+  if (state === "running" || state === "awaiting_verdict") return "running";
+  return "queued";
+}
 
 /** Тикающий `Date.now()` раз в секунду — источник для realtime-элапсед-таймера, без опроса бэкенда. */
 function useNow(intervalMs = 1000): number {
@@ -110,7 +122,7 @@ export function useAdhocState(enabled = true): AdhocState {
         id: item.id, testCode: item.test_code ?? test?.code ?? item.test_id, testName: item.test_name ?? test?.full_name ?? item.test_id,
         standName: server?.display_name ?? server?.hostname ?? stand?.server_id ?? item.stand_id,
         standId: item.stand_id, mode: item.mode === "smolensk" ? "smolensk" : "orel",
-        status: item.state === "succeeded" ? "done" : item.state === "failed" ? "failed" : item.state === "running" ? "running" : "queued",
+        status: adhocStatus(item.state, item.verdict),
         startedAt: item.started_at ?? item.created_at, createdAt: item.created_at, debugMode: item.debug_mode,
         rc: versionsQ.data?.items.find((version) => version.id === item.rc)?.name ?? item.rc ?? "—", kernel: item.kernel ?? "—", error: item.error,
         logStatus: item.log_status, finishedAt: item.finished_at,

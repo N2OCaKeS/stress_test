@@ -85,7 +85,7 @@ class TestListServers:
     async def test_department_admin_sees_only_own_dept(self, client, admin_token, make_server):
         """`admin_token` теперь department_admin в dep_a — НЕ видит dep_b.
 
-        Регрессия для §5/§7 server_service модели: department_admin
+        Регрессия модели server_service: department_admin
         работает только с ресурсами своего департамента. Раньше тут был
         ``test_account_admin_sees_all`` — account_admin полностью
         блокируется guard middleware'ом, см.
@@ -137,7 +137,7 @@ class TestCreateServer:
         """`admin_token` теперь department_admin в dep_a — создаёт у себя.
 
         Раньше тут был ``test_account_admin_creates`` (account_admin
-        bypass'ил matrix). После §7-8 фикса account_admin блокируется
+        bypass'ил matrix). После фикса account_admin блокируется
         guard'ом; департамент-admin со service-role `admin` создаёт у себя.
         """
         resp = await client.post(BASE, headers=_hdr(admin_token), json=self._payload())
@@ -175,7 +175,7 @@ class TestCreateServer:
     async def test_department_admin_cannot_create_in_other_dept(self, client, admin_token):
         """`admin_token` теперь department_admin в dep_a → 403 для dep_b POST.
 
-        Регрессия для §5/§7 (изоляция департаментов). Раньше тут был
+        Регрессия изоляции департаментов. Раньше тут был
         ``test_account_admin_can_create_in_any_dept`` — account_admin
         полностью блокируется guard'ом, см.
         ``tests/integration/test_platform_admin_block.py``.
@@ -314,7 +314,7 @@ class TestGetServer:
     async def test_department_admin_cannot_see_other_dept(self, client, admin_token, make_server):
         """`admin_token` теперь department_admin в dep_a → 404 для dep_b сервера.
 
-        Регрессия для §5 (cross-dept hidden as 404). Раньше account_admin
+        Регрессия cross-dept hidden as 404. Раньше account_admin
         видел любой департамент — теперь блокируется guard'ом полностью.
         """
         srv = await make_server(department_id="dep_b")

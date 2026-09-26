@@ -7,11 +7,15 @@
 прогон) и обновляет статус + `queue_item_id`. Попытка отправить статус в
 Zephyr — тоже best-effort, сетевой сбой логируется и не пробрасывается
 наружу, ровно как остальные внешние вызовы очереди (`acquire`/
-`release-for-service`).
+`release-for-service`). При `verdict_source=zephyr` статус в Zephyr
+выставил сам скрипт — сервис его не перезаписывает, только локальную ячейку.
 
 Связь ищется по совпадению `(test.code == stp_test_case.code)` и
 `(stand_id, RC, MODE, KERNEL)` самого свежего `stp_test_run` — тот же
-join-ключ, что использует генерация (`services/stp.py`).
+join-ключ, что использует генерация (`services/stp.py`); если у item'а
+задан `stp_test_run_id` — по нему. Из действий сценария в СТП пишет только
+действие-вердикт, кейс — `scenarios.stp_test_case_code`
+(`launch_stp.case_code_for_item`).
 
 `PATCH /stp/cells/{id}` (ручной override, RBAC `admin`) — отдельный путь,
 выставляет `status`+`updated_by`, НЕ трогает Zephyr (легаси-паттерн: ручная
@@ -24,7 +28,9 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import Action, EntityType, QueueItemState, StpCellStatus
+from src.core.constants import (
+    Action, EntityType, QueueItemState, QueueVerdict, StpCellStatus, VerdictSource,
+)
 from src.core.exceptions import AppException, AuthorizationError, DomainValidationError, NotFoundError
 from src.dependencies.auth import Identity
 from src.models import QueueItem, StpCell
@@ -34,7 +40,7 @@ from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
 from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_stand as stand_repo
-from src.services import audit_service, permissions, secret_client, zephyr_client
+from src.services import audit_service, launch_stp, permissions, secret_client, zephyr_client
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +62,10 @@ async def sync_cell_from_queue_item(db: AsyncSession, item: QueueItem) -> None:
     """
     if item.debug_mode or item.failed_step == "launch_guard":
         return
+    # Исход не определён (запуск без прогона в Zephyr п. 3а) — в СТП
+    # писать нечего.
+    if item.verdict == QueueVerdict.UNKNOWN:
+        return
     new_status = _TERMINAL_STATUS_MAP.get(item.state)
     if new_status is None:
         return
@@ -69,7 +79,10 @@ async def sync_cell_from_queue_item(db: AsyncSession, item: QueueItem) -> None:
         test = await test_definition_repo.get_by_id(db, item.test_id)
         if test is None:
             return
-        case = await stp_test_case_repo.get_by_code(db, test.code)
+        case_code = await launch_stp.case_code_for_item(db, item, test.code)
+        if case_code is None:
+            return
+        case = await stp_test_case_repo.get_by_code(db, case_code)
         if case is None:
             return
         run = await stp_test_run_repo.get_by_id(db, item.stp_test_run_id) if item.stp_test_run_id else await stp_test_run_repo.find_latest_for_context(
@@ -100,6 +113,11 @@ async def sync_cell_from_queue_item(db: AsyncSession, item: QueueItem) -> None:
         return
 
     if not run.zephyr_test_run_key or not case.zephyr_id:
+        return
+    # Вердикт прочитан из Zephyr — статус там выставил сам скрипт;
+    # запись поверх него перетёрла бы вердикт теста (например, T3-таймаут
+    # поверх статуса, опубликованного позже).
+    if item.verdict_source == VerdictSource.ZEPHYR:
         return
 
     stand = await stand_repo.get_by_id(db, item.stand_id)

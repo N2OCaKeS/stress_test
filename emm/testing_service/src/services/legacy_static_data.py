@@ -160,6 +160,11 @@ ANNOTATIONS: dict[str, str] = {
     ),
 }
 
+# Адрес FTP в `BOX_CONFIG` ниже, как он записан в легаси `box-config.json`.
+# Маршрут подменяет этот префикс значением глобальной переменной `FTP_URL`
+# — сам адрес живёт в БД.
+LEGACY_FTP_BASE = "ftp://10.177.103.10"
+
 # Легаси `vagrant_box`: версия → [имя образа, ftp-URL]. Не имеет emm-аналога —
 # провижининг через vagrant-боксы в testing_service не используется, маршрут
 # остаётся справочным. Легаси: `allta_app/box-config.json`.

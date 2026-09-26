@@ -8,7 +8,9 @@
 §D4/D5) — первый вызов заводит состав, повтор с тем же `scope` идемпотентен,
 с другим — переключает уже существующий состав (см. `services/stp.py`).
 `/stp/composition` — текущий `scope`+`revision` пары (отдел, РЦ), чтение
-своему отделу. Ячейки — ручной override под `(stp_cell, *, update)`, событийное
+своему отделу. `/stp/zephyr-folder` — папка Zephyr пары (отдел, РЦ) и её
+`folderTreeId`: чтение своему отделу, ручная правка и «найти заново» —
+тем же гейтом, что `/stp/generate`. Ячейки — ручной override под `(stp_cell, *, update)`, событийное
 обновление идёт мимо HTTP (см. `services/queue.py` → `services/stp_status.py`).
 `/stp/matrix/publish` — ручная публикация сводной таблицы РЦ в Confluence,
 department-scoped `(stp_test_run, *, publish)` (см. `services/stp_matrix.py`).
@@ -47,6 +49,11 @@ from src.schemas.stp import (
     StpTestRunResponse,
 )
 from src.schemas.stp_add_test import StpAddTestOperationResponse, StpAddTestRequest
+from src.schemas.zephyr_folder import (
+    ZephyrFolderManualUpdate,
+    ZephyrFolderRefreshRequest,
+    ZephyrFolderResponse,
+)
 from src.schemas.stp_pull_from_life import (
     StpPullImportRequest,
     StpPullImportResponse,
@@ -59,6 +66,7 @@ from src.services import stp_matrix as stp_matrix_svc
 from src.services import stp_pull_from_life as stp_pull_svc
 from src.services import stp_status
 from src.services import stp_test_case as stp_test_case_svc
+from src.services import zephyr_folder as zephyr_folder_svc
 
 router = APIRouter(prefix="/stp")
 
@@ -169,7 +177,7 @@ async def generate_stp(
     identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> StpGenerateResponse:
-    runs, errors = await stp_svc.generate_stp_runs(
+    runs, errors, folder = await stp_svc.generate_stp_runs(
         db, identity,
         os_version_id=body.os_version_id, mode=body.mode, kernel=body.kernel,
         scope=body.scope, department_id=body.department_id or identity.department_id,
@@ -177,7 +185,86 @@ async def generate_stp(
     return StpGenerateResponse(
         test_runs=[StpTestRunResponse.model_validate(r) for r in runs],
         errors=errors,
+        zephyr_folder=ZephyrFolderResponse(**folder),
     )
+
+
+@router.get(
+    "/zephyr-folder",
+    response_model=ZephyrFolderResponse,
+    summary="Папка Zephyr отдела для одной РЦ (путь и folderTreeId)",
+    description=(
+        "Доступен пользователям этого же отдела. Нет записи — не 404, а `id: null` и "
+        "путь по шаблону `zephyr_folder_path_template` (если он резолвится; иначе "
+        "`error`). Запись заводит `/stp/generate` или ручная правка."
+    ),
+    responses={403: {"description": "DEPARTMENT_ISOLATION — чужой отдел."}},
+)
+async def get_zephyr_folder(
+    os_version_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+    department_id: str | None = Query(default=None),
+) -> ZephyrFolderResponse:
+    data = await zephyr_folder_svc.get_effective(
+        db, identity, department_id or identity.department_id, os_version_id,
+    )
+    return ZephyrFolderResponse(**data)
+
+
+@router.put(
+    "/zephyr-folder",
+    response_model=ZephyrFolderResponse,
+    summary="Задать id папки Zephyr вручную",
+    description=(
+        "Запись помечается `is_manual=true`: повторная генерация СТП её не "
+        "перезаписывает, прогоны заводятся в её путь. Гейт — как у `/stp/generate`, "
+        "`(stp_test_run, *, create)` в отделе."
+    ),
+    responses={
+        403: {"description": "Нет роли с `create` в этом отделе."},
+        422: {"description": "Пустой id или путь по шаблону не резолвится."},
+    },
+)
+async def set_zephyr_folder(
+    body: ZephyrFolderManualUpdate,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ZephyrFolderResponse:
+    data = await zephyr_folder_svc.set_manual(
+        db, identity,
+        department_id=body.department_id or identity.department_id,
+        os_version_id=body.os_version_id,
+        folder_tree_id=body.folder_tree_id, folder_path=body.folder_path,
+    )
+    return ZephyrFolderResponse(**data)
+
+
+@router.post(
+    "/zephyr-folder/refresh",
+    response_model=ZephyrFolderResponse,
+    summary="Найти папку Zephyr заново (снимает ручную метку)",
+    description=(
+        "Путь — по текущему шаблону отдела; id ищется по test-run'ам в папке, "
+        "нет — папка создаётся. Не нашли и не создали — 200 с `folder_tree_id: null` "
+        "и `error` (`ZEPHYR_FOLDER_NOT_FOUND`, `JIRA_INTEGRATION_NOT_AVAILABLE`, …)."
+    ),
+    responses={
+        403: {"description": "Нет роли с `create` в этом отделе."},
+        422: {"description": "Путь по шаблону не резолвится."},
+    },
+)
+async def refresh_zephyr_folder(
+    body: ZephyrFolderRefreshRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> ZephyrFolderResponse:
+    data = await zephyr_folder_svc.refresh(
+        db, identity,
+        department_id=body.department_id or identity.department_id,
+        os_version_id=body.os_version_id,
+    )
+    return ZephyrFolderResponse(**data)
 
 
 @router.get(

@@ -23,6 +23,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.exc import IntegrityError
 
 from src.api.internal_router import internal_router
+from src.api.legacy_public import router as legacy_public_router
 from src.api.router import api_router
 from src.core.config import get_settings
 from src.core.exceptions import AppException
@@ -158,6 +159,37 @@ async def _activity_report_auto_generate_loop(interval_seconds: float) -> None:
             logger.warning("activity report auto-generate loop failed: %s", exc)
 
 
+async def _verdict_poll_loop(interval_seconds: float) -> None:
+    """Опрос Zephyr по item'ам в `awaiting_verdict` — тот же приём,
+    что и `_log_rotation_loop`. Расписание опроса каждого item'а (раз в
+    `zephyr_verdict_poll_seconds` отдела) и таймаут ожидания — в
+    `queue.poll_awaiting_verdicts`; цикл лишь будит его.
+    """
+    from src.db.session import AsyncSessionLocal
+    from src.services import queue, scenario_queue
+
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+        except asyncio.CancelledError:
+            return
+        try:
+            async with AsyncSessionLocal() as db:
+                resolved = await queue.poll_awaiting_verdicts(db)
+                if resolved:
+                    logger.info("verdict poll: resolved %d queue item(s)", resolved)
+            # Тот же тик двигает запуски сценариев: ждущие стендов и
+            # истёкшие `wait`.
+            async with AsyncSessionLocal() as db:
+                moved = await scenario_queue.tick(db)
+                if moved:
+                    logger.info("scenario tick: advanced %d run(s)", moved)
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:  # noqa: BLE001 — периодическая job не должна ронять процесс
+            logger.warning("verdict poll loop failed: %s", exc)
+
+
 async def _drain_pending_audit_tasks() -> None:
     """Дождаться task'ов, дописывающих audit-события в outbox.
 
@@ -212,6 +244,9 @@ def create_application() -> FastAPI:
         activity_report_task = asyncio.create_task(
             _activity_report_auto_generate_loop(settings.activity_report_auto_generate_interval_seconds)
         )
+        verdict_task = asyncio.create_task(
+            _verdict_poll_loop(settings.verdict_poll_loop_interval_seconds)
+        )
         # Доставка audit-событий из `audit_outbox` — третий такой же цикл.
         # Без сконфигурированного loging_service `emit()` в outbox ничего не
         # кладёт, поднимать дренаж не за чем.
@@ -237,6 +272,12 @@ def create_application() -> FastAPI:
             activity_report_task.cancel()
             try:
                 await activity_report_task
+            except asyncio.CancelledError:
+                pass
+
+            verdict_task.cancel()
+            try:
+                await verdict_task
             except asyncio.CancelledError:
                 pass
 
@@ -421,6 +462,9 @@ def create_application() -> FastAPI:
     # claim/completed для testing_worker) — вне /api/testing/v1 namespace,
     # см. `src/api/internal_router.py`.
     app.include_router(internal_router)
+    # Публичный compat по легаси-путям `/rest/api/*`: без
+    # авторизации, только из разрешённых подсетей — см. `api/legacy_public.py`.
+    app.include_router(legacy_public_router)
 
     def custom_openapi():
         """Кастомный OpenAPI-генератор — добавляет BearerAuth security-scheme."""

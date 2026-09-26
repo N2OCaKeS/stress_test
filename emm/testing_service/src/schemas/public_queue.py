@@ -85,6 +85,43 @@ class PublicQueueItem(BaseModel):
     # Непустое значение видно только у `running`-элемента — фронт по нему
     # показывает «Останавливается…» и дизейблит кнопки управления очередью.
     interrupt_action: str | None = None
+    # Место в очереди стенда: меньше — раньше. Значимо между не терминальными
+    # элементами одного стенда; `queued`-элементы переставляются
+    # `PATCH /test-stands/{id}/queue/order`.
+    position: int = 0
+    # Вердикт. `verdict` — `passed`/`failed`/`unknown` (unknown —
+    # «результат не определён»: запуск без прогона в Zephyr), пусто — ещё не
+    # вынесен или item не дошёл до исполнения. `verdict_source` —
+    # `zephyr`/`exit_code`; `zephyr_status_raw` — статус кейса в Zephyr как
+    # есть (последний прочитанный, в т.ч. пока `awaiting_verdict`).
+    verdict: str | None = None
+    verdict_source: str | None = None
+    zephyr_status_raw: str | None = None
+    verdict_resolved_at: datetime | None = None
+    # Прогресс многоступенчатого теста: индекс текущего шага (с 0) и
+    # число шагов; у одношагового `step_count` — 1 или пусто (ещё не стартовал).
+    current_step_index: int = 0
+    step_count: int | None = None
+
+
+class QueueReorderRequest(BaseModel):
+    """Тело `PATCH /test-stands/{id}/queue/order`."""
+
+    model_config = ConfigDict(extra="forbid")
+    queue_item_ids: list[str] = Field(
+        max_length=1000,
+        description=(
+            "Все текущие `queued`-элементы стенда в новом порядке. Активный "
+            "(`preparing`/`ready`/`running`) и остановленный (`paused`) элементы "
+            "сюда не входят и не переставляются."
+        ),
+    )
+
+
+class QueueReorderResponse(BaseModel):
+    """Ответ перестановки: `queued`-элементы стенда в новом порядке."""
+
+    items: list[PublicQueueItem]
 
 
 class QueueClearResponse(BaseModel):

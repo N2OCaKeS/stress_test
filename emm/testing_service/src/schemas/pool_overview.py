@@ -36,7 +36,9 @@ class PoolOverviewStand(BaseModel):
     """Один стенд пула с посчитанным статусом."""
 
     stand_id: str = Field(description="test_stands.id")
-    server_id: str = Field(description="Server/Vm.id в server_service")
+    server_id: str | None = Field(default=None, description="Server.id в server_service (физический стенд).")
+    target_type: Literal["server", "vm"] = Field(default="server", description="Тип стенда: сервер или ВМ.")
+    vm_id: str | None = Field(default=None, description="Vm.id в server_service (ВМ-стенд).")
     status: StandStatusLiteral = Field(
         description=(
             "Восстанавливается/Недоступен/Тест идёт/Готов/Нет данных. "

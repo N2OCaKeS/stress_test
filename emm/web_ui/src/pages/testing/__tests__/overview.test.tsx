@@ -47,7 +47,9 @@ const retryQueueItemMock = vi.fn();
 const skipQueueItemMock = vi.fn();
 const pauseQueueItemMock = vi.fn();
 const resumeStandQueueMock = vi.fn();
+const reorderStandQueueMock = vi.fn();
 vi.mock("@/api/testing/queueItems", () => ({
+  reorderStandQueue: (...a: unknown[]) => reorderStandQueueMock(...a),
   listQueueItems: (...a: unknown[]) => listQueueItemsMock(...a),
   launchQueueItem: (...a: unknown[]) => launchQueueItemMock(...a),
   retryQueueItem: (...a: unknown[]) => retryQueueItemMock(...a),
@@ -445,7 +447,7 @@ describe("TestingOverview — live mode (testing_service)", () => {
     );
   });
 
-  it("очередь стенда в модалке — реальный список без drag-and-drop и удаления", async () => {
+  it("очередь стенда в модалке — реальный список без удаления", async () => {
     mockQueues([queueItem({ id: "qi_60" })], []);
     renderOverview();
     fireEvent.click((await screen.findAllByRole("button", { name: /Очередь/ }))[0]);
@@ -456,6 +458,83 @@ describe("TestingOverview — live mode (testing_service)", () => {
     );
     expect(await screen.findByText("qi_60")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Удалить/ })).not.toBeInTheDocument();
+  });
+
+  describe("перестановка ещё не начатых элементов очереди (D15)", () => {
+    const head = () => queueItem({ id: "qi_head", test_code: "HEAD", state: "running", position: 0 });
+    // Созданы в одном порядке, а `position` уже переставлены — модалка обязана идти по `position`.
+    const first = () => queueItem({
+      id: "qi_first", test_code: "FIRST", state: "queued", position: 1, created_at: "2026-09-17T10:05:00Z", started_at: null,
+    });
+    const second = () => queueItem({
+      id: "qi_second", test_code: "SECOND", state: "queued", position: 2, created_at: "2026-09-17T10:02:00Z", started_at: null,
+    });
+
+    function mockStandQueue() {
+      listQueueItemsMock.mockImplementation((query: { stand_id?: string; states?: string[] }) => {
+        if (query?.stand_id) {
+          // Как у бэкенда с `order: "desc"` — от новых к старым по `created_at`.
+          return Promise.resolve({ items: [first(), second(), head()], total: 3, limit: 200, offset: 0 });
+        }
+        const wantsPaused = query?.states?.includes("paused");
+        return Promise.resolve({ items: wantsPaused ? [] : [head()], total: 1, limit: 500, offset: 0 });
+      });
+    }
+
+    async function openQueue() {
+      renderOverview();
+      fireEvent.click((await screen.findAllByRole("button", { name: /Очередь/ }))[0]);
+      await screen.findByText("qi_second");
+    }
+
+    function queuedRowIds() {
+      return screen.getAllByTestId("queue-row-queued").map((row) => within(row).getByText(/^qi_/).textContent);
+    }
+
+    beforeEach(() => {
+      reorderStandQueueMock.mockReset().mockResolvedValue({ items: [] });
+      mockStandQueue();
+    });
+
+    it("ещё не начатые идут после активного и в порядке position", async () => {
+      await openQueue();
+      expect(queuedRowIds()).toEqual(["qi_first", "qi_second"]);
+      // Активный элемент перетаскивать нельзя — у него нет кнопок «Выше»/«Ниже».
+      expect(screen.queryByRole("button", { name: /^Выше: HEAD/ })).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /^Выше: FIRST/ })).toBeDisabled();
+      expect(screen.getByRole("button", { name: /^Ниже: SECOND/ })).toBeDisabled();
+    });
+
+    it("«Ниже» зовёт PATCH queue/order с новым порядком queued-элементов", async () => {
+      await openQueue();
+      fireEvent.click(screen.getByRole("button", { name: /^Ниже: FIRST/ }));
+      await waitFor(() => expect(reorderStandQueueMock).toHaveBeenCalledWith("ts_1", ["qi_second", "qi_first"]));
+    });
+
+    it("перетаскивание queued-элемента на другой меняет порядок", async () => {
+      await openQueue();
+      const [rowFirst, rowSecond] = screen.getAllByTestId("queue-row-queued");
+      expect(rowSecond).toHaveAttribute("draggable", "true");
+      const dataTransfer = { setData: vi.fn(), getData: vi.fn(() => "qi_second"), effectAllowed: "" };
+      fireEvent.dragStart(rowSecond, { dataTransfer });
+      fireEvent.dragOver(rowFirst, { dataTransfer });
+      fireEvent.drop(rowFirst, { dataTransfer });
+      await waitFor(() => expect(reorderStandQueueMock).toHaveBeenCalledWith("ts_1", ["qi_second", "qi_first"]));
+    });
+
+    it("ошибка сервиса (очередь изменилась) показывается и очередь перечитывается", async () => {
+      reorderStandQueueMock.mockRejectedValue(new Error("Очередь стенда изменилась"));
+      await openQueue();
+      const callsBefore = listQueueItemsMock.mock.calls.filter((args) => (args[0] as { stand_id?: string })?.stand_id).length;
+      fireEvent.click(screen.getByRole("button", { name: /^Выше: SECOND/ }));
+      await waitFor(() => expect(reorderStandQueueMock).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(
+          listQueueItemsMock.mock.calls.filter((args) => (args[0] as { stand_id?: string })?.stand_id).length,
+        ).toBeGreaterThan(callsBefore),
+      );
+      await waitFor(() => expect(queuedRowIds()).toEqual(["qi_first", "qi_second"]));
+    });
   });
 
   it("очередь стенда запрашивает только активные/остановленные/проваленные состояния — не всю историю", async () => {
@@ -538,5 +617,25 @@ describe("TestingOverview — live mode (testing_service)", () => {
     expect((await screen.findAllByText("srv_1")).length).toBeGreaterThan(0);
     const badges = screen.getAllByText("Недоступен");
     expect(badges.length).toBeGreaterThan(0);
+  });
+
+  it("ВМ-стенд показывается с признаком «ВМ» и именем ВМ", async () => {
+    getTestStandMock.mockResolvedValue({
+      id: "ts_1",
+      target_type: "vm",
+      server_id: null,
+      vm_id: "vm_1",
+      department_id: "dep_1",
+      queue_enabled: true,
+      is_active: true,
+      created_at: "2026-09-01T00:00:00Z",
+      updated_at: "2026-09-01T00:00:00Z",
+      created_by: null,
+      server: { name: "stand6", ip_address: "10.177.120.11", busy_state: null },
+      server_unavailable: false,
+    });
+    renderOverview();
+    expect((await screen.findAllByText("stand6")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("ВМ").length).toBeGreaterThan(0);
   });
 });

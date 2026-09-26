@@ -81,7 +81,7 @@ POST-CREATE эндпоинты (`POST /servers`, `POST /server-accounts`, `POST 
 
 ### Rate-limit
 
-Поверх глобального `GLOBAL_RATE_LIMIT` (default 500/min per-IP, исключая `/health`/`/ready`) повешены per-endpoint лимиты (см. README §«Конфиг»):
+Поверх глобального `GLOBAL_RATE_LIMIT` (default 500/min per-IP, исключая `/health`/`/ready`) повешены per-endpoint лимиты (см. README, раздел «Конфиг»):
 
 | Endpoint | ENV | Default |
 |---|---|---|
@@ -578,7 +578,7 @@ Errors: `PERMISSION_DENIED` (403, тип-wide, в т.ч. `ACS_DEPARTMENT_NOT_ENA
 
 Auth: Bearer + `(server, *, acs_snapshot_list)` (инстанс-грантуемое). Живой directory listing: читает `ACSClient.list_snapshots` (все снимки всех серверов на ACS) и фильтрует по префиксу `{hostname}-` этого сервера; `version_name` — хвост имени после префикса. Ничего не диспатчит воркеру, читает ACS синхронно. Ошибки ACS (timeout/unreachable/HTTP-ошибка) пробрасываются как есть.
 
-Response: `{snapshots: [{name, version_name}]}`, отсортировано по `name`.
+Response: `{hostname, snapshots: [{name, version_name, normalized_version}]}`, отсортировано по `name`. `normalized_version` — хвост после `normalize_os_version_name` (`1710rc52` → `1.7.10.52`), в этой форме каталог хранит `os_version.name`. Префикс — `{hostname}-` с дефисом: снимки `LowServer2-…` серверу `LowServer` не принадлежат. Реализация фильтра и выбора — `src/services/acs_snapshot_lookup.py`.
 
 Audit: `server.acs_snapshot_list` (INFO) — на success и failure.
 
@@ -984,7 +984,7 @@ Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_ID
 
 ### `POST /internal/servers/batch-status`
 
-Auth: shared-secret + `X-Service-Identity: testing_service|acs`. Тело: `server_ids` (1..500). Один элемент на каждый запрошенный id: `server_id`, `found` (отсутствующий сервер — `found=false`, не 404 на весь батч), `busy_state`, `busy_service_name`, `busy_user_id`, `busy_actor_type` (`user`/`service`), `busy_note`, `ping_reachable`, `ping_checked_at`. Поля держателя брони нужны `testing_service` для 409 `STAND_BUSY` («кто держит стенд»). Чистое чтение, audit не эмитится.
+Auth: shared-secret + `X-Service-Identity: testing_service|acs`. Тело: `server_ids` (0..500) и `vm_ids` (0..500) — смешанный список пула, хотя бы один id в сумме. ВМ отвечаются в `vms` (`vm_id`, `found`, те же поля брони в терминах `busy_state` серверов — см. `/internal/vms/{id}/acquire-for-service` — и ping гостя). Один элемент на каждый запрошенный id: `server_id`, `found` (отсутствующий сервер — `found=false`, не 404 на весь батч), `busy_state`, `busy_service_name`, `busy_user_id`, `busy_actor_type` (`user`/`service`), `busy_note`, `ping_reachable`, `ping_checked_at`. Поля держателя брони нужны `testing_service` для 409 `STAND_BUSY` («кто держит стенд»). Чистое чтение, audit не эмитится.
 
 Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403), 422 на пустой/слишком длинный список.
 
@@ -1000,6 +1000,12 @@ Auth: та же. Снимает бронь этого caller'а, но не в `f
 
 Errors: 401/403 как выше, `SERVER_NOT_FOUND` (404), `SERVER_NOT_BUSY` / `SERVER_RESERVED_BY_OTHER` (409).
 
+### `GET /internal/servers/{id}/acs-snapshots`
+
+Auth: та же. Тот же живой список снимков ACS этого сервера, что у `GET /servers/{id}/acs-snapshots` (тот же ответ `{hostname, snapshots: [{name, version_name, normalized_version}]}`), но без permission/department-гейтов. Потребитель — `testing_service.queue.enqueue()`: перед постановкой проверяет, что снимок РЦ есть (сравнение `os_version.name` с `normalized_version`). Ошибки ACS пробрасываются как есть.
+
+Errors: 401/403 как выше, `SERVER_NOT_FOUND` (404), `ACS_DISABLED` / `ACS_TIMEOUT` / `ACS_UNREACHABLE` / `ACS_ERROR` (503).
+
 ### `POST /internal/servers/{id}/service-status`
 
 Auth: та же. Тело: `busy_state` (обязательно), `busy_note` (опционально; `null` оставляет прежнюю заметку). Переключает стадию внутри уже взятой этим же caller'ом брони — целевой сценарий `acs` → `testing` после получения кред от `prepare-for-test`. `busy_since` не двигается: он отмеряет всю бронь. INFO audit `server.service_status_changed`.
@@ -1010,11 +1016,11 @@ Errors: 401/403 как выше, `SERVER_NOT_FOUND` (404), `SERVER_NOT_BUSY` / `
 
 ## Internal — `prepare-for-test` (асинхронный контракт, hidden)
 
-Пайплайн restore→prepare→провижн тестового пользователя→смена ядра→смена режима безопасности→ребут (часы, не секунды) — асинхронный контракт с 202+callback, не запрос-ответ. Реализация — `src/api/v1/endpoints/internal_prepare_for_test.py`, оркестрация — `src/services/prepare_for_test.py`. План — `emm/obsidian/ALLTA MIGRATION.md`, §5.1.
+Пайплайн restore→prepare→провижн тестового пользователя→смена ядра→смена режима безопасности→ребут (часы, не секунды) — асинхронный контракт с 202+callback, не запрос-ответ. Реализация — `src/api/v1/endpoints/internal_prepare_for_test.py`, оркестрация — `src/services/prepare_for_test.py`. План — `emm/obsidian/ALLTA MIGRATION.md`.
 
 ### `POST /internal/servers/{id}/prepare-for-test`
 
-Auth: shared-secret + `X-Service-Identity: testing_service|acs` (тот же канал, что у брони от имени сервиса). Тело: `os_version_id`, `kernel` (обязан быть в `os_versions.kernels`), `mode` (`orel`/`smolensk`), `test_username` (default `u`), `requested_by_department_id` (опционально), `correlation_id` (ключ идемпотентности). Отвечает сразу 202 `{prepare_request_id, status}` — реальный исход приходит callback'ом в `TESTING_SERVICE_URL`. Повтор с тем же `correlation_id` возвращает уже существующий запрос, второй пайплайн не стартует. Ядро вне каталога РЦ — терминальный `failed` сразу (`failed_step=kernel_change`), без единого похода к стенду. INFO audit `server.prepare_for_test_requested`.
+Auth: shared-secret + `X-Service-Identity: testing_service|acs` (тот же канал, что у брони от имени сервиса). Тело: `os_version_id`, `kernel` (обязан быть в `os_versions.kernels`), `mode` (`orel`/`smolensk`), `test_username` (default `u`), `requested_by_department_id` (опционально), `correlation_id` (ключ идемпотентности), `test_account_credential_id` (опционально, тестовая учётка отдела в secret_service — scope=service, service=test_account, владелец — отдел сервера; проверяется до restore, раскрывается на шаге `user_provision`; логин/пароль/публичный ключ ставятся из неё, `test_username` игнорируется, callback учётных данных не несёт; без поля — прежние случайные пароль и ключ). Отвечает сразу 202 `{prepare_request_id, status}` — реальный исход приходит callback'ом в `TESTING_SERVICE_URL`. Повтор с тем же `correlation_id` возвращает уже существующий запрос, второй пайплайн не стартует. Ядро вне каталога РЦ — терминальный `failed` сразу (`failed_step=kernel_change`), без единого похода к стенду. Перед `acs.snapshot_restore` снимок ищется в живом списке ACS по `{hostname}-{os_version.name}` с нормализацией версии: в restore уходит фактический хвост найденного снимка (`1710rc52`, а не `1.7.10.52`); из нескольких кандидатов — точное совпадение с `os_version.name`, иначе первый по имени. Снимка нет или ACS недоступна — терминальный `failed` (`failed_step=restore`, `error="ACS_SNAPSHOT_NOT_FOUND: ACS snapshot '<hostname>-<version>' not found"` либо код ошибки ACS) без вызова `restore-backup`. INFO audit `server.prepare_for_test_requested`.
 
 Errors: `SERVICE_IDENTITY_REQUIRED` / `INVALID_SERVICE_TOKEN` (401), `SERVICE_IDENTITY_NOT_ALLOWED` (403), `SERVER_NOT_FOUND` (404), `SERVER_ALREADY_BUSY` / `SERVER_DECOMMISSIONED` / `SERVER_IS_VMS_HUB` / `PREPARE_FOR_TEST_ALREADY_RUNNING` (409), `WORKER_*` (503).
 
@@ -1029,6 +1035,82 @@ Errors: 401/403 как выше, `PREPARE_REQUEST_NOT_FOUND` / `SERVER_NOT_FOUND
 Auth: обычный internal-канал воркера (bearer worker_bot + матрица `entity_permissions`, право `(server, prepare_callback)` — существующий грант, без нового). Тело: `prepare_request_id`, `succeeded`, `failed_step` (на провале), `error` (на провале — причина; на успехе — необязательное non-fatal предупреждение, например расхождение режима безопасности перед сменой). На успехе отправляет исходящий callback с учёткой исполнения теста в `TESTING_SERVICE_URL`; на провале — с `failed_step`+`error`. WARNING audit `server.prepare_for_test_completed`.
 
 Errors: `PERMISSION_DENIED` / `TARGET_DEPARTMENT_HEADER_REQUIRED` (403), `SERVER_NOT_FOUND` / `PREPARE_REQUEST_NOT_FOUND` (404).
+
+Поле `preparation` (`full` по умолчанию / `revert_only`): `revert_only` — restore/откат, учётка и ядро без `mode_switch` и без шага `stand_setup` (`stand_setup` из тела отбрасывается; воркеру уходит `skip_mode_switch=true`). Легаси — клиент FreeIPA (`allta_app_full/backup_image.py::freeipa_authentication_test`, `run_provision.modes = False`).
+
+Поле `skip_pam_fix` (`false` по умолчанию): `true` — шаг `pam_fix` (`pam_lastlog.so inactive=` в `/etc/pam.d/common-auth`) не выполняется, даже если его включает `provisioning.disable_pam_lastlog_inactive`; воркеру уходит `skip_pam_fix=true`. От `preparation` не зависит (легаси `modes = False` снимал и PAM-правку, здесь это отдельный флаг стенда сценария). Хранится в `server_prepare_for_test_requests.skip_pam_fix`, возвращается в GET статуса.
+
+CONTRACTS C2: тело `prepare-for-test` может нести `stand_setup` (`kernel_cmdline_extra`, `script`, `script_is_sensitive`, `run_as`, `phase`, `reboot_after`, `timeout_seconds`) и `provisioning` (`allowed_failed_units`, `degraded_reboot_attempts`, `disable_pam_lastlog_inactive`, `boot_wait_timeout_seconds`). Скрипт хранится зашифрованным (`stand_setup_script_encrypted`) и уходит воркеру через Redis-stash. Новые шаги `failed_step`: `pam_fix`, `stand_setup`; порядок — C2.
+
+### `POST /internal/servers/{id}/stand-setup`
+
+Auth: как у `prepare-for-test`. Тело: `correlation_id` (идемпотентность), `requested_by_department_id`, `test_username`, `stand_setup`, `provisioning`. Настройка уже подготовленного стенда без restore: `pam_fix` (по профилю), параметры ядра + `update-grub`, скрипт, перезагрузка и ожидание (задача воркера `server.stand_setup`). Бронь не берётся — её держит вызывающий. 202 `{stand_setup_request_id, status}`; исход — callback `{TESTING_SERVICE_URL}/internal/stand-setup/{id}/completed` (`correlation_id`, `succeeded`, `failed_step`, `error`). WARNING audit `server.stand_setup_requested`.
+
+### `POST /internal/servers/{id}/stand-setup-done`
+
+Auth: канал воркера, право `(server, prepare_callback)`. Тело: `stand_setup_request_id`, `succeeded`, `failed_step` (`pam_fix`/`stand_setup`/`reboot_verify`), `error`. WARNING audit `server.stand_setup_completed`.
+
+Errors: `SERVER_NOT_FOUND`, `STAND_SETUP_REQUEST_NOT_FOUND` (404).
+
+## Internal — ВМ-стенды для testing_service (CONTRACTS C4, hidden)
+
+Зеркало серверного канала для ВМ: `src/api/v1/endpoints/internal_vm_service.py`, бронь — `src/services/vm_reservation.py`, подготовка — `src/services/vm_prepare_for_test.py`, выбор снимка — `src/services/vm_test_snapshots.py`. Auth всех `/internal/vms/{id}/…` ниже (кроме `-done`) — shared-secret + `X-Service-Identity: testing_service|acs`. Тела запросов — серверные; ответы — те же поля с `vm_id` вместо `server_id`.
+
+Бронь ВМ хранится в `vms.service_busy_state` (`acs`/`testing`/`busy`/`testing_done`), `busy_service_name`, `busy_note`, `service_busy_since`; `vms.busy_state` — lifecycle-lock, в брони не участвует. Пока сервис держит ВМ, `vms.status = run test`. Во всех ответах бронь сведена к `busy_state` серверов: сервисная стадия → она сама; идёт операция над ВМ → `updating`; бронь человека (`status=<login>`) → `busy` (логин в `busy_note`); иначе `free`. Пока держится `acs`/`testing`/`busy`, человеческие операции над ВМ (reserve/release/status/power/delete/снимки/…) отбиваются 409 `VM_RESERVED_BY_SERVICE` — даже админу; консоль — нет.
+
+### `POST /internal/vms/{id}/acquire-for-service`
+
+Тело: как у сервера (`busy_state`, `busy_note`, `requested_by_department_id`, `takeover`). CAS: `status='free'`, нет lifecycle-операции, нет сервисной брони. `takeover=true` отнимает бронь человека и `testing_done` (`previous_holder`). INFO audit `vm.acquired_for_service`; takeover — WARNING `vm.reservation_taken_over`.
+
+Errors: 401/403, `VM_NOT_FOUND` (404; и при чужом `requested_by_department_id`), `VM_ALREADY_BUSY` (409, `details.current_state`).
+
+### `POST /internal/vms/{id}/release-for-service`, `…/release-for-service-as-done`, `…/service-status`
+
+Как у сервера: снять свою бронь (→ `free`, `status=free`), перевести в `testing_done` (снимает человек `POST /vms/{id}/release` — любой с правом release), сменить стадию (`acs` → `testing`, `service_busy_since` не двигается). INFO audit `vm.released_for_service` / `vm.service_status_changed`.
+
+Errors: `VM_NOT_FOUND` (404), `VM_NOT_BUSY` / `VM_RESERVED_BY_OTHER` (409).
+
+### `GET /internal/vms/{id}/connection-info`
+
+`{vm_id, host}` — IP гостя для SSH testing_worker'а. Errors: `VM_NOT_FOUND` (404), `VM_NO_IP_ADDRESS` (409).
+
+### `GET /internal/vms/{id}/snapshots`
+
+Замена `acs-snapshots`: снимки ВМ, пригодные для отката (не `_build`, `state=ready`), по имени, с разбором по шаблонам `/settings/vm-test`: `snapshot_id`, `name`, `kind`, `os_version`, `snapshot_mode`, `is_current`, `version_name` (версия из имени; `null` — имя не подошло ни к одному шаблону), `normalized_version` (`normalize_os_version_name`, по ней сравнивают), `mode` (из `{mode}` шаблона), `template`; плюс `templates` — действующий список. Чтение, audit не эмитится.
+
+### `POST /internal/vms/{id}/prepare-for-test`
+
+Тело: как у сервера, плюс `target` = `{type: "vm"}` (необязательно; `type=server` или чужой `vm_id` — 422 `PREPARE_TARGET_MISMATCH`; `target.type=vm` в серверном пути — тоже 422). `test_account_credential_id` для ВМ обязателен (иначе терминальный `failed_step=user_provision`, `TEST_ACCOUNT_NOT_CONFIGURED`). До похода на hub: версия и ядро по каталогу, ссылка на учётку, IP гостя, снимок по шаблонам (нормализованная версия, `{mode}` = режим запроса; несколько кандидатов — порядок шаблонов, точное совпадение, имя) — нет снимка → терминальный `failed`, `failed_step=vm_revert`, `VM_SNAPSHOT_NOT_FOUND: … (searched: …)`. Затем бронь (своя бронь вызывающего — только стадия `acs`; свободная ВМ — берём сами и снимаем на провале; иначе 409 `VM_ALREADY_BUSY`), Redis-stash (тестовая учётка + учётка входа в гостя + скрипт `stand_setup`) и задача воркера `vm.prepare_for_test`. 202 `{prepare_request_id, status}`; исход — тот же callback в `TESTING_SERVICE_URL` (без учётных данных). WARNING audit `server.prepare_for_test_requested` (`target_type=vm`).
+
+Errors: `VM_NOT_FOUND` (404), `VM_ALREADY_BUSY` / `HUB_UNAVAILABLE` / `PREPARE_FOR_TEST_ALREADY_RUNNING` (409), `PREPARE_TARGET_MISMATCH` (422), `WORKER_*` (503).
+
+### `GET /internal/vms/{id}/prepare-for-test/{prepare_request_id}`
+
+Как у сервера; в ответе `vm_id`, `vm_snapshot_name`, `server_id=null`. Errors: `PREPARE_REQUEST_NOT_FOUND` (404).
+
+### `POST /internal/vms/{id}/prepare-for-test-done`
+
+Auth: канал воркера, право `(server, prepare_callback)` + `X-Target-Department-Id`. Тело: как у серверного `-done`; `failed_step` ∈ {`vm_revert`, `prepare`, `user_provision`, `pam_fix`, `stand_setup`, `kernel_change`, `mode_switch`, `reboot_verify`}. На провале снимает бронь, взятую самим запросом. WARNING audit `server.prepare_for_test_completed` (`target_type=vm`).
+
+Errors: 403 (`TARGET_DEPARTMENT_HEADER_REQUIRED`), `VM_NOT_FOUND` / `PREPARE_REQUEST_NOT_FOUND` (404).
+
+### `POST /internal/vms/{id}/stand-setup`
+
+Тело: как у серверного `stand-setup`. Настройка подготовленной ВМ между ступенями многоступенчатого теста без отката снимка: `pam_fix` (по профилю), параметры ядра + `update-grub`, скрипт, перезагрузка и ожидание (задача воркера `vm.stand_setup`, тот же `run_setup_pipeline`). ВМ обязана быть под сервисной бронью вызывающего. Вход в гостя — учётка снимка последней успешной подготовки (иначе текущего снимка) → управляющие креды ВМ → базовая учётка образа; уезжает Redis-stash'ем вместе со скриптом. Строка — в `server_stand_setup_requests` (`vm_id`). 202 `{stand_setup_request_id, status}`; исход — тот же callback `{TESTING_SERVICE_URL}/internal/stand-setup/{id}/completed`. WARNING audit `server.stand_setup_requested` (`target_type=vm`).
+
+Errors: `VM_NOT_FOUND` (404), `VM_NOT_BUSY` / `VM_RESERVED_BY_OTHER` / `HUB_UNAVAILABLE` / `VM_NO_IP_ADDRESS` (409).
+
+### `POST /internal/vms/{id}/stand-setup-done`
+
+Auth: канал воркера, право `(server, prepare_callback)` + `X-Target-Department-Id`. Тело: как у серверного `stand-setup-done`. WARNING audit `server.stand_setup_completed` (`target_type=vm`).
+
+Errors: 403 (`TARGET_DEPARTMENT_HEADER_REQUIRED`), `VM_NOT_FOUND` / `STAND_SETUP_REQUEST_NOT_FOUND` (404).
+
+### `GET /settings/vm-test`, `PUT /settings/vm-test`
+
+Auth: Bearer + платформенный `account_admin` (как `/settings/probes`). `{snapshot_name_templates: [...]}` — шаблоны имени снимка ВМ, по порядку; плейсхолдеры `{version}` (ровно один раз), `{mode}`, `{hostname}` (hostname гостя, иначе имя ВМ), `{vm_name}`; до 10 шаблонов. Дефолт (миграция `a7d3e5c91b42`) — `["{version}", "{version}_{mode}"]`: легаси называл снимок ВМ версией (`allta_conf.json`, `cz_comm`), VM-домен — `<ver>_orel`/`<ver>_smolensk`. PUT заменяет список целиком. WARNING audit `settings.vm_test_updated`.
+
+Errors: 401, `ACCOUNT_ADMIN_REQUIRED` (403), `VM_SNAPSHOT_TEMPLATE_INVALID` (422).
 
 ---
 

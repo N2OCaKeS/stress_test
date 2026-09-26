@@ -86,7 +86,7 @@ class TestAccountAdminNoLongerBypassesMatrix:
     async def test_account_admin_without_roles_denied(self, repo_stub):
         """`account_admin` без service_roles → не имеет доступа через матрицу.
 
-        Соответствует §7 модели: ``account_admin`` создаётся без
+        Соответствует модели безопасности: ``account_admin`` создаётся без
         департамента и без сервисных ролей — следовательно ``has_action``
         возвращает False.
         """

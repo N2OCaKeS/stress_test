@@ -738,6 +738,33 @@ class TestFullScopeCampaign:
         assert {e["test_code"] for e in entries} == {code}
 
 
+    async def test_full_reports_missing_zephyr_folder_in_sync_errors(
+        self, client, admin_token, mock_server_service, mock_zephyr, mock_secret_client, dept_a, monkeypatch,
+    ):
+        """папку не нашли и не создали — у тестов кампании не будет `-fti`;
+        причина видна в `stp_sync_errors`, а не только при claim."""
+        from src.services import zephyr_client as zc
+
+        async def no_folder(**_kwargs):
+            return None
+
+        monkeypatch.setattr(zc, "create_test_run_folder", no_folder)
+        mock_server_service()
+        rc = _unique_rc()
+        stand_id, _ = await _create_stand(client, admin_token, department_id=dept_a)
+        _test_id, code = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
+        await _seed_stp_test_case(code, zephyr_id="BT-T1")
+        mock_secret_client["cred_x"] = ("jira_bot", "tok123")
+        await _seed_integration_settings(dept_a)
+
+        resp = await client.post(
+            BASE, headers=_hdr(admin_token), json={"os_version_id": rc, "kernel": "6.1.0", "full": True},
+        )
+        assert resp.status_code == 201, resp.text
+        errors = resp.json()["stp_sync_errors"]
+        assert [e["error_code"] for e in errors] == ["ZEPHYR_FOLDER_NOT_FOUND"]
+        assert errors[0]["stand_id"] is None
+
 class TestRequestIdIdempotency:
     async def test_same_request_id_and_body_replays_without_duplicating(
         self, client, admin_token, mock_server_service,

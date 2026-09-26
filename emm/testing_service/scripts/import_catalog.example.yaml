@@ -49,6 +49,8 @@ tests:
   # Тест, использующий глобальные переменные + per-test override.
   - code: example.with_variables
     full_name: "Пример: конструктор со слотами-переменными"
+    short_name: "example vars"       # TEST_SHORT_NAME; null — берётся full_name
+    dates_quoting: shell             # shell (по умолчанию) | legacy | raw — экранирование dates.conf
     category: demo
     owner: "example-team"
     readiness: draft

@@ -53,6 +53,8 @@ function emptySettings() {
     confluence_report_parent_page_title: null,
     stp_matrix_confluence_space: null,
     stp_matrix_confluence_root_page_title: null,
+    zephyr_folder_path_template: null,
+    zephyr_run_name_template: null,
     created_at: null,
     updated_at: null,
   };
@@ -120,6 +122,27 @@ describe("ServicesTestingIntegrationSettings — интеграции отдел
       expect.objectContaining({
         stp_matrix_confluence_space: "DEPTQA",
         stp_matrix_confluence_root_page_title: "Состав тестового прогона",
+      }),
+    );
+  });
+
+  it("сохраняет шаблоны папки и имени прогона Zephyr", async () => {
+    upsertDepartmentIntegrationSettingsMock.mockResolvedValue(emptySettings());
+    renderPage();
+    const pathInput = (await screen.findByPlaceholderText("/stress_test/{RC_RELEASE}/{RC_NAME}")) as HTMLInputElement;
+    await waitFor(() => expect(pathInput).toHaveValue(""));
+
+    fireEvent.change(pathInput, { target: { value: "/stress/{RC_NAME}" } });
+    const nameInput = screen.getByPlaceholderText("{RC_NAME}_{MODE}_{KERNEL}_{STAND_TOKEN}") as HTMLInputElement;
+    fireEvent.change(nameInput, { target: { value: "{RC_NAME}_{STAND_TOKEN}" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledTimes(1));
+    expect(upsertDepartmentIntegrationSettingsMock).toHaveBeenCalledWith(
+      "dep_1",
+      expect.objectContaining({
+        zephyr_folder_path_template: "/stress/{RC_NAME}",
+        zephyr_run_name_template: "{RC_NAME}_{STAND_TOKEN}",
       }),
     );
   });

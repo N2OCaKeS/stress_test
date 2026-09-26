@@ -18,6 +18,7 @@ import {
   Cog,
   Copy,
   Database,
+  Eye,
   FileText,
   FlaskConical,
   FolderTree,
@@ -38,8 +39,12 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Dropdown } from "@/components/ui/Dropdown";
 import { Badge } from "@/components/ui/Badge";
-import { Checkbox } from "@/components/ui/Checkbox";
 import { useQuery } from "@/api/auth/useQuery";
+import { listLaunchProfiles } from "@/api/testing/launchProfiles";
+import { StandSetupFields } from "./StandSetupFields";
+import { TestStepsPanel } from "./TestStepsPanel";
+import { draftToStandSetup, standSetupDraft } from "./standSetupDraft";
+import { useAuthOptional } from "@/contexts/AuthContext";
 import { apiErrMsg } from "@/api/client";
 import { useToast } from "@/contexts/ToastContext";
 import { useConfirm } from "@/components/ui/ConfirmDialog";
@@ -56,27 +61,23 @@ import {
   listTestCommandArgs,
   updateTestCommandArg,
 } from "@/api/testing/testCommandArgs";
-import {
-  createGlobalVariable,
-  deleteGlobalVariable,
-  getGlobalVariableChoices,
-  listGlobalVariables,
-  updateGlobalVariable,
-} from "@/api/testing/global_variables";
+import { getGlobalVariableChoices, listGlobalVariables } from "@/api/testing/global_variables";
 import { listNamedTestStands, standName } from "@/api/testing/standCatalogue";
 import { createStpTestCase, listStpTestCases, updateStpTestCase } from "@/api/testing/stp";
 import type {
   CommandArgKind,
+  DatesQuoting,
   GlobalVariable,
-  GlobalVariableCreateRequest,
-  GlobalVariableSource,
-  GlobalVariableValueType,
   StpTestCase,
   TestCommandArg,
   TestDefinition,
   TestDefinitionCreateRequest,
   TestStand,
+  VerdictSource,
 } from "@/api/testing/types";
+import { GlobalVariablesModal } from "./GlobalVariablesEditor";
+import { LaunchPreviewModal } from "./LaunchPreviewModal";
+import { TemplateInput } from "./TemplateInput";
 
 // ── legacy demo-каталог, оставлен только для runs.tsx/debug.tsx (см. шапку) ─
 
@@ -154,17 +155,15 @@ const TEST_MODE_OPTIONS = [
   { value: "smolensk", label: "Смоленск" },
 ];
 
-const SOURCE_OPTIONS: { value: GlobalVariableSource; label: string }[] = [
-  { value: "launch_context", label: "launch_context — из контекста запуска" },
-  { value: "static", label: "static — статическое значение" },
-  { value: "per_test_override", label: "per_test_override — переопределяется тестом" },
-  { value: "secret_service", label: "secret_service — из secret_service" },
+const DATES_QUOTING_OPTIONS: { value: DatesQuoting; label: string }[] = [
+  { value: "shell", label: "shell — каждый токен по правилам shell (по умолчанию)" },
+  { value: "legacy", label: "legacy — кавычки только у значений с пробелом, как в allta_app" },
+  { value: "raw", label: "raw — без экранирования" },
 ];
 
-const VALUE_TYPE_OPTIONS: { value: GlobalVariableValueType; label: string }[] = [
-  { value: "string", label: "string" },
-  { value: "integer", label: "integer" },
-  { value: "boolean", label: "boolean" },
+const VERDICT_SOURCE_OPTIONS: { value: VerdictSource; label: string }[] = [
+  { value: "zephyr", label: "Статус тест-кейса в Zephyr (по умолчанию)" },
+  { value: "exit_code", label: "Код выхода starter.sh" },
 ];
 
 export function TestsWorkzone() {
@@ -177,6 +176,7 @@ export function TestsWorkzone() {
   const [cloneSource, setCloneSource] = useState<TestDefinition | null>(null);
   const [commandTest, setCommandTest] = useState<TestDefinition | null>(null);
   const [variablesModalOpen, setVariablesModalOpen] = useState(false);
+  const [previewTest, setPreviewTest] = useState<TestDefinition | null>(null);
 
   const testsQ = useQuery(async () => (await listTestDefinitions({ limit: 500 })).items, []);
   const tests = testsQ.data ?? [];
@@ -452,6 +452,14 @@ export function TestsWorkzone() {
                         <div className="flex items-center gap-1 justify-end">
                           <Button
                             size="sm"
+                            aria-label="Превью запуска"
+                            title="Что уйдёт воркеру: переменные, dates.conf, файлы и команды"
+                            onClick={() => setPreviewTest(test)}
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
                             aria-label="Клонировать тест"
                             title="Создать новый тест на основе этого — с той же командой"
                             onClick={() => {
@@ -510,6 +518,10 @@ export function TestsWorkzone() {
         />
       )}
 
+      {previewTest && (
+        <LaunchPreviewModal test={previewTest} stands={standsQ.data ?? []} onClose={() => setPreviewTest(null)} />
+      )}
+
       {variablesModalOpen && (
         <GlobalVariablesModal
           variables={variables}
@@ -556,6 +568,31 @@ function TestFormModal({
   const [timeoutSeconds, setTimeoutSeconds] = useState(
     (initial?.timeout_seconds ?? template?.timeout_seconds)?.toString() ?? "",
   );
+  const [priority, setPriority] = useState(String(initial?.priority ?? template?.priority ?? 0));
+  const [shortName, setShortName] = useState(initial?.short_name ?? template?.short_name ?? "");
+  const [datesQuoting, setDatesQuoting] = useState<DatesQuoting>(
+    initial?.dates_quoting ?? template?.dates_quoting ?? "shell",
+  );
+  const [verdictSource, setVerdictSource] = useState<VerdictSource>(
+    initial?.verdict_source ?? template?.verdict_source ?? "zephyr",
+  );
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [launchProfileId, setLaunchProfileId] = useState(
+    initial?.launch_profile_id ?? template?.launch_profile_id ?? "",
+  );
+  const [standSetup, setStandSetup] = useState(() => standSetupDraft(initial?.stand_setup ?? template?.stand_setup));
+  const [provisioningProfileId, setProvisioningProfileId] = useState(
+    initial?.provisioning_profile_id ?? template?.provisioning_profile_id ?? "",
+  );
+  const standSetupValue = draftToStandSetup(standSetup);
+  // Профили запуска: отдела теста и общие. Не загрузились — выбор
+  // остаётся «профиль отдела по умолчанию», форма работает.
+  const authDept = useAuthOptional()?.user?.department_id ?? null;
+  const profileDept = initial?.department_id ?? template?.department_id ?? authDept;
+  const profilesQ = useQuery(
+    async () => (profileDept ? (await listLaunchProfiles(profileDept)).items : []),
+    [profileDept],
+  );
   // Только для реального редактирования — при клонировании ("из шаблона")
   // номер BT НЕ переносится: у копии будет собственный code, соответственно
   // должен быть свой Zephyr testcase, а не тот же самый, что у исходного теста.
@@ -564,7 +601,9 @@ function TestFormModal({
   );
   const [submitting, setSubmitting] = useState(false);
 
-  const valid = code.trim() !== "" && fullName.trim() !== "";
+  const priorityValue = priority.trim() === "" ? 0 : Number(priority);
+  const priorityValid = Number.isInteger(priorityValue) && priorityValue >= -1000 && priorityValue <= 1000;
+  const valid = code.trim() !== "" && fullName.trim() !== "" && priorityValid && typeof standSetupValue !== "string";
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -579,6 +618,13 @@ function TestFormModal({
         mode: testMode,
         pinned_stand_id: pinnedStandId || null,
         timeout_seconds: timeoutSeconds.trim() ? Number(timeoutSeconds) : null,
+        priority: priorityValue,
+        launch_profile_id: launchProfileId || null,
+        provisioning_profile_id: provisioningProfileId || null,
+        stand_setup: typeof standSetupValue === "string" ? null : standSetupValue,
+        short_name: shortName.trim() || null,
+        dates_quoting: datesQuoting,
+        verdict_source: verdictSource,
       }, btNumber);
     } finally {
       setSubmitting(false);
@@ -614,6 +660,19 @@ function TestFormModal({
             placeholder="filesystem / ext4 fill+remove cycle"
             required
           />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Короткое имя</span>
+          <input
+            className="surface-2 border border-token rounded px-2 py-1 text-sm"
+            value={shortName}
+            onChange={(e) => setShortName(e.target.value)}
+            maxLength={64}
+            placeholder="XFS"
+          />
+          <span className="text-dim text-xs">
+            Подставляет переменная <span className="mono">TEST_SHORT_NAME</span> (заголовок страницы Confluence). Пусто — полное имя.
+          </span>
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">Ветка git</span>
@@ -662,6 +721,73 @@ function TestFormModal({
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Приоритет в прогоне РЦ</span>
+          <input
+            type="number"
+            step={1}
+            min={-1000}
+            max={1000}
+            className="surface-2 border border-token rounded px-2 py-1 mono text-sm"
+            value={priority}
+            onChange={(e) => setPriority(e.target.value)}
+            placeholder="0"
+          />
+          <span className="text-dim text-xs">Учитывается, только если в «Порядке прогона РЦ» отдела есть ключ «Приоритет теста».</span>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Экранирование dates.conf</span>
+          <Dropdown
+            mode="single"
+            options={DATES_QUOTING_OPTIONS}
+            value={datesQuoting}
+            onChange={(v) => v && setDatesQuoting(v as DatesQuoting)}
+          />
+          <span className="text-dim text-xs">
+            dates.conf подставляется в команду теста через shell. «shell» — значение с пробелом или кавычкой
+            остаётся одним аргументом (<span className="mono">--confluence-new-page {"'XFS parsec_1.8.1.6_…'"}</span>);
+            «legacy» — как собирал allta_app: кавычки только у значений с пробелом, кавычка внутри значения
+            ломает команду; «raw» — значения через пробел как есть.
+          </span>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Исход теста</span>
+          <Dropdown
+            mode="single"
+            options={VERDICT_SOURCE_OPTIONS}
+            value={verdictSource}
+            onChange={(v) => v && setVerdictSource(v as VerdictSource)}
+          />
+          <span className="text-dim text-xs">
+            Скрипты allta_app выходят с кодом 0 всегда — исход берётся из статуса, который скрипт выставил в Zephyr.
+            Код выхода — для веток, которые его прокидывают.
+          </span>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-dim text-xs">Профиль запуска</span>
+          <Dropdown
+            mode="single"
+            placeholder="— профиль отдела по умолчанию —"
+            options={[
+              { value: "", label: "— профиль отдела по умолчанию —" },
+              ...(profilesQ.data ?? []).map((p) => ({
+                value: p.id,
+                label: `${p.name}${p.department_id ? "" : " (общий)"}${p.is_default ? " · по умолчанию" : ""}`,
+              })),
+            ]}
+            value={launchProfileId}
+            onChange={setLaunchProfileId}
+          />
+          <span className="text-dim text-xs">starter.sh, пути на стенде и команды запуска/остановки — в «Администрирование → Профиль запуска».</span>
+        </label>
+        <StandSetupFields
+          draft={standSetup}
+          onChange={setStandSetup}
+          departmentId={profileDept}
+          provisioningProfileId={provisioningProfileId}
+          onProvisioningProfileChange={setProvisioningProfileId}
+        />
+        {typeof standSetupValue === "string" && <span className="text-danger text-xs">{standSetupValue}</span>}
+        <label className="flex flex-col gap-1 text-sm">
           <span className="text-dim text-xs">Привязанный стенд</span>
           <Dropdown
             mode="single"
@@ -676,12 +802,25 @@ function TestFormModal({
           />
         </label>
         <div className="modal-footer -mx-5 -mb-5 mt-2">
+          {initial && (
+            <Button
+              type="button"
+              className="inline-flex items-center gap-1.5 mr-auto"
+              title="Сохранённые настройки теста: что уйдёт воркеру для выбранных стенда, РЦ и ядра"
+              onClick={() => setPreviewOpen(true)}
+            >
+              <Eye className="w-3.5 h-3.5" /> Превью запуска
+            </Button>
+          )}
           <Button type="button" onClick={onClose}>Отмена</Button>
           <Button variant="primary" type="submit" disabled={!valid || submitting}>
             {submitting ? "Сохранение…" : mode === "create" ? "Создать" : "Сохранить"}
           </Button>
         </div>
       </form>
+      {previewOpen && initial && (
+        <LaunchPreviewModal test={initial} stands={stands} onClose={() => setPreviewOpen(false)} />
+      )}
     </Modal>
   );
 }
@@ -704,7 +843,12 @@ function CommandConstructorModal({
   const toast = useToast();
   const { confirm } = useConfirm();
 
-  const slotsQ = useQuery(() => listTestCommandArgs(test.id), [test.id]);
+  // Шаг теста, чьи слоты правятся; `null` — первый шаг.
+  const [stepId, setStepId] = useState<string | null>(null);
+  const slotsQ = useQuery(
+    () => (stepId ? listTestCommandArgs(test.id, stepId) : listTestCommandArgs(test.id)),
+    [test.id, stepId],
+  );
   const variableById = useMemo(() => new Map(variables.map((v) => [v.id, v])), [variables]);
 
   const [addOpen, setAddOpen] = useState(false);
@@ -726,7 +870,9 @@ function CommandConstructorModal({
     setBusy(true);
     setCopyError(null);
     try {
-      const copied = await copyTestCommandArgs(test.id, copySourceId);
+      const copied = stepId
+        ? await copyTestCommandArgs(test.id, copySourceId, { stepId })
+        : await copyTestCommandArgs(test.id, copySourceId);
       setCopyOpen(false);
       setCopySourceId("");
       setEditId(null);
@@ -746,7 +892,7 @@ function CommandConstructorModal({
   async function handleCreate(body: SlotBody) {
     setBusy(true);
     try {
-      await createTestCommandArg(test.id, body);
+      await createTestCommandArg(test.id, stepId ? { ...body, step_id: stepId } : body);
       toast.success("Слот добавлен");
       setAddOpen(false);
       slotsQ.refetch();
@@ -827,6 +973,13 @@ function CommandConstructorModal({
           Упорядоченный список аргументов команды теста — литерал или ссылка на
           глобальную переменную. Порядок задаётся кнопками ↑/↓.
         </div>
+
+        <TestStepsPanel
+          test={test}
+          stepId={stepId}
+          onStepChange={(next) => { setStepId(next); setEditId(null); setAddOpen(false); setCopyOpen(false); }}
+          disabled={busy || addOpen || !!editId || copyOpen}
+        />
 
         {copyOpen ? (
           <div className="surface-2 border border-token rounded p-3 flex flex-col gap-3">
@@ -1044,6 +1197,7 @@ function SlotEditorForm({
   const [overrideValue, setOverrideValue] = useState(initialOverride);
 
   const selectedVariable = variables.find((v) => v.id === variableId);
+  const variableCodes = useMemo(() => variables.map((v) => v.code), [variables]);
 
   // Резолв choices — только удобство при заполнении override_value (если у
   // переменной есть choices_source без обязательных параметров). Резолверам,
@@ -1116,284 +1270,20 @@ function SlotEditorForm({
               onChange={setOverrideValue}
             />
           ) : (
-            <input
-              className="surface-2 border border-token rounded px-2 py-1 mono text-sm"
-              placeholder="override_value (необязательно)"
+            <TemplateInput
+              ariaLabel="override_value"
+              placeholder="override_value (необязательно), например {RC_NAME}_{MODE}"
               value={overrideValue}
-              onChange={(e) => setOverrideValue(e.target.value)}
+              onChange={setOverrideValue}
+              codes={variableCodes}
             />
           )}
+          <div className="text-[11px] text-dim">
+            В override работают подстановки <span className="mono">{"{CODE}"}</span> других переменных
+            (после «{"{"}» — подсказка кодов). Пусто — значение самой переменной.
+          </div>
         </>
       )}
-      <div className="flex items-center gap-2 justify-end">
-        <Button type="button" size="sm" onClick={onCancel}>Отмена</Button>
-        <Button type="button" size="sm" variant="primary" disabled={!valid || saving} onClick={submit}>
-          {saving ? "Сохранение…" : "Сохранить"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ── управление глобальными переменными (global_variables) ────────────────
-
-function GlobalVariablesModal({
-  variables,
-  loading,
-  error,
-  onRefetch,
-  onClose,
-}: {
-  variables: GlobalVariable[];
-  loading: boolean;
-  error: unknown;
-  onRefetch: () => void;
-  onClose: () => void;
-}) {
-  const toast = useToast();
-  const { confirm } = useConfirm();
-
-  const [addOpen, setAddOpen] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function handleCreate(body: GlobalVariableCreateRequest) {
-    setBusy(true);
-    try {
-      await createGlobalVariable(body);
-      toast.success(`Переменная «${body.code}» создана`);
-      setAddOpen(false);
-      onRefetch();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось создать переменную"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleUpdate(variable: GlobalVariable, body: GlobalVariableCreateRequest) {
-    setBusy(true);
-    try {
-      await updateGlobalVariable(variable.id, body);
-      toast.success(`Переменная «${variable.code}» обновлена`);
-      setEditId(null);
-      onRefetch();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось сохранить переменную"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleDelete(variable: GlobalVariable) {
-    const ok = await confirm({
-      title: "Удалить глобальную переменную",
-      message: `Удалить «${variable.code} · ${variable.label}»? Если переменную использует хотя бы один слот команды теста, удаление будет отклонено.`,
-      confirmLabel: "Удалить",
-      danger: true,
-    });
-    if (!ok) return;
-    setBusy(true);
-    try {
-      await deleteGlobalVariable(variable.id);
-      toast.success(`Переменная «${variable.code}» удалена`);
-      onRefetch();
-    } catch (e) {
-      toast.error(apiErrMsg(e, "Не удалось удалить переменную"));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Modal
-      open
-      onOpenChange={(next) => !next && onClose()}
-      title="Глобальные переменные"
-      subtitle="Каталог переменных конструктора команд"
-      icon={<Variable className="w-5 h-5 text-accent" />}
-      width="lg"
-    >
-      <div className="flex flex-col gap-3">
-        <div className="text-xs text-dim">
-          Переменные, доступные слотам команды любого теста каталога — источник значения,
-          тип и (опционально) резолвер вариантов выбора (<span className="mono">choices_source</span>).
-        </div>
-
-        {loading ? (
-          <div className="text-xs text-dim flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Загрузка…
-          </div>
-        ) : error ? (
-          <div className="alert alert-danger flex items-start gap-2 text-xs">
-            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-            <div className="flex-1">{apiErrMsg(error, "Список переменных не загрузился")}</div>
-            <Button size="sm" onClick={() => onRefetch()}>Повторить</Button>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {variables.length === 0 && !addOpen && (
-              <div className="text-xs text-dim">Переменных пока нет — добавьте первую.</div>
-            )}
-            {variables.map((variable) =>
-              editId === variable.id ? (
-                <GlobalVariableEditorForm
-                  key={variable.id}
-                  initial={variable}
-                  saving={busy}
-                  onCancel={() => setEditId(null)}
-                  onSave={(body) => handleUpdate(variable, body)}
-                />
-              ) : (
-                <GlobalVariableRow
-                  key={variable.id}
-                  variable={variable}
-                  disabled={busy}
-                  onEdit={() => setEditId(variable.id)}
-                  onDelete={() => handleDelete(variable)}
-                />
-              ),
-            )}
-          </div>
-        )}
-
-        {addOpen ? (
-          <GlobalVariableEditorForm saving={busy} onCancel={() => setAddOpen(false)} onSave={handleCreate} />
-        ) : (
-          <Button
-            type="button"
-            size="sm"
-            className="inline-flex items-center gap-1.5 self-start"
-            onClick={() => setAddOpen(true)}
-            disabled={loading}
-          >
-            <Plus className="w-3.5 h-3.5" /> Добавить переменную
-          </Button>
-        )}
-      </div>
-    </Modal>
-  );
-}
-
-function GlobalVariableRow({
-  variable,
-  disabled,
-  onEdit,
-  onDelete,
-}: {
-  variable: GlobalVariable;
-  disabled: boolean;
-  onEdit: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="surface-2 border border-token rounded p-2 flex items-center gap-2">
-      <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap text-sm">
-        <span className="mono font-medium">{variable.code}</span>
-        <span className="text-dim text-xs">{variable.label}</span>
-        <Badge kind="accent">{variable.source}</Badge>
-        <Badge kind="ok">{variable.value_type}</Badge>
-        {variable.choices_source && (
-          <span className="mono text-[11px] text-dim">choices: {variable.choices_source}</span>
-        )}
-        {variable.is_sensitive && <Badge kind="warn">чувствительно</Badge>}
-      </div>
-      <div className="flex items-center gap-1 shrink-0">
-        <Button size="sm" onClick={onEdit} disabled={disabled} aria-label="Изменить переменную">
-          <Pencil className="w-3.5 h-3.5" />
-        </Button>
-        <Button size="sm" variant="danger" onClick={onDelete} disabled={disabled} aria-label="Удалить переменную">
-          <Trash2 className="w-3.5 h-3.5" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function GlobalVariableEditorForm({
-  initial,
-  saving,
-  onCancel,
-  onSave,
-}: {
-  initial?: GlobalVariable;
-  saving?: boolean;
-  onCancel: () => void;
-  onSave: (body: GlobalVariableCreateRequest) => void | Promise<void>;
-}) {
-  const [code, setCode] = useState(initial?.code ?? "");
-  const [label, setLabel] = useState(initial?.label ?? "");
-  const [source, setSource] = useState<GlobalVariableSource>(
-    (initial?.source as GlobalVariableSource) ?? "launch_context",
-  );
-  const [valueType, setValueType] = useState<GlobalVariableValueType>(
-    (initial?.value_type as GlobalVariableValueType) ?? "string",
-  );
-  const [choicesSource, setChoicesSource] = useState(initial?.choices_source ?? "");
-  const [isSensitive, setIsSensitive] = useState(initial?.is_sensitive ?? false);
-  const [description, setDescription] = useState(initial?.description ?? "");
-
-  const valid = code.trim() !== "" && label.trim() !== "";
-
-  async function submit() {
-    if (!valid) return;
-    await onSave({
-      code: code.trim(),
-      label: label.trim(),
-      source,
-      value_type: valueType,
-      choices_source: choicesSource.trim() || null,
-      is_sensitive: isSensitive,
-      description: description.trim() || null,
-    });
-  }
-
-  return (
-    <div className="surface border border-token rounded p-3 flex flex-col gap-2">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        <input
-          className="surface-2 border border-token rounded px-2 py-1 mono text-sm"
-          placeholder="код, например RC"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-        />
-        <input
-          className="surface-2 border border-token rounded px-2 py-1 text-sm"
-          placeholder="метка"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-        />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        <Dropdown
-          mode="single"
-          options={SOURCE_OPTIONS}
-          value={source}
-          onChange={(v) => setSource(v as GlobalVariableSource)}
-        />
-        <Dropdown
-          mode="single"
-          options={VALUE_TYPE_OPTIONS}
-          value={valueType}
-          onChange={(v) => setValueType(v as GlobalVariableValueType)}
-        />
-      </div>
-      <input
-        className="surface-2 border border-token rounded px-2 py-1 mono text-sm"
-        placeholder="choices_source (необязательно, например dynamic:kernels)"
-        value={choicesSource}
-        onChange={(e) => setChoicesSource(e.target.value)}
-      />
-      <input
-        className="surface-2 border border-token rounded px-2 py-1 text-sm"
-        placeholder="описание (необязательно)"
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
-      />
-      <label className="flex items-center gap-2 text-sm cursor-pointer">
-        <Checkbox checked={isSensitive} onChange={(e) => setIsSensitive(e.target.checked)} />
-        Чувствительное значение (маскируется в логах команды)
-      </label>
       <div className="flex items-center gap-2 justify-end">
         <Button type="button" size="sm" onClick={onCancel}>Отмена</Button>
         <Button type="button" size="sm" variant="primary" disabled={!valid || saving} onClick={submit}>

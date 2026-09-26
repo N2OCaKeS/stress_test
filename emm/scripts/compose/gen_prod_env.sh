@@ -90,7 +90,7 @@ WORKER_SERVICE_API_KEY="$(rand "$RAND_S2S_KEY_LEN")"
 WORKER_BOT_TOKEN="dbos_bot_$(rand "$RAND_S2S_KEY_LEN")"
 ROTATION_RUNNER_API_KEY="$(rand "$RAND_S2S_KEY_LEN")"
 # Бронь стенда от имени testing_service (acquire-for-service/release-for-
-# service/service-status/prepare-for-test, §5.1/§5.2 плана миграции).
+# service/service-status/prepare-for-test).
 # Bearer == SERVER_SERVICE_INTERNAL_API_KEY у testing_service ниже.
 SERVER_SERVICE_INTERNAL_API_KEY="$(rand "$RAND_S2S_KEY_LEN")"
 SERVER_INBOUND_SERVICE_API_KEYS="worker_bot:${WORKER_BOT_TOKEN},rotation_runner:${ROTATION_RUNNER_API_KEY},testing_service:${SERVER_SERVICE_INTERNAL_API_KEY}"
@@ -109,12 +109,12 @@ SECRET_INTERNAL_API_KEY="${SECRET_INBOUND_AUTH_KEY}"
 # ── testing_service ───────────────────────────────────────────────────────────
 TESTING_INTROSPECT_SERVICE_API_KEY="$(rand "$RAND_S2S_KEY_LEN")"
 TESTING_INBOUND_AUTH_KEY="$(rand "$RAND_S2S_KEY_LEN")"
-# server_service шлёт сюда callback завершения prepare-for-test (§5.1 плана
-# миграции). Bearer == TESTING_SERVICE_API_KEY у server_service выше.
+# server_service шлёт сюда callback завершения prepare-for-test.
+# Bearer == TESTING_SERVICE_API_KEY у server_service выше.
 TESTING_INBOUND_SERVER_KEY="$(rand "$RAND_S2S_KEY_LEN")"
 TESTING_SERVICE_API_KEY="${TESTING_INBOUND_SERVER_KEY}"
 # testing_worker забирает готовые элементы очереди и отчитывается об исходе
-# (§5.5 плана миграции, /internal/queue/claim и /completed).
+# (/internal/queue/claim и /completed).
 TESTING_INBOUND_WORKER_KEY="$(rand "$RAND_S2S_KEY_LEN")"
 TESTING_SERVICE_INTERNAL_API_KEY="${TESTING_INBOUND_WORKER_KEY}"
 TESTING_INBOUND_SERVICE_API_KEYS="{\"auth_service\":\"${TESTING_INBOUND_AUTH_KEY}\",\"server_service\":\"${TESTING_INBOUND_SERVER_KEY}\",\"testing_worker\":\"${TESTING_INBOUND_WORKER_KEY}\"}"
@@ -221,7 +221,7 @@ REDIS_STASH_ENCRYPTION_KEY=${REDIS_STASH_ENCRYPTION_KEY}
 REDIS_STASH_ENCRYPTION_KEY_VERSION=${REDIS_STASH_ENCRYPTION_KEY_VERSION}
 SERVER_SERVICE_API_KEY=${SERVER_SERVICE_API_KEY}
 SERVER_INBOUND_SERVICE_API_KEYS='${SERVER_INBOUND_SERVICE_API_KEYS}'
-# Исходящий callback prepare-for-test → testing_service (§5.1 плана миграции).
+# Исходящий callback prepare-for-test → testing_service.
 TESTING_SERVICE_API_KEY=${TESTING_SERVICE_API_KEY}
 
 # ── server_worker ─────────────────────────────────────────────────────────────

@@ -40,6 +40,7 @@ Audit actions: `server.acs_snapshot_create` / `server.acs_snapshot_restore`
 from __future__ import annotations
 
 import asyncio
+import math
 import logging
 import time
 
@@ -161,62 +162,92 @@ async def _wait_out_and_back(host: str | None, ssh_port: int) -> bool:
 
 async def verify_system_running(
     host: str, session_factory, *, label: str,
+    provisioning: dict | None = None,
+    reboot=None,
 ) -> None:
-    """Поллить `systemctl is-system-running == running` до готовности хоста.
+    """Поллить `systemctl is-system-running` до готовности хоста.
 
-    Общая механика для всех «сервер должен вернуться сам собой» ожиданий:
-    ретраим и на отказ SSH (сеть/чужие live-креды/идёт очередной ребут), и на
-    любой ответ кроме `running` (`degraded`, `starting`). Бюджет —
+    Ретраим и на отказ SSH, и на любой ответ кроме `running`. Бюджет —
     `acs_bootstrap_verify_retries` × `acs_bootstrap_verify_interval_seconds`,
-    один на все ожидания подъёма: заводить второй такой же рядом смысла нет.
+    либо `provisioning.boot_wait_timeout_seconds`.
 
-    `session_factory` — callable без аргументов, возвращающий готовый
-    `SshClient` (bootstrap-креда после restore, управляющая сессия после
-    ребута смены ядра). `label` уходит в логи, чтобы две разные ветки
-    ожидания различались.
+    `degraded` считается готовым, если все упавшие юниты — из
+    `provisioning.allowed_failed_units`; иначе, если передан `reboot`,
+    перезагружаем до `degraded_reboot_attempts` раз. Без `provisioning` —
+    готово только `running`.
 
     Поднимает `SshError` последней попытки, если бюджет исчерпан.
     """
+    from src.tasks._stand_setup_helpers import failed_units
+
     settings = get_settings()
+    retries = settings.acs_bootstrap_verify_retries
+    interval = settings.acs_bootstrap_verify_interval_seconds
+    if provisioning and provisioning.get("boot_wait_timeout_seconds"):
+        retries = max(1, math.ceil(provisioning["boot_wait_timeout_seconds"] / max(interval, 1)))
+    allowed = set((provisioning or {}).get("allowed_failed_units") or [])
+    reboots_left = int((provisioning or {}).get("degraded_reboot_attempts") or 0) if reboot else 0
     last_exc: Exception | None = None
     last_status = ""
-    for attempt in range(1, settings.acs_bootstrap_verify_retries + 1):
+    last_failed: list[str] = []
+    attempt = 0
+    while attempt < retries:
+        attempt += 1
         try:
             async with session_factory() as ssh:
                 _rc, stdout, _stderr = await ssh.run("systemctl is-system-running")
-            last_status = stdout.strip()
+                last_status = stdout.strip()
+                if last_status == "degraded" and provisioning is not None:
+                    last_failed = await failed_units(ssh)
             if last_status == "running":
                 return
             last_exc = None
+            if last_status == "degraded" and provisioning is not None:
+                if last_failed and set(last_failed) <= allowed:
+                    logger.info(
+                        "%s: host=%s degraded only by allowed units %s — ready",
+                        label, host, last_failed,
+                    )
+                    return
+                if reboots_left > 0:
+                    reboots_left -= 1
+                    logger.info(
+                        "%s: host=%s degraded (failed: %s) — reboot, %s left",
+                        label, host, last_failed, reboots_left,
+                    )
+                    await reboot()
+                    # После перезагрузки бюджет ожидания — заново; общее
+                    # число перезагрузок ограничено `degraded_reboot_attempts`.
+                    attempt = 0
+                    continue
             logger.info(
                 "%s: verify attempt %s/%s for host=%s logged in but system not "
                 "ready yet (systemctl is-system-running=%r)",
-                label, attempt, settings.acs_bootstrap_verify_retries, host,
-                last_status,
+                label, attempt, retries, host, last_status,
             )
         except SshError as exc:
             last_exc = exc
             logger.info(
                 "%s: verify attempt %s/%s failed for host=%s: %s",
-                label, attempt, settings.acs_bootstrap_verify_retries, host,
-                type(exc).__name__,
+                label, attempt, retries, host, type(exc).__name__,
             )
-        if attempt < settings.acs_bootstrap_verify_retries:
-            await asyncio.sleep(settings.acs_bootstrap_verify_interval_seconds)
+        if attempt < retries:
+            await asyncio.sleep(interval)
     if last_exc is not None:
         raise last_exc
+    suffix = f", failed units: {', '.join(last_failed)}" if last_failed else ""
     raise SshError(
         error_code="SSH_SYSTEM_NOT_READY",
         host=host,
         message=(
             f"system never reported 'running' "
-            f"(last systemctl is-system-running={last_status!r})"
+            f"(last systemctl is-system-running={last_status!r}{suffix})"
         ),
     )
 
 
 async def _verify_bootstrap_login(
-    host: str, ssh_port: int, os_version_id: str,
+    host: str, ssh_port: int, os_version_id: str, provisioning: dict | None = None,
 ) -> None:
     """Реально залогиниться bootstrap-кредой версии ОС после restore.
 
@@ -254,8 +285,13 @@ async def _verify_bootstrap_login(
             port=ssh_port,
         )
 
+    # Профиль подготовки: `degraded` только из-за разрешённых юнитов
+    # — готово. Перезагрузок здесь не делаем: после restore ACS сама
+    # перезагружает `degraded`-гостя (см. выше), а bootstrap-учётке sudo
+    # без пароля не гарантирован.
     await verify_system_running(
         host, _session, label="acs snapshot restore: bootstrap SSH",
+        provisioning=provisioning,
     )
 
 
@@ -430,7 +466,9 @@ async def acs_snapshot_restore(task_id: str) -> None:
             # это реальный логин. Без host'а reachability-проверки уже были
             # best-effort skip'нуты выше — тут по той же причине пропускаем.
             if host:
-                await _verify_bootstrap_login(host, ssh_port, os_version_id)
+                await _verify_bootstrap_login(
+                    host, ssh_port, os_version_id, provisioning=payload.get("provisioning"),
+                )
         except Exception as exc:
             error_message = _truncate_error(f"{type(exc).__name__}: {exc}")
             try:

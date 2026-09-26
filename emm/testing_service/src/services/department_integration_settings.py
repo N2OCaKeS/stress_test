@@ -16,6 +16,7 @@ from src.models import DepartmentIntegrationSettings
 from src.repositories import department_integration_settings as repo
 from src.schemas.department_integration_settings import DepartmentIntegrationSettingsUpdate
 from src.services import audit_service, permissions, secret_client
+from src.services import zephyr_folder as zephyr_folder_svc
 from src.utils.ids import department_integration_settings_id as new_id
 
 
@@ -35,6 +36,13 @@ _NULLABLE_FIELDS = (
     "confluence_report_parent_page_title",
     "stp_matrix_confluence_space",
     "stp_matrix_confluence_root_page_title",
+)
+
+# Шаблоны папки и имени прогона Zephyr: NOT NULL с легаси-дефолтом.
+# `null`/пустая строка в PUT — вернуть дефолт, а не «очистить».
+_TEMPLATE_FIELDS = (
+    zephyr_folder_svc.FOLDER_PATH_TEMPLATE_FIELD,
+    zephyr_folder_svc.RUN_NAME_TEMPLATE_FIELD,
 )
 
 # Поля-ссылки на secret_service, которые нужно провалидировать на PUT (C4):
@@ -88,6 +96,7 @@ async def get_effective(db: AsyncSession, department_id: str) -> dict:
             "created_at": None,
             "updated_at": None,
             **{field: None for field in _NULLABLE_FIELDS},
+            **{field: zephyr_folder_svc.template_of(None, field) for field in _TEMPLATE_FIELDS},
         }
     return {
         "id": row.id,
@@ -95,7 +104,28 @@ async def get_effective(db: AsyncSession, department_id: str) -> dict:
         "created_at": row.created_at,
         "updated_at": row.updated_at,
         **{field: getattr(row, field) for field in _NULLABLE_FIELDS},
+        **{field: zephyr_folder_svc.template_of(row, field) for field in _TEMPLATE_FIELDS},
     }
+
+
+async def _normalize_templates(
+    db: AsyncSession, row: DepartmentIntegrationSettings | None, changes: dict,
+) -> None:
+    """Шаблоны Zephyr: пусто → дефолт; изменённый шаблон проверяется.
+
+    Проверяется только реально изменённое значение, отличное от дефолта:
+    форма UI шлёт все поля сразу, и дефолт, сославшийся на ещё не заведённую
+    переменную (`RC_RELEASE` до), не должен блокировать сохранение
+    остальных полей или возврат к дефолту.
+    """
+    for field in _TEMPLATE_FIELDS:
+        if field not in changes:
+            continue
+        default = zephyr_folder_svc.template_of(None, field)
+        value = (changes[field] or "").strip() or default
+        changes[field] = value
+        if value not in (default, zephyr_folder_svc.template_of(row, field)):
+            await zephyr_folder_svc.validate_template_change(db, field, value)
 
 
 async def get_effective_for(db: AsyncSession, identity: Identity, department_id: str) -> dict:
@@ -133,11 +163,13 @@ async def upsert(
     changes = payload.model_dump(exclude_unset=True, mode="json")
     await _validate_credential_links(token, changes)
     row = await repo.get_by_department(db, department_id)
+    await _normalize_templates(db, row, changes)
     if row is None:
         data = {
             "id": new_id(),
             "department_id": department_id,
             **{field: changes.pop(field, None) for field in _NULLABLE_FIELDS},
+            **{field: changes.pop(field) for field in _TEMPLATE_FIELDS if field in changes},
         }
         row = await repo.create(db, data)
     elif changes:

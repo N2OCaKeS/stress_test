@@ -31,6 +31,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
@@ -50,6 +51,8 @@ PREPARE_FOR_TEST_STATUSES = (
 # Шаги пайплайна. Значения зафиксированы контрактом callback'а
 # (`failed_step`), менять их нельзя без согласования с testing_service.
 STEP_RESTORE = "restore"
+# у ВМ-стенда вместо ACS restore — откат снимка ВМ.
+STEP_VM_REVERT = "vm_revert"
 STEP_PREPARE = "prepare"
 STEP_USER_PROVISION = "user_provision"
 STEP_KERNEL_CHANGE = "kernel_change"
@@ -58,6 +61,7 @@ STEP_REBOOT_VERIFY = "reboot_verify"
 
 PREPARE_FOR_TEST_STEPS = (
     STEP_RESTORE,
+    STEP_VM_REVERT,
     STEP_PREPARE,
     STEP_USER_PROVISION,
     STEP_KERNEL_CHANGE,
@@ -74,6 +78,15 @@ MODE_SMOLENSK = "smolensk"
 
 PREPARE_FOR_TEST_MODES = (MODE_OREL, MODE_SMOLENSK)
 
+# Объём подготовки. `revert_only` — откат/restore, учётка и ядро, без смены
+# режима и без шага настройки стенда: легаси так готовил клиент FreeIPA
+# (`allta_app_full/backup_image.py::freeipa_authentication_test`,
+# `run_provision.modes = False`).
+PREPARATION_FULL = "full"
+PREPARATION_REVERT_ONLY = "revert_only"
+
+PREPARE_FOR_TEST_PREPARATIONS = (PREPARATION_FULL, PREPARATION_REVERT_ONLY)
+
 
 class ServerPrepareForTestRequest(Base):
     """Один запрос `prepare-for-test` со стороны testing_service."""
@@ -81,12 +94,23 @@ class ServerPrepareForTestRequest(Base):
     __tablename__ = "server_prepare_for_test_requests"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    server_id: Mapped[str] = mapped_column(
+    # Цель подготовки: ровно одно из
+    # `server_id` (физический стенд, ACS restore) / `vm_id` (ВМ, откат снимка).
+    server_id: Mapped[str | None] = mapped_column(
         String(64),
         ForeignKey("servers.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
+    vm_id: Mapped[str | None] = mapped_column(
+        String(64),
+        ForeignKey("vms.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    # Фактическое имя снимка ВМ, выбранного по шаблонам имени —
+    # след для разбора: на какой снимок откатывали.
+    vm_snapshot_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # id очереди/прогона на стороне testing_service. Уникален — на нём держится
     # идемпотентность: повтор того же вызова не плодит второй пайплайн.
     correlation_id: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -97,7 +121,22 @@ class ServerPrepareForTestRequest(Base):
     # Режим безопасности Astra, выставляемый воркером между сменой ядра и
     # финальным ребутом (`astra-modeswitch`). См. `PREPARE_FOR_TEST_MODES`.
     mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    # См. `PREPARE_FOR_TEST_PREPARATIONS`. `mode` у `revert_only` всё равно
+    # хранится: по нему выбирается снимок ВМ (`{version}_{mode}`).
+    preparation: Mapped[str] = mapped_column(
+        String(16), nullable=False, default=PREPARATION_FULL, server_default=PREPARATION_FULL,
+    )
+    # Шаг `pam_fix` не выполняется, даже если его включает профиль подготовки.
+    skip_pam_fix: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
     test_username: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Тестовая учётка отдела в secret_service. Есть —
+    # логин, пароль и публичный ключ берутся из неё, `test_username`
+    # игнорируется; NULL — прежний путь со случайными паролем и ключом.
+    test_account_credential_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     requested_by_department_id: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
@@ -114,6 +153,13 @@ class ServerPrepareForTestRequest(Base):
     )
     failed_step: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # шаг настройки стенда (без текста скрипта)
+    # и профиль подготовки. Скрипт может нести секреты — хранится
+    # зашифрованным (`secrets_service`, AAD — id строки) и воркеру уходит
+    # через Redis-stash, не в payload задачи.
+    stand_setup: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    stand_setup_script_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provisioning: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # True, если бронь стенда взял сам этот запрос (сервер был свободен). Тогда
     # на провале мы её и снимаем. Если бронь уже держал testing_service
@@ -161,13 +207,21 @@ class ServerPrepareForTestRequest(Base):
         ),
         CheckConstraint(
             "failed_step IS NULL OR failed_step IN "
-            "('restore', 'prepare', 'user_provision', 'kernel_change', "
-            "'mode_switch', 'reboot_verify')",
+            "('restore', 'vm_revert', 'prepare', 'user_provision', 'pam_fix', "
+            "'stand_setup', 'kernel_change', 'mode_switch', 'reboot_verify')",
             name="ck_prepare_for_test_failed_step",
+        ),
+        CheckConstraint(
+            "(server_id IS NULL) <> (vm_id IS NULL)",
+            name="ck_prepare_for_test_one_target",
         ),
         CheckConstraint(
             "mode IN ('orel', 'smolensk')",
             name="ck_prepare_for_test_mode",
+        ),
+        CheckConstraint(
+            "preparation IN ('full', 'revert_only')",
+            name="ck_prepare_for_test_preparation",
         ),
         # Один активный пайплайн на сервер. Второй запрос по тому же стенду
         # (с другим correlation_id) отбивается 409 ещё в сервисном слое, но
@@ -176,6 +230,13 @@ class ServerPrepareForTestRequest(Base):
         Index(
             "uq_prepare_for_test_active_server",
             "server_id",
+            unique=True,
+            postgresql_where=(status == PREPARE_FOR_TEST_IN_PROGRESS),
+        ),
+        # То же для ВМ: два параллельных отката одного диска ВМ.
+        Index(
+            "uq_prepare_for_test_active_vm",
+            "vm_id",
             unique=True,
             postgresql_where=(status == PREPARE_FOR_TEST_IN_PROGRESS),
         ),
@@ -222,4 +283,50 @@ class ServerTestCredentials(Base):
             "length(ssh_private_key_encrypted) < 8192",
             name="ck_server_test_credentials_ssh_key_len",
         ),
+    )
+
+
+class ServerStandSetupRequest(Base):
+    """Настройка стенда без restore.
+
+    Шаги 4–10 пайплайна (`pam_fix`, `stand_setup`, перезагрузка) на уже
+    подготовленном стенде — между ступенями многоступенчатого теста.
+    Цель — ровно одно из `server_id` / `vm_id`, как у
+    `server_prepare_for_test_requests`. Бронь держит вызывающий. Исход —
+    callback в testing_service `POST /internal/stand-setup/{id}/completed`.
+    """
+
+    __tablename__ = "server_stand_setup_requests"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    server_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("servers.id", ondelete="CASCADE"), nullable=True, index=True,
+    )
+    vm_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("vms.id", ondelete="CASCADE"), nullable=True, index=True,
+    )
+    correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    requested_by_department_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    requested_by_service: Mapped[str] = mapped_column(String(64), nullable=False)
+    test_username: Mapped[str] = mapped_column(String(128), nullable=False)
+    stand_setup: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    stand_setup_script_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provisioning: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    failed_step: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    callback_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    callback_delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    callback_last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint("(server_id IS NULL) <> (vm_id IS NULL)", name="ck_stand_setup_one_target"),
     )

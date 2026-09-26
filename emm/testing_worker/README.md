@@ -7,8 +7,8 @@ Taskiq + Redis воркер для `testing_service` — отдельный top-
 
 ## Статус
 
-Реальный SSH-исполнитель (волна 5 плана миграции, `emm/obsidian/ALLTA
-MIGRATION.md`, §5/§5.5). Работа идёт не через taskiq task-handler'ы —
+Реальный SSH-исполнитель (`emm/obsidian/ALLTA MIGRATION.md`).
+Работа идёт не через taskiq task-handler'ы —
 диспетчер один: очередь `testing_service`. На `WORKER_STARTUP` поднимается
 фоновый asyncio-loop (`src/services/queue_loop.py`), который в цикле:
 

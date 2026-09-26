@@ -145,6 +145,7 @@ class TaskKind(StrEnum):
     ACCOUNT_DEPROVISION = "account.deprovision"
     SERVER_PREPARE = "server.prepare"
     SERVER_PREPARE_FOR_TEST = "server.prepare_for_test"
+    SERVER_STAND_SETUP = "server.stand_setup"
     SERVER_ROTATE_MANAGEMENT_CREDS = "server.rotate_management_creds"
     SERVER_ASTRA_UPDATE = "server.astra_update"
     SERVER_INSTALL_NODE_EXPORTER = "server.install_node_exporter"
@@ -172,6 +173,10 @@ class TaskKind(StrEnum):
     VM_SNAPSHOT_CREATE = "vm.snapshot_create"
     VM_SNAPSHOT_DELETE = "vm.snapshot_delete"
     VM_SNAPSHOT_REVERT = "vm.snapshot_revert"
+    # подготовка ВМ-стенда под тест (откат снимка + хвост prepare-for-test).
+    VM_PREPARE_FOR_TEST = "vm.prepare_for_test"
+    # настройка ВМ-стенда между ступенями теста без отката снимка.
+    VM_STAND_SETUP = "vm.stand_setup"
     VM_ASTRA_UPDATE = "vm.astra_update"
     VM_ALLTA_UPDATE = "vm.allta_update"
     VM_PASSWD = "vm.passwd"

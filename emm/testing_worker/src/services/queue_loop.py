@@ -1,88 +1,28 @@
-"""Polling-цикл очереди `testing_service` (§5.5 плана миграции).
+"""Polling-цикл очереди `testing_service`.
 
-`run_polling_loop()` — long-running `asyncio` loop, поднимается как фоновая
-задача на `WORKER_STARTUP` (см. `src/main.py`), по образцу
-`server_worker/src/services/audit_outbox_publisher.py::run_publisher_loop`.
-Задачи очереди исполняются не как отдельные taskiq-таски — диспетчер здесь
-один: сам `testing_service` решает, какой item готов (`state=ready`),
-`claim()` просто забирает следующий.
+`run_polling_loop()` — фоновый `asyncio`-loop с `WORKER_STARTUP`. Диспетчер
+один: testing_service решает, какой item готов, `claim()` просто забирает
+следующий.
 
-Один проход:
+Один проход: `claim()` → `preflight.wait_for_external_services()` (ждём
+внешние сервисы по настройкам отдела, вышло время — провал item'а) →
+запись файлов задания по SFTP → `ssh_executor.execute(...)` с живым логом
+и опросом `interrupt-check` для досрочной остановки → финальный
+`log_segment` → `report_completed(...)`.
 
-1. `testing_client.claim()` — если очередь пуста (или testing_service
-   недоступен), `item is None` → короткий сон и следующая попытка.
-2. `preflight.wait_for_external_services()` — пока Jira/Confluence/git/
-   releases/DNS недоступны, item не стартует: ждём (до
-   `preflight_timeout_seconds`, по умолчанию 2 часа, опрос раз в 180 с),
-   как это делало легаси перед самым запуском. Вышло время — обычный провал
-   item'а с внятной причиной (сжигается retry, но очередь не встаёт);
-   оператор может снять item прямо во время ожидания, `interrupt-check`
-   опрашивается и здесь.
-3. `ssh_executor.write_remote_file(...)` кладёт на стенд сам `starter.sh`
-   (`/home/u/starter.sh`, содержимое — `src/assets/starter.sh`). Стенд перед
-   прогоном откатывается на образ, поэтому рассчитывать на оставшуюся с
-   прошлого раза копию скрипта нельзя: команда `sudo bash /home/u/starter.sh`
-   запускает ровно тот файл, который положили здесь.
-4. Если `item` несёт `dates_content` — тем же способом на стенд уходит
-   `/home/u/<dates_filename>`: `starter.sh` читает этот файл с диска, значит
-   он обязан там оказаться раньше. Провал любой из двух записей — фатален для
-   item'а целиком, `execute()` не вызывается вообще, сразу
-   `report_completed(succeeded=False)`.
-   Если `item["prepare_only"]` — следом уходят ещё два файла: легаси
-   testenv-маркер (`_write_testenv_marker`, заставляет `starter.sh`
-   остановиться после `prepare.sh` и не запускать тест) и `command.txt`
-   (`_write_prepare_only_command_file`, текст команды, которой тест был бы
-   запущен). testing_service сам решает при `complete_item`, что успешный
-   исход такого item'а — не `succeeded`, а `prepared`.
-5. `ssh_executor.execute(...)` под кредами и хостом из `item` — единственный
-   SSH-вызов `sudo bash /home/u/starter.sh ...` (что именно исполняется,
-   собрал `testing_service`, здесь просто argv). Пока команда выполняется,
-   каждый накопленный кусок вывода уходит наружу через
-   `testing_client.log_chunk(...)` (§8.6 — живой лог в консоли сервера).
-   Параллельно с исполнением крутится наблюдатель: раз в
-   `interrupt_poll_interval_seconds` он спрашивает `interrupt-check`, не
-   просил ли оператор снять тест. Если просил — на стенд отдельным коннектом
-   уходит kill (`sudo pkill -f starter.sh`), исполнение отменяется, и вместо
-   обычного исхода уходит `completed(interrupted=...)`. Обрыв SSH-канала сам
-   по себе процесс под `sudo` не гасит, поэтому kill именно явный — тот же
-   kill `ssh_executor.execute()` шлёт и сам, если выходит по
-   `command_timeout`, не дожидаясь заявки оператора.
-6. Если до исполнения дело дошло (`result.connected`) — один
-   `testing_client.log_segment(...)` на весь тест, с полным выводом и
-   замаскированной командой (`command_masked`, посчитан `testing_service`'ом
-   при `claim`, см. §8.1). Провал на уровне SSH-коннекта сегмента не
-   заводит — `completed(succeeded=False)` сам по себе достаточно
-   информативен для этого случая.
-7. `testing_client.report_completed(...)` с исходом.
+Каждый item запускается отдельным `asyncio.Task`, цикл не ждёт его
+завершения перед следующим `claim()`. Отдельного лимита параллельности нет:
+очередь сама не отдаёт больше одного `ready` item'а на стенд.
 
-`run_polling_loop()` НЕ ждёт шаги 2-7 перед следующим `claim()` — item
-запускается как отдельный `asyncio.Task` (`_run_one_item`), а цикл сразу же
-идёт за следующим. Никакого искусственного потолка одновременных item'ов
-здесь нет и не нужен: `claim_next_ready()` на стороне testing_service отдаёт
-только `state=ready` item'ы, а по конструкции самой очереди (сериализация по
-стенду, `services/queue.py`) `ready` одновременно может быть не больше одного
-на стенд — реальный предел параллельности сам получается «один тест на
-стенд», без счётчика, который надо подбирать и держать в синхроне с числом
-стендов. SSH-сессия почти всё время ждёт сеть, не грузит CPU — конкурентные
-задачи внутри одного процесса вместо последовательной очереди только это и
-используют, не более того.
-
-Тело цикла обёрнуто в `try/except Exception`: неожиданная ошибка `claim()`а
-(баг в коде, а не транзиентная сетевая недоступность — та уже обработана
-внутри `testing_client`) не должна убивать весь loop навсегда. На такой
-ошибке — ERROR-лог и сон `queue_poll_interval_seconds`, чтобы систематический
-баг не заспамил лог тысячами повторов в секунду. Упавшая задача одного item'а
-— тем же приёмом (лог + продолжение), но не тормозит остальные уже
-запущенные item'ы: у каждой задачи свой `done`-callback.
+Неожиданная ошибка `claim()`а или отдельного item'а логируется и не убивает
+loop — у каждой задачи свой `done`-callback.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import shlex
-from functools import lru_cache
-from pathlib import Path
+import re
 
 import asyncssh
 
@@ -94,234 +34,73 @@ logger = logging.getLogger("testing_worker.queue_loop")
 _COMMAND_SEGMENT_LABEL = "Выполнение теста"
 _PREPARE_ONLY_SEGMENT_LABEL = "Подготовка стенда (testenv)"
 
-# Куда кладём скрипт на стенде. Тот же путь зашит в команду запуска на стороне
-# testing_service (`services/queue.py`, `_STARTER_SCRIPT_PATH`) — два конца
-# одного контракта, менять их можно только вместе.
-_STARTER_REMOTE_PATH = "/home/u/starter.sh"
 
-# Легаси-маркер testenv-режима: `starter.sh` матчит имя глобом
-# `testenv_*.conf` и сверяет содержимое с `on` (см. `assets/starter.sh`).
-# Само имя файла не принципиально, лишь бы попадало под маску.
-_TESTENV_MARKER_REMOTE_PATH = "/home/u/testenv_on.conf"
-_TESTENV_MARKER_CONTENT = "on"
-
-# Куда кладём текст команды теста в prepare_only-режиме — стенд подготовлен,
-# но сам тест не запускался, и это единственный след того, что было бы
-# исполнено.
-_PREPARE_ONLY_COMMAND_REMOTE_PATH = "/home/u/command.txt"
-
-# Эталонный текст скрипта лежит рядом с кодом воркера и едет в образ вместе с
-# `src/` (см. docker/Dockerfile) — никаких загрузок по сети в момент запуска
-# теста.
-_STARTER_ASSET_PATH = Path(__file__).resolve().parents[1] / "assets" / "starter.sh"
+def _segment_label(item: dict) -> str:
+    """Подпись сегмента лога; у многоступенчатого теста — с шагом."""
+    label = _PREPARE_ONLY_SEGMENT_LABEL if item.get("prepare_only") else _COMMAND_SEGMENT_LABEL
+    step = item.get("step") or {}
+    count = step.get("count") or 1
+    if count <= 1:
+        return label
+    suffix = f"шаг {int(step.get('index') or 0) + 1}/{count}"
+    if step.get("name"):
+        suffix += f" «{step['name']}»"
+    return f"{label} · {suffix}"
 
 # Типы, которыми SFTP-запись сигналит о провале: ошибка протокола/канала,
 # сетевой обрыв, невалидный ключ (ValueError из write_remote_file) и таймаут.
 _WRITE_ERRORS = (asyncssh.Error, OSError, ValueError, asyncio.TimeoutError, TimeoutError)
 
-
-@lru_cache(maxsize=1)
-def _starter_script_content() -> str:
-    """Текст `starter.sh` с диска, прочитанный один раз за жизнь процесса."""
-    return _STARTER_ASSET_PATH.read_text(encoding="utf-8")
+# Маска очистки: абсолютный путь из безопасных символов и `*`/`?`.
+_SAFE_GLOB_RE = re.compile(r"/[A-Za-z0-9_./*?\-]*")
 
 
-async def _write_starter_script(item: dict, settings) -> str | None:
-    """SFTP-запись самого `starter.sh` на стенд перед его запуском.
-
-    Скрипт обязан приезжать на стенд каждый раз, а не считаться «уже там
-    лежащим»: перед прогоном стенд откатывается на образ (ACS/revert в
-    `prepare-for-test`), и что именно осталось в `/home/u` после отката —
-    свойство образа, а не нашей системы. Легаси по той же причине перезаливало
-    его на каждый запуск (`allta_app/backup_image.py:932,992`).
-
-    Контракт возврата — как у `_write_dates_file`: текст ошибки либо `None`.
-    """
-    try:
-        content = _starter_script_content()
-    except OSError as exc:
-        # Битая сборка образа (файл не доехал в `src/assets`) — чинится
-        # пересборкой, но item всё равно завершаем честным провалом.
-        logger.error("starter.sh asset is unreadable at %s: %s", _STARTER_ASSET_PATH, exc)
-        return f"starter.sh asset unreadable: {type(exc).__name__}"
-
-    try:
-        await ssh_executor.write_remote_file(
-            item["host"],
-            item["test_username"],
-            item["test_ssh_private_key"],
-            _STARTER_REMOTE_PATH,
-            content,
-            connect_timeout=settings.ssh_connect_timeout_seconds,
-        )
-    except _WRITE_ERRORS as exc:
-        logger.warning(
-            "queue item %s: failed to write %s over SFTP: %s",
-            item.get("queue_item_id"), _STARTER_REMOTE_PATH, type(exc).__name__,
-        )
-        return f"SFTP write of starter.sh failed: {type(exc).__name__}"
-    return None
-
-
-async def _write_git_token_file(item: dict, settings) -> str | None:
-    """SFTP-запись git-токена на стенд отдельным файлом — не argv.
-
-    Раньше токен ехал вторым позиционным аргументом `starter.sh` и оставался
-    виден в `ps`/`/proc/<pid>/cmdline` весь срок теста (до
-    `command_timeout_seconds`, 12 часов по дефолту). Тот же приём, что уже
-    есть у `dates.conf`: файл на стенде, а `starter.sh` подставляет его
-    содержимое в заголовок `Authorization` через `cat` и сам стирает файл
-    сразу после клонирования.
-
-    Контракт возврата — как у `_write_dates_file`. Отсутствие обоих полей
-    (старый/тестовый `item` без них) — не провал, просто нечего писать.
-    """
-    git_token_filename = item.get("git_token_filename")
-    git_token_content = item.get("git_token_content")
-    if not git_token_filename or git_token_content is None:
+async def _cleanup_files(item: dict, settings) -> str | None:
+    """Удалить на стенде файлы по `cleanup_globs` задания (опция профиля)."""
+    globs = [g for g in item.get("cleanup_globs") or [] if g]
+    if not globs:
         return None
-
-    remote_path = f"/home/u/{git_token_filename}"
+    bad = [g for g in globs if not _SAFE_GLOB_RE.fullmatch(g)]
+    if bad:
+        return f"unsafe cleanup glob: {bad[0]!r}"
     try:
-        await ssh_executor.write_remote_file(
-            item["host"],
-            item["test_username"],
-            item["test_ssh_private_key"],
-            remote_path,
-            git_token_content,
+        await ssh_executor.run_remote_command(
+            item["host"], item["test_username"], item["test_ssh_private_key"],
+            "sudo rm -f -- " + " ".join(globs),
             connect_timeout=settings.ssh_connect_timeout_seconds,
         )
     except _WRITE_ERRORS as exc:
-        logger.warning(
-            "queue item %s: failed to write %s over SFTP: %s",
-            item.get("queue_item_id"), remote_path, type(exc).__name__,
-        )
-        return f"SFTP write of {git_token_filename} failed: {type(exc).__name__}"
+        logger.warning("queue item %s: cleanup failed: %s", item.get("queue_item_id"), type(exc).__name__)
+        return f"cleanup of {', '.join(globs)} failed: {type(exc).__name__}"
     return None
 
 
-async def _write_dates_file(item: dict, settings) -> str | None:
-    """SFTP-запись `dates.conf` на стенд перед запуском `starter.sh`.
+async def _write_files(item: dict, settings) -> str | None:
+    """SFTP-запись файлов задания в порядке списка.
 
-    Возвращает текст ошибки, если запись провалилась (вызывающий тогда
-    заканчивает item как `succeeded=False`, не пытаясь запустить команду),
-    либо `None` на успехе. Не логирует `dates_content` целиком — сырые
-    dates-флаги (потенциально с кредами Jira/Confluence) в лог не идут,
-    только факт записи и её длина.
+    Стенд перед прогоном откатывается на образ, поэтому всё, что нужно
+    `starter.sh`, едет каждый раз (легаси тоже перезаливало скрипт,
+    `allta_app/backup_image.py:932,992`). Содержимое в лог не пишется —
+    только путь и длина. Возвращает текст ошибки либо `None`.
     """
-    dates_filename = item.get("dates_filename")
-    dates_content = item.get("dates_content")
-    if not dates_filename or dates_content is None:
-        return None
-
-    remote_path = f"/home/u/{dates_filename}"
-    try:
-        await ssh_executor.write_remote_file(
-            item["host"],
-            item["test_username"],
-            item["test_ssh_private_key"],
-            remote_path,
-            dates_content,
-            connect_timeout=settings.ssh_connect_timeout_seconds,
-        )
-    except _WRITE_ERRORS as exc:
-        logger.warning(
-            "queue item %s: failed to write %s (%d bytes) over SFTP: %s",
-            item.get("queue_item_id"), remote_path, len(dates_content), type(exc).__name__,
-        )
-        return f"SFTP write of {dates_filename} failed: {type(exc).__name__}"
-    return None
-
-
-async def _write_testenv_marker(item: dict, settings) -> str | None:
-    """SFTP-запись testenv-маркера — легаси-сигнал `starter.sh` не запускать тест.
-
-    `prepare_only=True` на item'е воспроизводит старый ручной режим стенда:
-    файл `/home/u/testenv_*.conf` со значением `on` заставлял `starter.sh`
-    выполнить `prepare.sh` и выйти, не доходя до `run.py` (см. хвост
-    `assets/starter.sh`). Раньше этот файл никто не писал программно — он
-    появлялся только руками оператора на стенде, поэтому ветка была
-    фактически недостижима. Здесь она наконец имеет источник.
-
-    Контракт возврата — как у `_write_dates_file`: текст ошибки либо `None`.
-    """
-    try:
-        await ssh_executor.write_remote_file(
-            item["host"],
-            item["test_username"],
-            item["test_ssh_private_key"],
-            _TESTENV_MARKER_REMOTE_PATH,
-            _TESTENV_MARKER_CONTENT,
-            connect_timeout=settings.ssh_connect_timeout_seconds,
-        )
-    except _WRITE_ERRORS as exc:
-        logger.warning(
-            "queue item %s: failed to write %s over SFTP: %s",
-            item.get("queue_item_id"), _TESTENV_MARKER_REMOTE_PATH, type(exc).__name__,
-        )
-        return f"SFTP write of testenv marker failed: {type(exc).__name__}"
-    return None
-
-
-def _build_prepare_only_command(item: dict) -> str:
-    """Собрать текст команды `run.py`, которую запустил бы `starter.sh`.
-
-    В `prepare_only`-режиме сам `starter.sh` выходит раньше, чем дошёл бы до
-    этой строчки (testenv-ветка делает `exit 0`), поэтому команду считаем
-    здесь, теми же правилами, что и хвост `assets/starter.sh`:
-
-        if [ "$5" == "kernel" ]; then python3 run.py -n "$3" -kn "$5"
-        elif [ "$5" == "balance" ]; then python3 run.py -n "$3" -bl "$5"
-        elif [ "$5" == "oom" ]; then python3 run.py -n "$3" -oom "$5"
-        else python3 run.py -n "$3"
-
-    `$3` — это `dates_filename` (позиционный аргумент `starter.sh`, не имя
-    теста, так исторически заведено в легаси), `$5` — `starter_suffix` теста.
-    Оба присланы testing_service в `item`.
-
-    `starter_suffix` не enum'ится схемой на стороне testing_service (обычная
-    строка до 16 символов) — `shlex.quote` вместо ручных кавычек, чтобы `"`/
-    `` ` ``/`$(...)` в значении не сделали `command.txt` шелл-инъекцией,
-    если оператор скопирует его руками на стенд.
-    """
-    dates_filename = shlex.quote(item.get("dates_filename") or "")
-    suffix = item.get("starter_suffix") or ""
-    if suffix == "kernel":
-        return f"python3 run.py -n {dates_filename} -kn {shlex.quote(suffix)}"
-    if suffix == "balance":
-        return f"python3 run.py -n {dates_filename} -bl {shlex.quote(suffix)}"
-    if suffix == "oom":
-        return f"python3 run.py -n {dates_filename} -oom {shlex.quote(suffix)}"
-    return f"python3 run.py -n {dates_filename}"
-
-
-async def _write_prepare_only_command_file(item: dict, settings) -> str | None:
-    """SFTP-запись `command.txt` — след того, что было бы запущено на стенде.
-
-    Единственное содержимое, ради которого вообще существует `prepare_only`:
-    оператор откатывает и готовит стенд, но вместо результата теста получает
-    команду, которую можно скопировать и запустить руками. Содержимое не
-    секретно (никаких токенов — только имя dates-файла и суффикс теста),
-    маскировать нечего.
-
-    Контракт возврата — как у `_write_dates_file`.
-    """
-    content = _build_prepare_only_command(item)
-    try:
-        await ssh_executor.write_remote_file(
-            item["host"],
-            item["test_username"],
-            item["test_ssh_private_key"],
-            _PREPARE_ONLY_COMMAND_REMOTE_PATH,
-            content,
-            connect_timeout=settings.ssh_connect_timeout_seconds,
-        )
-    except _WRITE_ERRORS as exc:
-        logger.warning(
-            "queue item %s: failed to write %s over SFTP: %s",
-            item.get("queue_item_id"), _PREPARE_ONLY_COMMAND_REMOTE_PATH, type(exc).__name__,
-        )
-        return f"SFTP write of command.txt failed: {type(exc).__name__}"
+    for spec in item.get("files") or []:
+        path, content = spec["path"], spec["content"]
+        try:
+            await ssh_executor.write_remote_file(
+                item["host"],
+                item["test_username"],
+                item["test_ssh_private_key"],
+                path,
+                content,
+                mode=spec.get("mode"),
+                connect_timeout=settings.ssh_connect_timeout_seconds,
+            )
+        except _WRITE_ERRORS as exc:
+            logger.warning(
+                "queue item %s: failed to write %s (%d bytes) over SFTP: %s",
+                item.get("queue_item_id"), path, len(content), type(exc).__name__,
+            )
+            return f"SFTP write of {path} failed: {type(exc).__name__}"
     return None
 
 
@@ -356,16 +135,23 @@ async def _execute_with_interrupt_watch(item: dict, settings, on_output_chunk):
     `None`, либо `None` и действие, по которому исполнение было оборвано.
     """
     queue_item_id = item["queue_item_id"]
-    git_token_content = item.get("git_token_content")
+    chunk_options = {}
+    if item.get("log_chunk_interval_seconds"):
+        chunk_options["chunk_interval_seconds"] = item["log_chunk_interval_seconds"]
+    if item.get("log_chunk_max_bytes"):
+        chunk_options["chunk_max_bytes"] = item["log_chunk_max_bytes"]
     execute_task = asyncio.ensure_future(ssh_executor.execute(
         item["host"],
         item["test_username"],
         item["test_ssh_private_key"],
-        item["command"],
+        item["launch_command"],
+        stop_command=item["stop_command"],
+        use_pty=item.get("use_pty", True),
         connect_timeout=settings.ssh_connect_timeout_seconds,
         command_timeout=item.get("command_timeout_seconds") or settings.ssh_command_timeout_seconds,
         on_output_chunk=on_output_chunk,
-        redact_secrets=[git_token_content] if git_token_content else None,
+        redact_secrets=item.get("redact_values") or None,
+        **chunk_options,
     ))
     stop_watch = asyncio.Event()
     watch_task = asyncio.ensure_future(_watch_for_interrupt(
@@ -399,6 +185,7 @@ async def _execute_with_interrupt_watch(item: dict, settings, on_output_chunk):
         item["host"],
         item["test_username"],
         item["test_ssh_private_key"],
+        stop_command=item["stop_command"],
         connect_timeout=settings.ssh_connect_timeout_seconds,
     )
     execute_task.cancel()
@@ -417,7 +204,9 @@ async def _quiet_cancel(task) -> None:
         pass
 
 
-async def _await_external_services(queue_item_id: str) -> preflight.PreflightResult:
+async def _await_external_services(
+    queue_item_id: str, preflight_settings: dict | None = None,
+) -> preflight.PreflightResult:
     """Дождаться внешних сервисов, не переставая слушать заявку на прерывание.
 
     Ожидание может тянуться до двух часов, поэтому оператор обязан иметь
@@ -426,20 +215,35 @@ async def _await_external_services(queue_item_id: str) -> preflight.PreflightRes
     раз в цикл проверки (а не раз в `interrupt_poll_interval_seconds`) —
     задержка реакции в минуты на фазе ожидания приемлема и не плодит лишних
     запросов к `testing_service`.
+
+    `preflight_settings` — `item["preflight"]` (настройки отдела из
+    testing_service); `None` — env-фолбэк воркера.
     """
+    reported_waiting = False
+
     async def _note_wait(unavailable: list[str], elapsed: float) -> None:
+        nonlocal reported_waiting
         await testing_client.log_chunk(
             queue_item_id,
             "Ожидание доступности внешних сервисов "
             f"({', '.join(unavailable)}); прошло {int(elapsed)} с\n",
         )
+        # Левая панель UI: «Ожидание доступности сервисов — тестирование
+        # приостановлено».
+        await testing_client.report_preflight_state(queue_item_id, waiting=True, unavailable=unavailable)
+        reported_waiting = True
 
     async def _interrupt_requested() -> str | None:
         return await testing_client.check_interrupt(queue_item_id)
 
-    return await preflight.wait_for_external_services(
-        on_wait=_note_wait, should_abort=_interrupt_requested,
-    )
+    try:
+        return await preflight.wait_for_external_services(
+            preflight=preflight_settings, on_wait=_note_wait, should_abort=_interrupt_requested,
+        )
+    finally:
+        # Дождались, сдались или item сняли — ожидания больше нет.
+        if reported_waiting:
+            await testing_client.report_preflight_state(queue_item_id, waiting=False)
 
 
 async def _run_one_item(item: dict) -> None:
@@ -452,7 +256,7 @@ async def _run_one_item(item: dict) -> None:
     # первым делом клонирует ветку с git.astralinux.ru, а сам тест ходит в
     # Jira/Confluence, поэтому кратковременную недоступность надо пережидать,
     # а не сжигать на ней единственную попытку retry.
-    gate = await _await_external_services(queue_item_id)
+    gate = await _await_external_services(queue_item_id, item.get("preflight"))
     if gate.aborted is not None:
         logger.info("queue item %s interrupted while waiting for external services", queue_item_id)
         await testing_client.report_completed(
@@ -466,20 +270,11 @@ async def _run_one_item(item: dict) -> None:
         )
         return
 
-    # Сначала сам скрипт, потом его аргумент-файл — обе записи обязательны,
-    # первая же осечка заканчивает item, не доводя до `execute()`. В
-    # prepare_only-режиме следом уходят ещё два файла: testenv-маркер (без
-    # него ветка в starter.sh недостижима) и command.txt (иначе после
-    # прогона на стенде не остаётся вообще никакого следа от него).
-    write_error = await _write_starter_script(item, settings)
+    # Файлы задания — в порядке списка; первая же осечка заканчивает item,
+    # не доводя до `execute()`.
+    write_error = await _cleanup_files(item, settings)
     if write_error is None:
-        write_error = await _write_git_token_file(item, settings)
-    if write_error is None:
-        write_error = await _write_dates_file(item, settings)
-    if write_error is None and item.get("prepare_only"):
-        write_error = await _write_testenv_marker(item, settings)
-        if write_error is None:
-            write_error = await _write_prepare_only_command_file(item, settings)
+        write_error = await _write_files(item, settings)
     if write_error is not None:
         await testing_client.report_completed(
             queue_item_id, succeeded=False, exit_code=None, error=write_error,
@@ -515,9 +310,9 @@ async def _run_one_item(item: dict) -> None:
         await testing_client.log_segment(
             queue_item_id,
             kind="command",
-            label=_PREPARE_ONLY_SEGMENT_LABEL if item.get("prepare_only") else _COMMAND_SEGMENT_LABEL,
+            label=_segment_label(item),
             status="OK" if result.succeeded else "FATAL",
-            command_text_masked=shlex.join(item.get("command_masked") or []),
+            command_text_masked=item.get("launch_command_masked") or "",
             output=result.output,
             host=item["host"],
             started_at=result.started_at,

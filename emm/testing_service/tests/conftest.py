@@ -136,9 +136,26 @@ def _cleanup_created_variables():
             conn.execute(text("DELETE FROM test_definitions WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM global_variables WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM test_stands WHERE created_by IS NOT NULL"))
+            # Справочник статистики: сид миграции без created_by, строки,
+            # заведённые через API, — всегда с ним.
+            conn.execute(text("DELETE FROM statistics_categories WHERE created_by IS NOT NULL"))
             conn.execute(text("DELETE FROM department_test_settings WHERE department_id LIKE 'dep\\_%' ESCAPE '\\'"))
             conn.execute(text(
                 "DELETE FROM department_integration_settings WHERE department_id LIKE 'dep\\_%' ESCAPE '\\'"
+            ))
+            # zephyr_folders — без сида, целиком в владении домена.
+            conn.execute(text("DELETE FROM zephyr_folders"))
+            # Профили запуска: сид `lp_default` без created_by, заведённые
+            # через API — с ним; версии уходят каскадом. Без этого профиль отдела
+            # «по умолчанию» из одного теста подменял команду запуска всем
+            # следующим тестам того же отдела.
+            conn.execute(text("DELETE FROM launch_profiles WHERE created_by IS NOT NULL"))
+            # Публичный compat: сидовая подсеть без created_by, настройки
+            # — обратно к сиду (отдел по умолчанию не выбран).
+            conn.execute(text("DELETE FROM compat_allowed_networks WHERE created_by IS NOT NULL"))
+            conn.execute(text("UPDATE compat_allowed_networks SET enabled = true WHERE created_by IS NULL"))
+            conn.execute(text(
+                "UPDATE legacy_compat_settings SET default_department_id = NULL, updated_by = NULL"
             ))
             # department_report_members/department_activity_reports — целиком в
             # владении этого домена (нет сида, никогда не сеются миграцией),
@@ -207,6 +224,75 @@ def _patch_introspect(monkeypatch):
     _FAKE_INTROSPECT.clear()
     yield
     _FAKE_INTROSPECT.clear()
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "real_test_account: не подменять тестовую учётку отдела (services/test_account.py) дефолтной",
+    )
+
+
+# Учётка, которую видят тесты очереди, не знающие про.
+DEFAULT_TEST_ACCOUNT_CREDENTIAL_ID = "cred_test_account_default"
+DEFAULT_TEST_ACCOUNT_PRIVATE_KEY = "-----BEGIN OPENSSH PRIVATE KEY-----\ndefault\n-----END OPENSSH PRIVATE KEY-----\n"
+
+
+@pytest.fixture(autouse=True)
+def _default_test_account(request, monkeypatch):
+    """Тестовая учётка отдела «настроена» для всех тестов по умолчанию.
+
+    Без неё очередь падает `TEST_ACCOUNT_NOT_CONFIGURED` ещё до
+    prepare-for-test — пришлось бы заводить credential в каждом тесте
+    очереди. Тесты самой учётки ставят маркер `real_test_account` и
+    работают с настоящим модулем и замоканным secret_client.
+    """
+    if request.node.get_closest_marker("real_test_account"):
+        return
+    from src.services import test_account
+
+    async def _credential_id(db, department_id):
+        return DEFAULT_TEST_ACCOUNT_CREDENTIAL_ID
+
+    async def _reveal(credential_id):
+        return test_account.AccountSecret(
+            login="u", password="default-test-password",
+            private_key=DEFAULT_TEST_ACCOUNT_PRIVATE_KEY,
+            public_key="ssh-ed25519 AAAAdefault test-account",
+        )
+
+    monkeypatch.setattr(test_account, "get_credential_id", _credential_id)
+    monkeypatch.setattr(test_account, "require_credential_id", _credential_id)
+    monkeypatch.setattr(test_account, "reveal_account", _reveal)
+
+    # Переменные учётки (`TEST_HOME` в путях профиля запуска)
+    # раскрывают credential через контекст резолва, мимо `reveal_account`.
+    import json
+
+    from src.services import variable_resolver
+
+    original_reveal = variable_resolver.ResolveContext.reveal
+
+    async def _ctx_reveal(self, credential_id):
+        if credential_id == DEFAULT_TEST_ACCOUNT_CREDENTIAL_ID:
+            return "u", json.dumps({
+                "v": 1, "password": "default-test-password",
+                "private_key": DEFAULT_TEST_ACCOUNT_PRIVATE_KEY,
+                "public_key": "ssh-ed25519 AAAAdefault test-account",
+            })
+        return await original_reveal(self, credential_id)
+
+    monkeypatch.setattr(variable_resolver.ResolveContext, "reveal", _ctx_reveal)
+
+
+@pytest.fixture(autouse=True)
+def _reset_compat_stand_ip_cache():
+    """Карта «IP → стенд» публичного compat кешируется на процесс."""
+    from src.services import legacy_compat
+
+    legacy_compat.reset_stand_ip_cache()
+    yield
+    legacy_compat.reset_stand_ip_cache()
 
 
 @pytest.fixture(autouse=True)

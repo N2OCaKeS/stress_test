@@ -12,7 +12,7 @@ ENV POETRY_NO_INTERACTION=1
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential curl \
+    && apt-get install -y --no-install-recommends build-essential curl sudo procps \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir poetry==2.3.4

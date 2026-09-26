@@ -13,7 +13,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Integer, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
@@ -26,6 +26,12 @@ class TestDefinition(Base):
     __table_args__ = (
         CheckConstraint("readiness IN ('ready', 'review', 'broken', 'development')", name="ck_test_definitions_readiness"),
         CheckConstraint("mode IN ('orel', 'smolensk')", name="ck_test_definitions_mode"),
+        CheckConstraint(
+            "dates_quoting IN ('shell', 'legacy', 'raw')", name="ck_test_definitions_dates_quoting",
+        ),
+        CheckConstraint(
+            "verdict_source IN ('zephyr', 'exit_code')", name="ck_test_definitions_verdict_source",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -38,6 +44,39 @@ class TestDefinition(Base):
     # "file system benchmark. EXT4" → "FS_EXT4". Пусто — матрица печатает
     # полное название, и по нему же сортирует строки.
     matrix_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Короткое имя теста (D6) — легаси-ключ словаря `tests`
+    # (`allta_app_full/allta_image_conf.py:237-305`: `XFS`, `postgresql-sm`,
+    # `auditd-p`…). Его подставляет переменная `TEST_SHORT_NAME` (источник
+    # `test_field`, fallback — `full_name`) в `--confluence-new-page`
+    # (`backup_image.py:297`: `f'{args.TEST}_…'`). Не то же, что
+    # `matrix_label`: у матрицы свой словарь сокращений.
+    short_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Экранирование токенов в `dates.conf` (D4, `core.constants.DatesQuoting`):
+    # `shell` — `shlex.quote`, `legacy` — двойные кавычки у токенов с
+    # пробелом, `raw` — без экранирования.
+    dates_quoting: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="shell", server_default="shell",
+    )
+    # Источник исхода теста:
+    # `zephyr` — статус, выставленный скриптом в прогоне Zephyr (легаси);
+    # `exit_code` — код выхода `starter.sh`.
+    verdict_source: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="zephyr", server_default="zephyr",
+    )
+    # Шаг настройки стенда и `starter_suffix` с — у шагов теста
+    # (`models/test_step.py`); API теста отдаёт и принимает их как значения
+    # первого шага: это не колонки, а атрибуты экземпляра, их проставляет
+    # `services/test_step.py::attach_first_step` перед ответом API.
+    stand_setup = None
+    starter_suffix = None
+    # Профиль подготовки; NULL — профиль отдела по умолчанию.
+    provisioning_profile_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("provisioning_profiles.id", ondelete="SET NULL"), nullable=True,
+    )
+    # Профиль запуска; NULL — профиль отдела по умолчанию.
+    launch_profile_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("launch_profiles.id", ondelete="SET NULL"), nullable=True,
+    )
     owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
     readiness: Mapped[str] = mapped_column(String(32), nullable=False, default="development", server_default="development")
     # Режим безопасности Astra (orel/smolensk), под которым тест всегда
@@ -50,8 +89,8 @@ class TestDefinition(Base):
     # Per-department скоуп теста. Nullable — платформенные/демонстрационные
     # тесты без владельца-отдела допустимы, как и у part прочих каталогов.
     department_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    # Soft-ref на test_stands.id (появится волной 4). Без FK — своей таблицы
-    # стендов ещё нет, но привязка тест↔стенд нужна уже в этой волне.
+    # Soft-ref на test_stands.id (появится позже). Без FK — своей таблицы
+    # стендов ещё нет, но привязка тест↔стенд нужна уже сейчас.
     pinned_stand_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Компонент ОС, чьё изменение в changelog "затрагивает" этот тест (§1/§7
     # плана миграции — фильтр СТП-прогона по changelog). Используется ТОЛЬКО
@@ -59,17 +98,16 @@ class TestDefinition(Base):
     # (легаси `tests_list`: тест без компонента не выбирался ни одним
     # changelog'ом); в полный набор (`scope=full`) попадает по-прежнему.
     changelog_component: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    # Позиционный $5 у legacy `starter.sh` — какой флаг `run.py` клонированной
-    # ветки передаст конечному скрипту: "kernel"/"balance"/"oom" или пусто
-    # (generic `run.py -n <файл>` без доп. флага). Не enum на уровне БД —
-    # просто строка, значение диктует сам `starter.sh` (см. import_catalog).
-    starter_suffix: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Переопределение таймаута SSH-исполнения для этого теста. NULL — берётся
     # дефолт testing_worker'а (`Settings.ssh_command_timeout_seconds`, сейчас
     # час) — общий cap не для каждого теста одинаково уместен: быстрый smoke
     # не должен час висеть на зависшем стенде, а долгий бенчмарк наоборот
     # может не уложиться в общий дефолт.
     timeout_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Приоритет теста для ключа `priority` правила сортировки кампании отдела
+    # (`department_test_settings.campaign_sort_rule`). 0 — легаси
+    # приоритетов не знал, дефолтное правило этот ключ не использует.
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     # Soft-FK на auth_service identity (`usr_<hex>`/`bot_<hex>`).
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

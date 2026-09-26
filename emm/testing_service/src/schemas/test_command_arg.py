@@ -15,6 +15,10 @@ from src.core.constants import CommandArgKind
 class TestCommandArgCreate(BaseModel):
     """Тело POST /test-definitions/{test_id}/args — добавить слот в конец команды."""
 
+    step_id: str | None = Field(
+        default=None, max_length=64,
+        description="Шаг теста. Не задан — первый шаг (одношаговый тест).",
+    )
     position: int | None = Field(
         default=None, ge=0,
         description="Порядок слота. Не задан — слот добавляется в конец списка.",
@@ -28,7 +32,11 @@ class TestCommandArgCreate(BaseModel):
     )
     override_value: str | None = Field(
         default=None,
-        description="Per-test переопределение значения переменной (только для kind=variable).",
+        description=(
+            "Per-test переопределение значения переменной (только для kind=variable). "
+            "Понимает подстановки `{CODE}` других переменных — например "
+            "`{TEST_SHORT_NAME}_custom`; неизвестный код → 422 VARIABLE_TEMPLATE_UNKNOWN."
+        ),
     )
 
 
@@ -38,6 +46,12 @@ class TestCommandArgsCopy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source_test_id: str = Field(min_length=1, max_length=64)
+    step_id: str | None = Field(
+        default=None, max_length=64, description="Шаг текущего теста, чьи слоты заменяются; пусто — первый.",
+    )
+    source_step_id: str | None = Field(
+        default=None, max_length=64, description="Шаг теста-источника; пусто — его первый шаг.",
+    )
 
 
 class TestCommandArgUpdate(BaseModel):
@@ -57,7 +71,8 @@ class TestCommandArgResponse(BaseModel):
 
     id: str = Field(description="Test command arg ID (prefix targ_).")
     test_id: str = Field(description="Тест, которому принадлежит слот.")
-    position: int = Field(description="Порядок слота в команде.")
+    step_id: str = Field(description="Шаг теста, которому принадлежит слот.")
+    position: int = Field(description="Порядок слота в команде шага.")
     kind: str = Field(description="literal / variable.")
     literal_value: str | None = Field(default=None, description="Значение при kind=literal.")
     variable_id: str | None = Field(default=None, description="Ссылка на переменную при kind=variable.")

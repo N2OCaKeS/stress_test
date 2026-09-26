@@ -5,8 +5,8 @@ Revises: fbad9bc3b9dd
 Create Date: 2026-09-08
 
 Раскрытие учётки исполнения теста (`server_test_credentials`) человеку —
-живая отладка стенда во время/после прогона (план ALLTA MIGRATION §5.3:
-и админ server_service, и (позже, проксируя сюда) админ testing_service
+живая отладка стенда во время/после прогона (и админ server_service,
+и (позже, проксируя сюда) админ testing_service
 должны иметь доступ). Один (entity, action) — `(server, view_test_credentials)`,
 засеян только роли `admin` — в отличие от `view_management_credentials`
 (worker-only) это обычный человеческий грант, per-department admin может

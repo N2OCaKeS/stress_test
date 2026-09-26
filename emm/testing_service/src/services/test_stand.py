@@ -40,7 +40,8 @@ from src.dependencies.auth import Identity
 from src.models import TestStand
 from src.repositories import test_stand as repo
 from src.schemas.test_stand import TestStandCreate, TestStandUpdate
-from src.services import audit_service, permissions, server_client, stand_metrics
+from src.services import audit_service, permissions, server_client, stand_metrics, vm_stand
+from src.services.stand_target import StandTarget, is_vm, target_of
 from src.utils.ids import test_stand_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -64,9 +65,9 @@ async def create_test_stand(
     bearer_token: str,
     payload: TestStandCreate,
 ) -> TestStand:
-    """INSERT нового стенда. `department_id` — из живой карточки сервера.
+    """INSERT нового стенда. `department_id` — из живой карточки сервера/ВМ.
 
-    UNIQUE(server_id) → 409 TEST_STAND_DUPLICATE. Сервер не найден/не виден
+    UNIQUE(server_id)/UNIQUE(vm_id) → 409 TEST_STAND_DUPLICATE. Сервер не найден/не виден
     вызывающему/server_service недоступен → ошибка server_client пробрасывается
     как есть (её error_code уже описывает конкретную причину).
     """
@@ -81,14 +82,19 @@ async def create_test_stand(
         )
         raise
 
+    target = (
+        StandTarget.vm(payload.vm_id) if payload.target_type == "vm"
+        else StandTarget.server(payload.server_id)
+    )
+    target_details = {"server_id": payload.server_id, "vm_id": payload.vm_id, "target_type": payload.target_type}
     try:
-        server = await server_client.get_server(bearer_token, payload.server_id)
+        server = await server_client.get_stand_card(bearer_token, target)
     except NotFoundError:
         audit_service.emit(
             "test_stand.create",
             target_type="test_stand",
             status="failure", allowed=True,
-            details={"reason": "server_not_found", "server_id": payload.server_id},
+            details={"reason": "server_not_found", **target_details},
         )
         raise
     except (AuthorizationError, ServiceUnavailableError):
@@ -96,7 +102,7 @@ async def create_test_stand(
             "test_stand.create",
             target_type="test_stand",
             status="failure", allowed=True,
-            details={"reason": "server_service_unavailable", "server_id": payload.server_id},
+            details={"reason": "server_service_unavailable", **target_details},
         )
         raise
 
@@ -106,7 +112,7 @@ async def create_test_stand(
             "test_stand.create",
             target_type="test_stand",
             status="failure", allowed=True,
-            details={"reason": "server_missing_department", "server_id": payload.server_id},
+            details={"reason": "server_missing_department", **target_details},
         )
         raise ServiceUnavailableError(
             error_code="SERVER_SERVICE_ERROR",
@@ -130,19 +136,22 @@ async def create_test_stand(
             "test_stand.create",
             target_type="test_stand",
             status="failure", allowed=True,
-            details={"reason": "duplicate", "server_id": payload.server_id},
+            details={"reason": "duplicate", **target_details},
         )
         raise ConflictError(
             error_code="TEST_STAND_DUPLICATE",
             message="This server is already registered as a test stand",
-            details={"hint": "уникальные поля — server_id и legacy_token"},
+            details={"hint": "уникальные поля — server_id, vm_id и legacy_token"},
         ) from exc
     await db.refresh(obj)
     audit_service.emit(
         "test_stand.create",
         target_id=obj.id, target_type="test_stand",
         status="success", allowed=True,
-        details={"server_id": obj.server_id, "department_id": obj.department_id},
+        details={
+            "server_id": obj.server_id, "vm_id": obj.vm_id, "target_type": obj.target_type,
+            "department_id": obj.department_id,
+        },
     )
     return obj
 
@@ -170,7 +179,7 @@ async def get_test_stand(
     server: dict | None = None
     server_unavailable = False
     try:
-        server = await server_client.get_server(bearer_token, obj.server_id)
+        server = await server_client.get_stand_card(bearer_token, target_of(obj))
     except (NotFoundError, AuthorizationError, ServiceUnavailableError) as exc:
         logger.info(
             "test_stand %s: live server lookup failed (%s) — отдаём карточку без server-блока",
@@ -191,6 +200,7 @@ async def list_test_stands(
     is_active: bool | None = None,
     queue_enabled: bool | None = None,
     server_id: str | None = None,
+    vm_id: str | None = None,
 ) -> tuple[list[TestStand], int]:
     """List + count стендов под фильтрами. Только хранимые поля, без live-обогащения.
 
@@ -207,11 +217,11 @@ async def list_test_stands(
     items = await repo.list_all(
         db, limit=limit, offset=offset,
         department_id=scope, is_active=is_active, queue_enabled=queue_enabled,
-        server_id=server_id,
+        server_id=server_id, vm_id=vm_id,
     )
     total = await repo.count_all(
         db, department_id=scope, is_active=is_active, queue_enabled=queue_enabled,
-        server_id=server_id,
+        server_id=server_id, vm_id=vm_id,
     )
     return items, total
 
@@ -352,14 +362,28 @@ async def delete_test_stand(
             details={"reason": "permission_denied", "department_id": obj.department_id},
         )
         raise
-    server_id = obj.server_id
+    # стенд, на который ссылается переменная `stand_ref` или сценарий,
+    # не удаляется молча — иначе они перестанут резолвиться.
+    from src.services import scenario as scenario_svc  # поздний импорт: сценарий импортирует этот модуль
+
+    try:
+        await scenario_svc.ensure_stand_not_referenced(db, stand_id)
+    except ConflictError as exc:
+        audit_service.emit(
+            "test_stand.delete",
+            target_id=stand_id, target_type="test_stand",
+            status="failure", allowed=True,
+            details={"reason": exc.error_code, **exc.details},
+        )
+        raise
+    server_id, vm_id = obj.server_id, obj.vm_id
     await repo.delete(db, obj)
     await db.commit()
     audit_service.emit(
         "test_stand.delete",
         target_id=stand_id, target_type="test_stand",
         status="success", allowed=True,
-        details={"server_id": server_id},
+        details={"server_id": server_id, "vm_id": vm_id},
     )
 
 
@@ -410,7 +434,13 @@ async def get_test_stand_credentials(
             error_code="TEST_STAND_NOT_FOUND",
             message="Test stand not found",
         )
-    data = await server_client.get_test_credentials(bearer_token, obj.server_id, reveal=reveal)
+    if is_vm(obj):
+        # ВМ-стенд готовится только с тестовой учёткой отдела:
+        # отдельной учётки стенда у server_service нет — её видно в
+        # «Тестовой учётке» отдела.
+        data = {"exists": False}
+    else:
+        data = await server_client.get_test_credentials(bearer_token, obj.server_id, reveal=reveal)
     audit_service.emit(
         action,
         target_id=stand_id, target_type="test_stand",
@@ -418,3 +448,14 @@ async def get_test_stand_credentials(
         details={"reveal": reveal, "server_id": obj.server_id},
     )
     return data
+
+
+async def get_vm_snapshot_mapping(db: AsyncSession, identity: Identity, stand_id: str) -> dict:
+    """Сопоставление «снимок ВМ ↔ версия ОС» для UI стенда. Свой отдел."""
+    obj = await get_stand_or_404(db, stand_id, identity)
+    if not is_vm(obj):
+        raise ConflictError(
+            error_code="TEST_STAND_NOT_VM",
+            message="Snapshot mapping is available only for VM stands",
+        )
+    return await vm_stand.snapshot_mapping(obj)

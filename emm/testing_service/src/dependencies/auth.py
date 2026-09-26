@@ -434,7 +434,7 @@ def require_internal_caller(
     Возвращает identity (str) — endpoint может писать его в audit/details.
     Не ходит в auth_service introspect — это отдельный s2s-канал, без user
     identity/department (например, server_service → testing_service callback
-    из §5.1 плана миграции, волна 2/5).
+    из §5.1 плана миграции).
     """
     if not allowed_identities:
         raise ValueError("require_internal_caller: allowed_identities must be non-empty")

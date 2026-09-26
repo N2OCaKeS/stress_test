@@ -39,6 +39,7 @@ from src.repositories import queue_item as queue_item_repo
 from src.repositories import test_run as test_run_repo
 from src.repositories import test_stand as test_stand_repo
 from src.services import server_client
+from src.services.stand_target import target_of
 
 PoolOverviewMode = Literal["active_run", "rolling_24h"]
 
@@ -60,12 +61,14 @@ class StandOverview:
     """Один стенд пула с посчитанным статусом (приоритет — см. module docstring)."""
 
     stand_id: str
-    server_id: str
+    server_id: str | None
     status: StandStatus
     busy_state: str | None
     busy_service_name: str | None
     ping_reachable: bool | None
     ping_checked_at: datetime | None
+    target_type: str = "server"
+    vm_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -109,15 +112,15 @@ def _classify_stand(
 
 async def _stand_overviews(db, department_id: str) -> list[StandOverview]:
     stands = await test_stand_repo.list_all(db, limit=1000, department_id=department_id, is_active=True)
-    server_ids = [stand.server_id for stand in stands]
-    statuses = await server_client.get_servers_status_batch(server_ids) if server_ids else {}
+    targets = [target_of(stand) for stand in stands]
+    statuses = await server_client.get_stands_status_batch(targets) if targets else {}
     settings = get_settings()
     stale_after = timedelta(seconds=settings.pool_overview_ping_stale_seconds)
     now = datetime.now(timezone.utc)
 
     result = []
     for stand in stands:
-        info = statuses.get(stand.server_id)
+        info = statuses.get(target_of(stand))
         ping_checked_at = _parse_datetime(info.get("ping_checked_at")) if info else None
         status = _classify_stand(
             server_found=info is not None,
@@ -129,6 +132,8 @@ async def _stand_overviews(db, department_id: str) -> list[StandOverview]:
         result.append(StandOverview(
             stand_id=stand.id,
             server_id=stand.server_id,
+            target_type=stand.target_type,
+            vm_id=stand.vm_id,
             status=status,
             busy_state=info.get("busy_state") if info else None,
             busy_service_name=info.get("busy_service_name") if info else None,

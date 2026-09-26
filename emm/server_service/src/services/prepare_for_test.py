@@ -20,7 +20,8 @@ ACS-restore → авто-prepare, ничего нового в ней не де�
 
 Стадии и их `failed_step` в callback'е:
 
-    restore        acs.snapshot_restore не смог восстановить диск
+    restore        снимка `{hostname}-{version}` нет в ACS либо
+                   acs.snapshot_restore не смог восстановить диск
     prepare        авто-prepare после reimage не довёл сервер до managed
     user_provision не удалось завести/переустановить пользователя теста
     kernel_change  ядра нет в каталоге РЦ либо grub не переключился
@@ -37,6 +38,13 @@ ACS-restore → авто-prepare, ничего нового в ней не де�
 * учётка **исполнения теста** (`server_test_credentials`) — новая для стенда,
   но не новый слой: её выписывает этот пайплайн и отдаёт наружу только в
   callback'е.
+
+  С вызывающий может прислать `test_account_credential_id` — ссылку на
+  тестовую учётку отдела в secret_service. Тогда логин,
+  пароль и публичный ключ берутся из неё (раскрытие — на шаге
+  `user_provision`, поэтому смена учётки действует со следующей подготовки),
+  случайные не генерируются, `server_test_credentials` не пишется, а
+  callback учётных данных не несёт: вызывающий их и так знает.
 
 Бронь. Если стенд уже забронирован вызывающим сервисом
 (`/internal/servers/{id}/acquire-for-service`), мы её не трогаем — отпускает
@@ -55,6 +63,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import Action, BusyActorType, BusyState, EntityType, ServerStatus
 from src.core.exceptions import (
+    AppException,
     AuthorizationError,
     ConflictError,
     NotFoundError,
@@ -65,6 +74,8 @@ from src.models.server_prepare_for_test import (
     PREPARE_FOR_TEST_FAILED,
     PREPARE_FOR_TEST_IN_PROGRESS,
     PREPARE_FOR_TEST_SUCCEEDED,
+    PREPARATION_FULL,
+    PREPARATION_REVERT_ONLY,
     STEP_KERNEL_CHANGE,
     STEP_PREPARE,
     STEP_REBOOT_VERIFY,
@@ -77,10 +88,12 @@ from src.repositories import os_version as osv_repo
 from src.repositories import server as server_repo
 from src.schemas.identity import IdentityContext
 from src.services import (
+    acs_snapshot_lookup,
     audit_service,
     os_version_bootstrap_password as bootstrap_password_svc,
     permissions,
     reservation,
+    secret_client,
     secrets_service,
     testing_client,
     worker_client,
@@ -198,10 +211,32 @@ async def _issue_test_credentials(
     }
 
 
+async def _use_department_test_account(
+    db: AsyncSession, server: Server, credential_id: str,
+) -> dict:
+    """Учётка исполнения теста из тестовой учётки отдела. Возвращает plaintext.
+
+    В отличие от `_issue_test_credentials`, ничего не генерирует и копию
+    секрета у себя не держит: канонический хранитель — secret_service.
+    Прежняя строка `server_test_credentials` (от подготовки со случайной
+    учёткой) удаляется — restore её уже обесценил, а показывать в карточке
+    сервера пароль, которого на боксе нет, нельзя.
+    """
+    account = await secret_client.reveal_test_account(credential_id, server.department_id)
+    stmt = select(ServerTestCredentials).where(
+        ServerTestCredentials.server_id == server.id
+    )
+    stale = (await db.execute(stmt)).scalar_one_or_none()
+    if stale is not None:
+        await db.delete(stale)
+        await db.flush()
+    return account
+
+
 async def reveal_test_credentials(
     db: AsyncSession, identity: IdentityContext, server_id: str, *, reveal: bool,
 ) -> dict:
-    """Карточка учётки исполнения теста для человека (§5.3 плана).
+    """Карточка учётки исполнения теста для человека.
 
     Гейт — `(server, view_test_credentials)`, единым action'ом на метаданные
     и на сам секрет (без раздельного view/view_password, как у server_account —
@@ -263,8 +298,8 @@ async def read_test_credentials(
 ) -> dict | None:
     """Расшифрованная учётка исполнения теста сервера, либо None.
 
-    Единственный canonical хранитель этого секрета — server_service (план
-    миграции, §5.3): testing_service свою копию не держит и берёт значение
+    Единственный canonical хранитель этого секрета — server_service:
+    testing_service свою копию не держит и берёт значение
     отсюда.
     """
     stmt = select(ServerTestCredentials).where(
@@ -304,8 +339,17 @@ async def start(
     test_username: str,
     requested_by_department_id: str | None,
     correlation_id: str,
+    test_account_credential_id: str | None = None,
+    stand_setup: dict | None = None,
+    provisioning: dict | None = None,
+    preparation: str = PREPARATION_FULL,
+    skip_pam_fix: bool = False,
 ) -> ServerPrepareForTestRequest:
     """Принять запрос на подготовку стенда и запустить цепочку restore→prepare.
+
+    `preparation=revert_only` — без смены режима и без шага настройки стенда
+    (`stand_setup` отбрасывается здесь же, до записи в БД). `skip_pam_fix` —
+    без шага `pam_fix`, независимо от `preparation` и профиля подготовки.
 
     Идемпотентность — по `correlation_id`: повторный вызов возвращает ту же
     строку, ничего не диспатчит. Это важнее, чем кажется: у пайплайна нет
@@ -365,14 +409,19 @@ async def start(
         os_version_id=os_version_id,
         kernel=kernel,
         mode=mode,
+        preparation=preparation,
+        skip_pam_fix=skip_pam_fix,
         test_username=test_username,
+        test_account_credential_id=test_account_credential_id,
         requested_by_department_id=requested_by_department_id,
         requested_by_service=service_name,
         status=PREPARE_FOR_TEST_IN_PROGRESS,
         stage=STEP_RESTORE,
+        provisioning=provisioning,
     )
     db.add(request)
     await db.flush()
+    store_stand_setup(request, stand_setup if preparation == PREPARATION_FULL else None)
 
     audit_service.emit(
         AUDIT_ACTION_REQUESTED,
@@ -384,7 +433,10 @@ async def start(
             "os_version_id": os_version_id,
             "kernel": kernel,
             "mode": mode,
+            "preparation": preparation,
+            "skip_pam_fix": skip_pam_fix,
             "test_username": test_username,
+            "test_account_credential_id": test_account_credential_id,
             "service_name": service_name,
             "department_id": server.department_id,
         },
@@ -426,6 +478,23 @@ async def start(
         )
         return request
 
+    if test_account_credential_id:
+        # Ссылку проверяем до restore (секрет не раскрываем — это на шаге
+        # user_provision): чужая или несуществующая учётка должна ронять
+        # запрос сразу, а не через час после переписанного диска.
+        try:
+            await secret_client.check_test_account_credential(
+                test_account_credential_id, server.department_id,
+            )
+        except AppException as exc:
+            await db.commit()
+            await _finish_failed(
+                db, request, STEP_USER_PROVISION,
+                f"{exc.error_code}: {exc.message}",
+                server=server,
+            )
+            return request
+
     acquired = await _hold_reservation(
         db, server, service_name=service_name, os_version_name=os_version.name,
         kernel=kernel,
@@ -433,15 +502,34 @@ async def start(
     request.reservation_acquired = acquired
     await db.commit()
 
+    # снимок ищем в живом списке ACS по `{hostname}-{version}` с
+    # нормализацией версии и в restore отдаём его фактический хвост — ACS
+    # склеивает имя сама. Нет снимка (могли удалить, пока item стоял в
+    # очереди) или ACS недоступна — `restore` проваливается сразу, без
+    # `restore-backup`; свою бронь `_finish_failed` снимает.
+    try:
+        snapshot = await acs_snapshot_lookup.find_snapshot_for_restore(
+            db, hostname=server.hostname, version_name=os_version.name,
+        )
+    except AppException as exc:
+        await _finish_failed(
+            db, request, STEP_RESTORE, f"{exc.error_code}: {exc.message}",
+            server=server,
+        )
+        return request
+
     payload = {
         "server_id": server.id,
         "os_version_id": os_version.id,
-        "version_name": os_version.name,
+        "version_name": snapshot.version_name,
         "host": str(server.ip_address),
         "hostname": server.hostname,
         "ssh_port": server.ssh_port,
         "target_department_id": server.department_id,
     }
+    if request.provisioning is not None:
+        # ожидание после restore — с тем же allowlist упавших юнитов.
+        payload["provisioning"] = request.provisioning
     try:
         task_id = await worker_client.dispatch_task(
             db=db,
@@ -463,6 +551,38 @@ async def start(
         )
         return request
     return request
+
+
+def apply_preparation(payload: dict, request: ServerPrepareForTestRequest) -> None:
+    """Флаги объёма подготовки в payload воркера (общий для сервера и ВМ)."""
+    if request.preparation == PREPARATION_REVERT_ONLY:
+        payload["skip_mode_switch"] = True
+    if request.skip_pam_fix:
+        payload["skip_pam_fix"] = True
+
+
+def _script_aad(table: str, row_id: str) -> bytes:
+    return f"stand_setup_script|{table}|{row_id}".encode()
+
+
+def store_stand_setup(row, stand_setup: dict | None) -> None:
+    """Разложить шаг настройки стенда: параметры — JSONB, скрипт — шифротекст."""
+    if not stand_setup:
+        row.stand_setup = None
+        row.stand_setup_script_encrypted = None
+        return
+    spec = dict(stand_setup)
+    script = spec.pop("script", "") or ""
+    row.stand_setup = spec
+    row.stand_setup_script_encrypted = (
+        secrets_service.encrypt(script, aad=_script_aad(row.__tablename__, row.id)) if script else None
+    )
+
+
+def read_stand_setup_script(row) -> str:
+    if not row.stand_setup_script_encrypted:
+        return ""
+    return secrets_service.decrypt(row.stand_setup_script_encrypted, aad=_script_aad(row.__tablename__, row.id))
 
 
 async def _hold_reservation(
@@ -563,17 +683,34 @@ async def on_server_prepared(
     if request is None:
         return None
 
-    creds = await _issue_test_credentials(db, server, request.test_username)
+    if request.test_account_credential_id:
+        try:
+            creds = await _use_department_test_account(db, server, request.test_account_credential_id)
+        except AppException as exc:
+            await _finish_failed(
+                db, request, STEP_USER_PROVISION,
+                f"{exc.error_code}: {exc.message}",
+                release=False,
+            )
+            return request
+    else:
+        creds = await _issue_test_credentials(db, server, request.test_username)
     request.stage = STEP_USER_PROVISION
     await db.commit()
 
     stash_key = worker_client.dispatch_creds_key(dispatch_creds_id())
     try:
-        await worker_client.store_dispatch_creds(stash_key, {
+        stash = {
             "test_username": creds["username"],
             "test_password": creds["password"],
             "test_ssh_public_key": creds["ssh_public_key"],
-        })
+        }
+        script = read_stand_setup_script(request)
+        if script:
+            # Скрипт настройки стенда — тем же зашифрованным stash'ем,
+            # в payload задачи (и в таблицу tasks) текст не попадает.
+            stash["stand_setup_script"] = script
+        await worker_client.store_dispatch_creds(stash_key, stash)
     except Exception as exc:  # noqa: BLE001 — любой runtime-фейл Redis
         await worker_client.delete_dispatch_creds(stash_key)
         await _finish_failed(
@@ -595,6 +732,11 @@ async def on_server_prepared(
         "mode": request.mode,
         "test_creds_key": stash_key,
     }
+    apply_preparation(payload, request)
+    if request.stand_setup is not None:
+        payload["stand_setup"] = request.stand_setup
+    if request.provisioning is not None:
+        payload["provisioning"] = request.provisioning
     try:
         task_id = await worker_client.dispatch_task(
             db=db,
@@ -620,6 +762,13 @@ async def on_server_prepared(
 
 
 # ── Завершение ───────────────────────────────────────────────────────────────
+
+
+def _audit_target(request: ServerPrepareForTestRequest) -> dict:
+    """Цель аудита: сервер или ВМ."""
+    if request.vm_id is not None:
+        return {"target_id": request.vm_id, "target_type": "vm"}
+    return {"target_id": request.server_id, "target_type": "server"}
 
 
 async def complete_from_worker(
@@ -660,7 +809,7 @@ async def complete_from_worker(
 
     audit_service.emit(
         AUDIT_ACTION_COMPLETED,
-        target_id=request.server_id, target_type="server",
+        **_audit_target(request),
         status="success" if succeeded else "failure", allowed=True,
         details={
             "prepare_request_id": request.id,
@@ -700,7 +849,7 @@ async def _finish_failed(
 
     audit_service.emit(
         AUDIT_ACTION_COMPLETED,
-        target_id=request.server_id, target_type="server",
+        **_audit_target(request),
         status="failure", allowed=True,
         details={
             "prepare_request_id": request.id,
@@ -729,6 +878,12 @@ async def _release_own_reservation(
     снять бронь и взять её заново (например, оператор через админку), и
     возвращать её в `free` из-под него нельзя.
     """
+    if request.vm_id is not None:
+        # ВМ-стенд: своя раскладка брони, те же правила.
+        from src.services import vm_reservation
+
+        await vm_reservation.release_own(db, request.vm_id, request.requested_by_service)
+        return
     if server is None:
         server = await server_repo.get_by_id(db, request.server_id)
     if server is None:
@@ -756,7 +911,12 @@ async def _deliver_callback(
         "correlation_id": request.correlation_id,
         "succeeded": request.status == PREPARE_FOR_TEST_SUCCEEDED,
     }
-    if request.status == PREPARE_FOR_TEST_SUCCEEDED:
+    if request.status == PREPARE_FOR_TEST_SUCCEEDED and request.test_account_credential_id:
+        # Тестовая учётка отдела: вызывающий знает её сам, секреты
+        # обратно не везём.
+        if request.error:
+            body["warning"] = request.error
+    elif request.status == PREPARE_FOR_TEST_SUCCEEDED:
         creds = await read_test_credentials(db, request.server_id)
         if creds is None:
             # Строка кред исчезла между провижном и callback'ом (сервер снесён
@@ -795,6 +955,7 @@ async def _deliver_callback(
 
 __all__ = [
     "AUDIT_ACTION_COMPLETED",
+    "apply_preparation",
     "AUDIT_ACTION_REQUESTED",
     "complete_from_worker",
     "get_active_request",

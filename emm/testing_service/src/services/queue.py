@@ -45,9 +45,13 @@ from src.core.constants import (
     QueueInterruptAction,
     QueueItemState,
     QueueOrchestrationEventKind,
+    QueueVerdict,
     ServiceRole,
     TERMINAL_TEST_RUN_STATUSES,
     TestReadiness,
+    VerdictOutcome,
+    VerdictSource,
+    VerdictWithoutZephyrRun,
 )
 from src.core.exceptions import (
     AppException,
@@ -63,22 +67,34 @@ from src.repositories import department_integration_settings as dis_repo
 from src.repositories import queue_item as repo
 from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_stand as stand_repo
-from src.schemas.queue import PrepareForTestCompletedCallback, QueueClaimItem, QueueCompletedRequest
+from src.schemas.queue import (
+    PrepareForTestCompletedCallback,
+    QueueClaimItem,
+    QueueClaimStep,
+    QueueCompletedRequest,
+)
 from src.services import (
     audit_service,
     creds_stash,
     department_test_settings as dts_svc,
-    launch_context as launch_context_svc,
+    launch_profile as launch_profile_svc,
+    provisioning_profile as provisioning_svc,
     queue_orchestration_log,
+    queue_steps,
+    scenario_queue,
     run_summary,
     secret_client,
     server_client,
+    stand_target,
     statistics_recalc,
     stp_status,
+    test_account as test_account_svc,
     test_run_status,
     launch_stp,
+    vm_stand,
+    zephyr_verdict,
 )
-from src.services.test_command_arg import resolve_dates_content, resolve_dates_content_masked
+from src.services.test_command_arg import resolve_dates
 from src.utils.ids import queue_item_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -124,7 +140,7 @@ async def _load_stand_for_enqueue(db: AsyncSession, stand_id: str, *, for_update
     return stand
 
 
-def _check_test_stand_department_match(test, stand) -> None:
+def check_test_stand_department_match(test, stand) -> None:
     """Тест из чужого отдела не может уехать в очередь стенда другого отдела.
 
     Платформенные тесты (`department_id is None`) не привязаны ни к какому
@@ -140,11 +156,12 @@ def _check_test_stand_department_match(test, stand) -> None:
         )
 
 
-# (server_id, os_version_id) → (monotonic-дедлайн, (снимок_есть, версия)).
-# Кампания и повторные постановки бьют один и тот же (стенд, РЦ) снова и снова
-# за секунды — без кэша каждая такая постановка сходила бы в ACS по сети.
+# (server_id, os_version_id) → (monotonic-дедлайн, (снимок_есть, версия,
+# искомое имя снимка)). Кампания и повторные постановки бьют один и тот же
+# (стенд, РЦ) снова и снова за секунды — без кэша каждая такая постановка
+# сходила бы в ACS по сети.
 _ACS_SNAPSHOT_CHECK_CACHE_TTL_SECONDS = 20.0
-_acs_snapshot_check_cache: dict[tuple[str, str], tuple[float, tuple[bool, str]]] = {}
+_acs_snapshot_check_cache: dict[tuple[str, str], tuple[float, tuple[bool, str, str]]] = {}
 
 
 async def _check_acs_snapshot_available(stand, ctx: dict[str, str]) -> None:
@@ -173,7 +190,7 @@ async def _check_acs_snapshot_available(stand, ctx: dict[str, str]) -> None:
     now = time.monotonic()
     cached = _acs_snapshot_check_cache.get(cache_key)
     if cached is not None and cached[0] > now:
-        exists, version_name = cached[1]
+        exists, version_name, snapshot_name = cached[1]
     else:
         try:
             version_name = await server_client.resolve_os_version_name(rc)
@@ -183,19 +200,25 @@ async def _check_acs_snapshot_available(stand, ctx: dict[str, str]) -> None:
                 "acs snapshot preflight skipped for stand %s / rc %s: %s", stand.id, rc, exc,
             )
             return
+        # имя версии каталога сверяется и с хвостом снимка как есть, и с
+        # его нормализованной формой (`LowServer-1710rc52` = `1.7.10.52`).
         exists = version_name in available_versions
+        snapshot_name = available_versions.snapshot_name(version_name)
         _acs_snapshot_check_cache[cache_key] = (
-            now + _ACS_SNAPSHOT_CHECK_CACHE_TTL_SECONDS, (exists, version_name),
+            now + _ACS_SNAPSHOT_CHECK_CACHE_TTL_SECONDS, (exists, version_name, snapshot_name),
         )
     if not exists:
         raise DomainValidationError(
             error_code="ACS_SNAPSHOT_NOT_FOUND",
             message=(
-                f"Для этого стенда нет снимка ACS версии «{version_name}» — стенд не "
-                "сможет откатиться на неё при подготовке к тесту. Снимите образ этой "
-                "версии на стенде (ACS) перед запуском."
+                f"Для этого стенда нет снимка ACS «{snapshot_name}» (версия "
+                f"«{version_name}») — стенд не сможет откатиться на неё при подготовке "
+                "к тесту. Снимите образ этой версии на стенде (ACS) перед запуском."
             ),
-            details={"stand_id": stand.id, "os_version_id": rc, "version_name": version_name},
+            details={
+                "stand_id": stand.id, "os_version_id": rc, "version_name": version_name,
+                "snapshot_name": snapshot_name,
+            },
         )
 
 
@@ -224,7 +247,7 @@ async def enqueue(
     — `stand_id` обязателен и приходит от вызывающего.
 
     `launch_context` сохраняется как есть, без резолва глобальных переменных
-    (это отдельная забота за пределами этой волны) — но обязан нести
+    (это отдельная забота за пределами постановки в очередь) — но обязан нести
     `RC`/`KERNEL`/`MODE`, потому что ими параметризуется `prepare-for-test`.
 
     `test_run_id` — заполняется только вызовом со стороны `services/test_run.py`
@@ -292,7 +315,7 @@ async def enqueue(
             )
 
     stand = await _load_stand_for_enqueue(db, resolved_stand_id)
-    _check_test_stand_department_match(test, stand)
+    check_test_stand_department_match(test, stand)
 
     ctx = dict(launch_context or {})
     missing = [key for key in _REQUIRED_LAUNCH_CONTEXT_KEYS if not ctx.get(key)]
@@ -308,8 +331,13 @@ async def enqueue(
 
     takeover = False
     replace = False
-    queue_was_active = await repo.count_active_for_stand(db, stand.id) > 0
-    if not queue_was_active:
+    # стенд за запуском сценария — одиночный тест ждёт в очереди
+    # после сценария (бронь держит сценарий, цикл не запускается).
+    held_by_scenario = await scenario_queue.holds_stand(db, stand.id)
+    queue_was_active = held_by_scenario or await repo.count_active_for_stand(db, stand.id) > 0
+    if held_by_scenario:
+        replace = False
+    elif not queue_was_active:
         # Очередь стенда пуста и мы вот-вот заново возьмём его в цикл. Ни test,
         # ни stand ещё не залочены — сетевой вызов идёт без удержания строк.
         takeover = await _ensure_stand_free_for_launch(db, identity, stand, force=force)
@@ -323,14 +351,20 @@ async def enqueue(
     # которая всё равно будет отклонена раньше. Но это ДО захвата FOR UPDATE
     # и до вставки строки — снимка либо нет вовсе (реджект), либо он есть, и
     # тогда лишний сетевой поход не должен держать лок на test/stand.
-    await _check_acs_snapshot_available(stand, ctx)
+    if stand_target.is_vm(stand):
+        await vm_stand.check_vm_snapshot_available(stand, ctx)  #
+    else:
+        await _check_acs_snapshot_available(stand, ctx)
 
     # С этой точки берём FOR UPDATE непосредственно перед вставкой строки —
     # ровно на то время, что нужно для атомарного "было ли пусто" + insert.
     test = await _load_test_for_enqueue(db, test_id, debug_mode=debug_mode, for_update=True)
     stand = await _load_stand_for_enqueue(db, resolved_stand_id, for_update=True)
-    _check_test_stand_department_match(test, stand)
-    was_empty = await repo.count_active_for_stand(db, stand.id) == 0
+    check_test_stand_department_match(test, stand)
+    was_empty = (
+        await repo.count_active_for_stand(db, stand.id) == 0
+        and not await scenario_queue.holds_stand(db, stand.id)
+    )
     if was_empty and queue_was_active and is_admin and (replace or force):
         # Очередь опустела между пред-проверкой и локом (последний item
         # завершился, стенд ушёл в `testing_done`): админ, выбравший замену или
@@ -438,8 +472,9 @@ async def _ensure_stand_free_for_launch(
     * `updating`, чужой `acs` и прочее — 409 `STAND_TAKEOVER_NOT_ALLOWED`,
       force не помогает.
     """
-    statuses = await server_client.get_servers_status_batch([stand.server_id])
-    status = statuses.get(stand.server_id)
+    target = stand_target.target_of(stand)
+    statuses = await server_client.get_stands_status_batch([target])
+    status = statuses.get(target)
     busy_state = status.get("busy_state") if status else None
     if busy_state == _FREE_BUSY_STATE:
         return False
@@ -542,6 +577,19 @@ async def _replace_active_queue(db: AsyncSession, stand, new_item: QueueItem) ->
         await _advance_stand_queue(db, stand)
 
 
+async def _os_version_label(os_version_id: str | None) -> str:
+    """Имя версии ОС для информационной `busy_note` (тот же формат, что пишет
+    server_service: `ACS|revert|<имя версии>|<ядро>`). Best-effort: заметка не
+    должна срывать подготовку, поэтому при недоступном каталоге — сам id."""
+    if not os_version_id:
+        return ""
+    try:
+        return await server_client.resolve_os_version_name(os_version_id)
+    except AppException as exc:
+        logger.warning("os_version name for busy_note unavailable (%s): %s", os_version_id, exc)
+        return os_version_id
+
+
 async def _start_or_continue_cycle(
     db: AsyncSession, stand, item: QueueItem, *, is_first_ever: bool, takeover: bool = False,
 ) -> None:
@@ -571,16 +619,64 @@ async def _start_or_continue_cycle(
     if await _reject_unready_item(db, stand, item, is_first_ever=is_first_ever):
         return
     settings = await dts_svc.get_effective(db, stand.department_id)
+    # Тестовая учётка отдела — до брони и restore: без неё готовить
+    # стенд бессмысленно, а restore — самый дорогой шаг пайплайна.
+    try:
+        test_account_credential_id = await test_account_svc.require_credential_id(
+            db, stand.department_id,
+        )
+    except AppException as exc:
+        await queue_orchestration_log.record(
+            db, stand.id, QueueOrchestrationEventKind.PREPARE_REQUEST_FAILED, queue_item_id=item.id,
+            detail=f"{exc.error_code}: {exc.message}",
+        )
+        await _fail_and_advance(
+            db, item, stand,
+            failed_step=_FAILED_STEP_TEST_ACCOUNT,
+            error=f"{exc.error_code}: {exc.message}",
+            audit_action="queue_item.prepare_start_failed",
+            is_first_ever=is_first_ever,
+        )
+        return
     ctx = item.launch_context or {}
     rc = ctx.get("RC")
     kernel = ctx.get("KERNEL")
     mode = ctx.get("MODE")
-    note = f"ACS|revert|{rc}|{kernel}"
+
+    # Шаг настройки стенда теста и профиль подготовки — до
+    # брони и restore: скрипт с неизвестной переменной должен ронять запуск
+    # сразу, а не после часа восстановления диска. Цикл подготовки всегда
+    # начинает с первого шага теста: после restore стенд чистый.
+    test = await test_definition_repo.get_by_id(db, item.test_id)
+    steps = await queue_steps.load_steps(db, item.test_id)
+    first_step = steps[0]
+    item.current_step_index = 0
+    item.step_count = len(steps)
+    item.stand_setup_correlation_id = None
+    try:
+        provisioning = await provisioning_svc.effective_values(db, test, stand.department_id)
+        stand_setup = None
+        if test is not None and not provisioning_svc.stand_setup_is_empty(first_step.stand_setup):
+            setup_ctx = launch_profile_svc.new_resolve_context(
+                db, test, stand, ctx, debug=item.debug_mode, step=first_step, steps=steps, step_index=0,
+            )
+            stand_setup = await provisioning_svc.resolve_stand_setup(setup_ctx, first_step.stand_setup)
+    except AppException as exc:
+        await _fail_and_advance(
+            db, item, stand,
+            failed_step=_FAILED_STEP_STAND_SETUP,
+            error=f"{exc.error_code}: {exc.message}",
+            audit_action="queue_item.prepare_start_failed",
+            is_first_ever=is_first_ever,
+        )
+        return
+
+    note = f"ACS|revert|{await _os_version_label(rc)}|{kernel}"
 
     try:
         if is_first_ever:
-            acquired = await server_client.acquire_for_service(
-                stand.server_id, busy_state="acs", busy_note=note,
+            acquired = await server_client.acquire_stand(
+                stand_target.target_of(stand), busy_state="acs", busy_note=note,
                 requested_by_department_id=stand.department_id,
                 takeover=takeover,
             )
@@ -598,16 +694,16 @@ async def _start_or_continue_cycle(
                 )
         else:
             try:
-                await server_client.set_service_status(stand.server_id, busy_state="acs", busy_note=note)
+                await server_client.set_stand_service_status(stand_target.target_of(stand), busy_state="acs", busy_note=note)
             except ConflictError as exc:
-                if exc.error_code == "SERVER_NOT_BUSY":
+                if exc.error_code in server_client.NOT_BUSY_ERROR_CODES:
                     # Бронь предыдущего item'а на самом деле не держится —
                     # с этого момента мы в том же положении, что и при
                     # is_first_ever=True, независимо от того, чем этот вызов
                     # закончится.
                     is_first_ever = True
-                    await server_client.acquire_for_service(
-                        stand.server_id, busy_state="acs", busy_note=note,
+                    await server_client.acquire_stand(
+                        stand_target.target_of(stand), busy_state="acs", busy_note=note,
                         requested_by_department_id=stand.department_id,
                     )
                 else:
@@ -629,14 +725,17 @@ async def _start_or_continue_cycle(
         return
 
     try:
-        resp = await server_client.start_prepare_for_test(
-            stand.server_id,
+        resp = await server_client.start_stand_prepare_for_test(
+            stand_target.target_of(stand),
             os_version_id=rc,
             kernel=kernel,
             mode=mode,
             test_username=settings["test_username"],
             requested_by_department_id=stand.department_id,
             correlation_id=item.id,
+            test_account_credential_id=test_account_credential_id,
+            stand_setup=stand_setup,
+            provisioning=provisioning,
         )
     except AppException as exc:
         # С этой точки бронь уже наша (acquire/service-status выше прошли),
@@ -678,7 +777,10 @@ async def _reject_unready_item(db: AsyncSession, stand, item: QueueItem, *, is_f
     test = await test_definition_repo.get_by_id(db, item.test_id, for_update=True)
     error = "TEST_REQUIRES_DEBUG: статус теста изменён; обычный запуск запрещён."
     if test is not None and test.readiness == TestReadiness.READY:
-        if not item.stp_test_run_id or await launch_stp.find_membership(db, test.code, item.stand_id, item.launch_context, item.stp_test_run_id):
+        if not item.stp_test_run_id or await launch_stp.find_membership(
+            db, await launch_stp.case_code_for_item(db, item, test.code) or test.code,
+            item.stand_id, item.launch_context, item.stp_test_run_id,
+        ):
             return False
         error = "TEST_NOT_IN_STP: тест больше не входит в выбранную СТП."
     item.state = QueueItemState.FAILED
@@ -739,7 +841,8 @@ async def _fail_item_and_maybe_retry(
         details={"failed_step": failed_step, "error": item.error, "is_retry": item.is_retry},
     )
 
-    if not settings["retry_enabled"] or item.is_retry:
+    if not settings["retry_enabled"] or item.is_retry or item.scenario_run_id:
+        # Действие сценария не ретраится: исход решает сценарий.
         return None
 
     position = await repo.next_position_for_stand(db, item.stand_id)
@@ -839,16 +942,21 @@ async def _advance_stand_queue(db: AsyncSession, stand) -> None:
     Не отпускаем сервер сразу в `free` — стенд паркуется в промежуточном
     статусе, который снимает вручную любой пользователь через
     `POST /servers/{id}/acknowledge-testing-done` на server_service.
+
+    Стенд за запуском сценария — решает сценарий
+    (`scenario_queue.on_stand_advance`): одиночные item'ы ждут его конца.
     """
+    if await scenario_queue.on_stand_advance(db, stand):
+        return
     next_item = await repo.get_next_queued_for_stand(db, stand.id)
     if next_item is None:
         try:
-            await server_client.release_for_service_as_done(stand.server_id)
+            await server_client.release_stand_as_done(stand_target.target_of(stand))
         except AppException as exc:
             # Best-effort: бронь может повиснуть, если server_service недоступен
             # именно в этот момент. Наблюдаемость — через лог + WARNING-аудит
-            # событий выше по цепочке; активной сверки/sweep'а на эту волну не
-            # заводили (см. отчёт волны, раздел "вопросы").
+            # событий выше по цепочке; активной сверки/sweep'а под это пока не
+            # заводили.
             logger.warning(
                 "release-for-service-as-done failed for stand %s (server %s): %s",
                 stand.id, stand.server_id, exc,
@@ -857,11 +965,29 @@ async def _advance_stand_queue(db: AsyncSession, stand) -> None:
     await _start_or_continue_cycle(db, stand, next_item, is_first_ever=False)
 
 
+async def advance_stand_queue(db: AsyncSession, stand) -> None:
+    """Публичная точка для `scenario_queue`: стенд отпущен сценарием."""
+    await _advance_stand_queue(db, stand)
+
+
+async def start_stand_cycle(db: AsyncSession, stand, item: QueueItem, *, is_first_ever: bool) -> None:
+    """Публичная точка для `scenario_queue`: запустить цикл одиночного item'а."""
+    await _start_or_continue_cycle(db, stand, item, is_first_ever=is_first_ever)
+
+
+async def on_test_run_status(db: AsyncSession, new_status: str | None, test_run_id: str) -> None:
+    """Публичная точка для `scenario_queue`: кампания пересчитана после конца сценария."""
+    await _maybe_post_run_summary(db, new_status, test_run_id)
+
+
 async def handle_prepare_completed(
     db: AsyncSession, prepare_request_id: str, body: PrepareForTestCompletedCallback,
-) -> QueueItem:
+) -> QueueItem | None:
     """Callback server_service'а о завершении `prepare-for-test`."""
     item = await repo.get_by_prepare_request_id(db, prepare_request_id)
+    if item is None and await scenario_queue.handle_prepare_completed(db, prepare_request_id, body):
+        # Подготовка стенда сценария — у неё нет своего item'а.
+        return None
     if item is None:
         raise NotFoundError(
             error_code="QUEUE_ITEM_NOT_FOUND_FOR_PREPARE_REQUEST",
@@ -884,11 +1010,14 @@ async def handle_prepare_completed(
         )
 
     if body.succeeded:
+        # Тестовая учётка: в стэше — только ссылка на credential,
+        # приватный ключ раскрывается на claim. Секреты из тела callback'а
+        # (старый контракт со случайной учёткой) не сохраняются.
         stash_key = creds_stash.new_stash_key(item.id)
         await creds_stash.store_creds(stash_key, {
-            "test_username": body.test_username,
-            "test_password": body.test_password,
-            "test_ssh_private_key": body.test_ssh_private_key,
+            "test_account_credential_id": await test_account_svc.get_credential_id(
+                db, stand.department_id,
+            ),
         })
         item.state = QueueItemState.READY
         item.creds_stash_key = stash_key
@@ -941,10 +1070,7 @@ async def resolve_estimated_finish_at(db: AsyncSession, item: QueueItem) -> date
     return item.started_at + timedelta(seconds=test.timeout_seconds)
 
 
-_STARTER_SCRIPT_PATH = "/home/u/starter.sh"
-
-
-async def _resolve_git_token(db: AsyncSession, department_id: str) -> str:
+async def resolve_git_token(db: AsyncSession, department_id: str) -> str:
     """git-токен для `starter.sh` (клонирует ветку монорепо на стенде).
 
     `starter.sh` подставляет содержимое файла `$2` целиком:
@@ -987,6 +1113,25 @@ async def _resolve_git_token(db: AsyncSession, department_id: str) -> str:
             details={"department_id": department_id, "credential_id": credential_id},
         )
     return token
+
+
+_FAILED_STEP_TEST_ACCOUNT = "test_account"
+_FAILED_STEP_STAND_SETUP = "stand_setup"
+
+
+async def _claim_test_account(db: AsyncSession, stand, creds: dict) -> test_account_svc.AccountSecret:
+    """Учётка, под которой воркер войдёт на стенд.
+
+    Ссылка на credential берётся из стэша (записан на callback'е
+    prepare-for-test), при её отсутствии — из текущих настроек отдела; нет
+    ни там, ни там — `TEST_ACCOUNT_NOT_CONFIGURED`. Раскрывается здесь, один
+    раз на claim: приватный ключ уходит воркеру в задании и нигде не
+    оседает.
+    """
+    credential_id = creds.get("test_account_credential_id")
+    if not credential_id:
+        credential_id = await test_account_svc.require_credential_id(db, stand.department_id)
+    return await test_account_svc.reveal_account(credential_id)
 
 
 async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
@@ -1032,30 +1177,82 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         )
         return None
 
+    try:
+        account = await _claim_test_account(db, stand, creds)
+    except AppException as exc:
+        await _fail_and_advance(
+            db, item, stand,
+            failed_step=_FAILED_STEP_TEST_ACCOUNT, error=f"{exc.error_code}: {exc.message}",
+            audit_action="queue_item.prepare_failed",
+            is_first_ever=False,
+        )
+        return None
+
+    # Многоступенчатый тест: задание — для текущего шага item'а.
+    steps = await queue_steps.load_steps(db, item.test_id)
+    step_index, step = queue_steps.current_step(steps, item)
+    rerun = queue_steps.is_rerun(step) and not item.prepare_only
+
     item.state = QueueItemState.RUNNING
-    item.started_at = datetime.now(timezone.utc)
+    if step_index == 0 or item.started_at is None:
+        item.started_at = datetime.now(timezone.utc)
+    item.step_count = len(steps)
     await db.commit()
 
+    # Вызывающий присылает только RC/KERNEL/MODE. Всё остальное (заголовки
+    # Confluence, имя test cycle, номер стенда, …) — переменные каталога со
+    # своими источниками и шаблонами (`services/variable_resolver.py`),
+    # которые резолвятся ниже, когда стенд наконец известен. Значения
+    # источников `stand`/`test_field`/`template` берутся не из
+    # `launch_context`, поэтому постановщик задания их не подделает.
     ctx = dict(item.launch_context or {})
-    # Вызывающий присылает только RC/KERNEL/MODE — всё остальное легаси
-    # собирало из уже известного прямо перед запуском. Считаем то же самое
-    # здесь, где стенд наконец известен, и кладём в launch_context, откуда
-    # значения возьмёт общий резолвер слотов (см. services/launch_context.py).
-    # Наложение поверх ctx, а не под ним: вычисляемое поле не должно
-    # подделываться постановщиком задания.
-    ctx.update(launch_context_svc.computed_values(test, stand, ctx, debug_mode=item.debug_mode))
-    busy_note = f"{test.code}|{ctx.get('RC', '')}|{ctx.get('KERNEL', '')}"
+
+    # Один контекст резолва на claim: пути профиля, `dates.conf`, скрипт и
+    # команды делят кеш (карточка версии ОС для `RC_NAME`, reveal-ы
+    # secret_service). Значения, которые знает только claim (ветка и суффикс
+    # теста, имена файлов из путей профиля), кладутся поверх
+    # `launch_context` — постановщик их не подменит.
+    resolve_ctx = launch_profile_svc.new_resolve_context(
+        db, test, stand, ctx, debug=item.debug_mode, step=step, steps=steps, step_index=step_index,
+    )
+    # Имя версии для заметки — из той же карточки, что `RC_NAME` ниже (кеш
+    # контекста); не резолвится — id, резолв команды тогда провалит item сам.
     try:
-        await server_client.set_service_status(stand.server_id, busy_state="testing", busy_note=busy_note)
+        rc_label = (await resolve_ctx.os_version("busy_note")).name
+    except AppException:
+        rc_label = ctx.get("RC", "")
+    busy_note = f"{test.code}|{rc_label}|{ctx.get('KERNEL', '')}"
+    if len(steps) > 1:
+        busy_note += f"|{queue_steps.step_label(step_index, len(steps), step.name)}"
+    try:
+        await server_client.set_stand_service_status(stand_target.target_of(stand), busy_state="testing", busy_note=busy_note)
     except AppException as exc:
         # Best-effort: неудачная смена стадии не должна срывать уже
         # выданное задание — SSH-сессия не зависит от busy_note, это
         # информационная метка для UI/оператора.
         logger.warning("service-status(testing) failed for queue_item %s: %s", item.id, exc)
 
+    # Профиль запуска: пути на стенде нужны раньше dates — имена
+    # файлов (`DATES_FILE`, `GIT_TOKEN_FILE`) берутся из них.
     try:
-        dates_content = await resolve_dates_content(db, item.test_id, ctx)
-        dates_content_masked = await resolve_dates_content_masked(db, item.test_id, ctx)
+        profile_version = await launch_profile_svc.effective_version(db, test, stand.department_id)
+        paths = await launch_profile_svc.render_paths(resolve_ctx, profile_version, item.id)
+    except AppException as exc:
+        await _fail_and_advance(
+            db, item, stand,
+            failed_step=None, error=f"launch profile failed: {exc.message}",
+            audit_action="queue_item.prepare_failed",
+            is_first_ever=False,
+        )
+        return None
+    item.launch_profile_version_id = profile_version.id
+    await db.commit()
+
+    try:
+        dates_content, dates_content_masked = await resolve_dates(
+            db, item.test_id, ctx, stand=stand, debug=item.debug_mode, context=resolve_ctx,
+            step_id=step.id or None,
+        )
     except AppException as exc:
         await _fail_and_advance(
             db, item, stand,
@@ -1066,7 +1263,8 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         return None
 
     try:
-        git_token = await _resolve_git_token(db, stand.department_id)
+        # Повторный запуск (`rerun`) не клонирует — токен ему не нужен.
+        git_token = "" if rerun else await resolve_git_token(db, stand.department_id)
     except AppException as exc:
         await _fail_and_advance(
             db, item, stand,
@@ -1076,22 +1274,27 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         )
         return None
 
-    dates_filename = f"dates_{item.id}.conf"
-    # Токен больше не идёт вторым позиционным аргументом — argv процесса
-    # видно в `ps`/`/proc/<pid>/cmdline` весь срок теста (до 12ч по
-    # дефолту), а SSH-канал живёт ровно столько же. Вместо значения кладём
-    # имя файла, который worker доставит по SFTP до запуска (тот же приём,
-    # что уже применён к `dates_content`); сам токен едет отдельным полем
-    # `git_token_content` ниже.
-    git_token_filename = f"git_token_{item.id}.conf"
-    command = [
-        "sudo", "bash", _STARTER_SCRIPT_PATH,
-        test.category or "", git_token_filename, dates_filename, ctx.get("RC", ""), test.starter_suffix or "",
-    ]
-    command_masked = list(command)
+    # T2: testenv `on` — только одиночный ручной запуск с testenv
+    # (`prepare_only`); прогон РЦ и ретраи — всегда `off`.
+    testenv_on = bool(item.prepare_only and item.test_run_id is None and not item.is_retry)
+    try:
+        launch = await launch_profile_svc.build_launch(
+            resolve_ctx, profile_version, paths,
+            dates_content=dates_content, dates_content_masked=dates_content_masked,
+            git_token=git_token, testenv_on=testenv_on, prepare_only=item.prepare_only,
+            rerun=rerun,
+        )
+    except AppException as exc:
+        await _fail_and_advance(
+            db, item, stand,
+            failed_step=None, error=f"launch command resolution failed: {exc.message}",
+            audit_action="queue_item.prepare_failed",
+            is_first_ever=False,
+        )
+        return None
 
     try:
-        connection = await server_client.get_connection_info(stand.server_id)
+        connection = await server_client.get_stand_connection_info(stand_target.target_of(stand))
     except AppException as exc:
         await _fail_and_advance(
             db, item, stand,
@@ -1101,29 +1304,37 @@ async def claim_next(db: AsyncSession) -> QueueClaimItem | None:
         )
         return None
 
+    # Preflight — из настроек отдела стенда, читается на каждый claim: правка
+    # в UI действует на следующий же item, без перезапуска воркера.
+    dept_settings = await dts_svc.get_effective(db, stand.department_id)
+
     audit_service.emit(
         "queue_item.claimed",
         target_id=item.id, target_type="queue_item",
         status="success", allowed=True,
-        details={"stand_id": stand.id, "test_id": test.id},
+        details={"stand_id": stand.id, "test_id": test.id, "step_index": step_index, "step_count": len(steps)},
     )
     return QueueClaimItem(
         queue_item_id=item.id,
         host=connection["host"],
-        test_username=creds.get("test_username"),
-        test_ssh_private_key=creds.get("test_ssh_private_key"),
-        command=command,
-        command_masked=command_masked,
-        git_token_content=git_token,
-        git_token_filename=git_token_filename,
-        dates_content=dates_content,
-        dates_content_masked=dates_content_masked,
-        dates_filename=dates_filename,
+        test_username=account.login,
+        test_ssh_private_key=account.private_key,
+        files=launch.files,
+        cleanup_globs=launch.cleanup_globs,
+        launch_command=launch.launch_command,
+        launch_command_masked=launch.launch_command_masked,
+        stop_command=launch.stop_command,
+        use_pty=launch.use_pty,
+        redact_values=launch.redact_values,
+        launch_profile_version_id=profile_version.id,
+        log_chunk_interval_seconds=dept_settings["log_chunk_interval_seconds"],
+        log_chunk_max_bytes=dept_settings["log_chunk_max_bytes"],
         command_timeout_seconds=test.timeout_seconds,
         debug_mode=item.debug_mode,
         is_retry=item.is_retry,
         prepare_only=item.prepare_only,
-        starter_suffix=test.starter_suffix or "",
+        preflight=dept_settings["preflight"],
+        step=QueueClaimStep(index=step_index, count=len(steps), name=step.name or ""),
     )
 
 
@@ -1154,32 +1365,68 @@ async def complete_item(db: AsyncSession, queue_item_id: str, body: QueueComplet
         await _complete_interrupted(db, item, stand, body.interrupted)
         return item
 
-    if body.succeeded:
-        # `prepare_only` — testenv-режим: SSH-сессия успешна (starter.sh
-        # честно выполнил prepare.sh и вышел раньше run.py), но это не
-        # результат теста, поэтому терминал отдельный от `succeeded`.
-        item.state = QueueItemState.PREPARED if item.prepare_only else QueueItemState.SUCCEEDED
-        item.finished_at = datetime.now(timezone.utc)
-        item.error = None
-        await db.commit()
-        await stp_status.sync_cell_from_queue_item(db, item)
-        if item.test_run_id:
-            new_status = await test_run_status.recompute(db, item.test_run_id)
-            await db.commit()
-            await _maybe_post_run_summary(db, new_status, item.test_run_id)
-        audit_service.emit(
-            "queue_item.completed",
-            target_id=item.id, target_type="queue_item",
-            status="success", allowed=True,
-            details={"exit_code": body.exit_code, "stand_id": stand.id, "prepare_only": item.prepare_only},
-        )
-        await _advance_stand_queue(db, stand)
+    now = datetime.now(timezone.utc)
+    if body.succeeded and item.prepare_only:
+        # testenv-режим: SSH-сессия успешна (starter.sh честно выполнил
+        # prepare.sh и вышел раньше run.py), но это не результат теста,
+        # поэтому терминал отдельный от `succeeded` и вердикта нет.
+        await _finish_succeeded(db, item, stand, details={"exit_code": body.exit_code})
         return item
 
+    if body.succeeded and await queue_steps.advance_after_success(db, item, stand):
+        # Многоступенчатый тест: впереди ещё шаги — вердикт после последнего.
+        return item
+
+    if body.succeeded:
+        test = await test_definition_repo.get_by_id(db, item.test_id)
+        source = test.verdict_source if test is not None else VerdictSource.ZEPHYR
+        if source == VerdictSource.ZEPHYR:
+            target = await zephyr_verdict.resolve_target(db, item, stand.department_id)
+            if target is not None:
+                # Скрипт публикует статус в Zephyr асинхронно — стенд держим,
+                # очередь не двигаем, пока `poll_awaiting_verdicts` его не
+                # дождётся.
+                item.state = QueueItemState.AWAITING_VERDICT
+                item.verdict_source = VerdictSource.ZEPHYR
+                item.verdict_wait_started_at = now
+                item.zephyr_polled_at = None
+                item.error = None
+                await db.commit()
+                audit_service.emit(
+                    "queue_item.awaiting_verdict",
+                    target_id=item.id, target_type="queue_item",
+                    status="success", allowed=True,
+                    details={
+                        "exit_code": body.exit_code, "stand_id": stand.id,
+                        "zephyr_test_run_key": target.test_run_key,
+                        "zephyr_test_case_key": target.test_case_key,
+                    },
+                )
+                return item
+            settings = await dts_svc.get_effective(db, stand.department_id)
+            if settings["verdict_without_zephyr_run"] == VerdictWithoutZephyrRun.UNKNOWN:
+                # Прогона в Zephyr нет (debug) — `run.py` выходит с 0 всегда,
+                # засчитать это «пройденным» нельзя.
+                item.verdict = QueueVerdict.UNKNOWN
+                item.verdict_resolved_at = now
+                await _finish_succeeded(db, item, stand, details={"exit_code": body.exit_code})
+                return item
+        item.verdict_source = VerdictSource.EXIT_CODE
+        item.verdict = QueueVerdict.PASSED
+        item.verdict_resolved_at = now
+        await _finish_succeeded(db, item, stand, details={"exit_code": body.exit_code})
+        return item
+
+    # Ненулевой код выхода, обрыв или таймаут SSH — провал независимо от
+    # `verdict_source`: до публикации статуса скрипт, скорее всего, не дошёл.
+    item.verdict_source = VerdictSource.EXIT_CODE
+    item.verdict = QueueVerdict.FAILED
+    item.verdict_resolved_at = now
     error = body.error or (
         f"SSH run failed with exit_code={body.exit_code}"
         if body.exit_code is not None else "SSH run failed"
     )
+    error = await queue_steps.with_step(db, item, error)
     await _fail_and_advance(
         db, item, stand,
         failed_step=None, error=error,
@@ -1188,6 +1435,124 @@ async def complete_item(db: AsyncSession, queue_item_id: str, body: QueueComplet
         timed_out=body.timed_out,
     )
     return item
+
+
+async def _finish_succeeded(db: AsyncSession, item: QueueItem, stand, *, details: dict) -> None:
+    """Терминальный успех item'а (`succeeded`, для testenv — `prepared`) +
+    СТП, статус кампании и следующий item стенда."""
+    item.state = QueueItemState.PREPARED if item.prepare_only else QueueItemState.SUCCEEDED
+    item.finished_at = datetime.now(timezone.utc)
+    item.error = None
+    await db.commit()
+    await stp_status.sync_cell_from_queue_item(db, item)
+    if item.test_run_id:
+        new_status = await test_run_status.recompute(db, item.test_run_id)
+        await db.commit()
+        await _maybe_post_run_summary(db, new_status, item.test_run_id)
+    audit_service.emit(
+        "queue_item.completed",
+        target_id=item.id, target_type="queue_item",
+        status="success", allowed=True,
+        details={
+            **details, "stand_id": stand.id, "prepare_only": item.prepare_only,
+            "verdict": item.verdict, "verdict_source": item.verdict_source,
+        },
+    )
+    await _advance_stand_queue(db, stand)
+
+
+async def poll_awaiting_verdicts(db: AsyncSession, *, now: datetime | None = None) -> int:
+    """Один тик опроса Zephyr по item'ам в `awaiting_verdict`.
+
+    Вызывается фоновым циклом `main.py::_verdict_poll_loop`. Каждый item —
+    своя транзакция под `SKIP LOCKED`: вторая реплика сервиса его пропустит,
+    сбой одного не мешает остальным. Возвращает число item'ов, по которым
+    вынесен вердикт.
+    """
+    resolved = 0
+    for item_id in await repo.list_awaiting_verdict_ids(db):
+        try:
+            if await _poll_verdict_once(db, item_id, now or datetime.now(timezone.utc)):
+                resolved += 1
+        except Exception as exc:  # noqa: BLE001 — один item не должен ронять весь тик
+            await db.rollback()
+            logger.warning("verdict poll failed for queue_item %s: %s", item_id, exc)
+    return resolved
+
+
+async def _poll_verdict_once(db: AsyncSession, item_id: str, now: datetime) -> bool:
+    item = await repo.get_awaiting_verdict_for_update(db, item_id)
+    if item is None:
+        await db.rollback()
+        return False
+    stand = await stand_repo.get_by_id(db, item.stand_id)
+    if stand is None:
+        await db.rollback()
+        return False
+    settings = await dts_svc.get_effective(db, stand.department_id)
+    started = item.verdict_wait_started_at or item.updated_at
+    deadline = started + timedelta(seconds=settings["zephyr_verdict_wait_seconds"])
+    poll_every = timedelta(seconds=settings["zephyr_verdict_poll_seconds"])
+    if item.zephyr_polled_at is not None and now < item.zephyr_polled_at + poll_every and now < deadline:
+        await db.rollback()
+        return False
+
+    problem: str | None = None
+    raw: str | None = None
+    target = await zephyr_verdict.resolve_target(db, item, stand.department_id)
+    if target is None:
+        problem = "прогон Zephyr или доступ к Jira отдела больше не найден"
+    else:
+        try:
+            raw = await zephyr_verdict.fetch_status(target)
+        except AppException as exc:
+            problem = f"Zephyr недоступен: {exc.message}"
+        else:
+            if raw is None:
+                problem = f"тест-кейса нет в прогоне {target.test_run_key}"
+    item.zephyr_polled_at = now
+    if raw is not None:
+        item.zephyr_status_raw = raw
+    mapping = await zephyr_verdict.load_mapping(db, stand.department_id)
+    outcome = zephyr_verdict.classify(raw, mapping)
+
+    reason: str | None = None
+    if outcome == VerdictOutcome.NOT_FINISHED:
+        if now < deadline:
+            await db.commit()
+            return False
+        # T3: тест так и не выставил итоговый статус.
+        outcome = settings["zephyr_verdict_unfinished_outcome"]
+        minutes = settings["zephyr_verdict_wait_seconds"] // 60
+        reason = (
+            f"Тест не выставил итоговый статус в Zephyr за {minutes} мин "
+            f"(последний статус: {item.zephyr_status_raw or 'нет'})"
+        )
+        if problem:
+            reason += f"; {problem}"
+
+    item.verdict = QueueVerdict.PASSED if outcome == VerdictOutcome.PASSED else QueueVerdict.FAILED
+    item.verdict_resolved_at = now
+    audit_service.emit(
+        "queue_item.verdict_resolved",
+        target_id=item.id, target_type="queue_item",
+        status="success", allowed=True,
+        details={
+            "verdict": item.verdict, "zephyr_status": item.zephyr_status_raw,
+            "timed_out": reason is not None, "stand_id": stand.id,
+        },
+    )
+    if item.verdict == QueueVerdict.PASSED:
+        await _finish_succeeded(db, item, stand, details={"zephyr_status": item.zephyr_status_raw})
+    else:
+        await _fail_and_advance(
+            db, item, stand,
+            failed_step="verdict",
+            error=reason or f"Zephyr: тест-кейс в статусе «{item.zephyr_status_raw}»",
+            audit_action="queue_item.completed",
+            is_first_ever=False,
+        )
+    return True
 
 
 async def _complete_interrupted(db: AsyncSession, item: QueueItem, stand, action: str) -> None:
@@ -1249,6 +1614,13 @@ async def request_interrupt(db: AsyncSession, item: QueueItem, stand, action: st
             error_code="QUEUE_ITEM_NOT_ACTIVE",
             message="Элемент очереди уже завершён",
             details={"state": item.state},
+        )
+    if item.scenario_run_id and action == QueueInterruptAction.PAUSE:
+        # Пауза держала бы все стенды сценария без срока.
+        raise ConflictError(
+            error_code="SCENARIO_ITEM_PAUSE_UNSUPPORTED",
+            message="Действие сценария нельзя поставить на паузу — остановите сценарий",
+            details={"scenario_run_id": item.scenario_run_id},
         )
 
     if item.state == QueueItemState.RUNNING:
@@ -1366,6 +1738,76 @@ async def clear_queue(db: AsyncSession, stand, *, keep_ids: frozenset[str] = fro
     return len(items)
 
 
+async def reorder_queue(db: AsyncSession, stand, queue_item_ids: list[str]) -> list[QueueItem]:
+    """Переставить ещё не начатые (`queued`) элементы очереди стенда (D15).
+
+    `queue_item_ids` — полный список текущих `queued`-элементов стенда в новом
+    порядке. Требование полноты — защита от устаревшего экрана: между
+    загрузкой очереди в UI и сохранением порядка головной элемент мог
+    стартовать, а в хвост — встать новый; тогда 409 `QUEUE_ORDER_STALE`, и
+    оператор перечитывает очередь, а не молча получает не тот порядок.
+
+    Активный элемент (`preparing`/`ready`/`running`) и остановленный
+    (`paused`) не трогаются никогда: их id в списке — 409
+    `QUEUE_ITEM_NOT_QUEUED`. Переставленные элементы получают те же значения
+    `position`, что уже занимали (по возрастанию), — относительно остальной
+    очереди стенда блок `queued` не сдвигается, меняется только порядок
+    внутри него. Следующим `_advance_stand_queue` возьмёт того, кто теперь
+    первый.
+    """
+    if len(queue_item_ids) != len(set(queue_item_ids)):
+        raise DomainValidationError(
+            error_code="QUEUE_ORDER_DUPLICATE_IDS",
+            message="В новом порядке очереди один и тот же элемент указан дважды",
+        )
+
+    queued = await repo.list_queued_for_stand(db, stand.id)
+    by_id = {item.id: item for item in queued}
+    unexpected = [item_id for item_id in queue_item_ids if item_id not in by_id]
+    if unexpected:
+        not_queued = []
+        for item_id in unexpected:
+            other = await repo.get_by_id(db, item_id)
+            if other is not None and other.stand_id == stand.id and other.state in ACTIVE_QUEUE_STATES:
+                not_queued.append({"id": other.id, "state": other.state})
+        if not_queued:
+            raise ConflictError(
+                error_code="QUEUE_ITEM_NOT_QUEUED",
+                message="Переставлять можно только ещё не начатые элементы очереди — активный не трогается",
+                details={"stand_id": stand.id, "items": not_queued},
+            )
+    missing = [item.id for item in queued if item.id not in set(queue_item_ids)]
+    if unexpected or missing:
+        raise ConflictError(
+            error_code="QUEUE_ORDER_STALE",
+            message="Очередь стенда изменилась — обновите её и повторите перестановку",
+            details={"stand_id": stand.id, "unexpected": unexpected, "missing": missing},
+        )
+
+    previous_order = [item.id for item in queued]
+    if previous_order == list(queue_item_ids):
+        return queued
+
+    positions: list[int] = []
+    for position in sorted(item.position for item in queued):
+        # Одинаковые position (гонка двух постановок) разводятся, иначе
+        # порядок внутри равных снова решал бы `created_at`.
+        positions.append(position if not positions or position > positions[-1] else positions[-1] + 1)
+    for item_id, position in zip(queue_item_ids, positions):
+        by_id[item_id].position = position
+    await db.commit()
+    audit_service.emit(
+        "test_stand.queue_reordered",
+        target_id=stand.id, target_type="test_stand",
+        status="success", allowed=True,
+        details={
+            "stand_id": stand.id, "count": len(queue_item_ids),
+            "previous_order": previous_order, "new_order": list(queue_item_ids),
+        },
+    )
+    return [by_id[item_id] for item_id in queue_item_ids]
+
+
 async def retry_failed(
     db: AsyncSession, identity: Identity, stand, *, force: bool = False,
 ) -> tuple[list[QueueItem], int]:
@@ -1387,7 +1829,10 @@ async def retry_failed(
     skipped = 0
     for candidate in candidates:
         source = await repo.get_by_id_for_update(db, candidate.id)
-        if source is None or source.state not in FAILURE_QUEUE_STATES or await repo.has_successor(db, source.id):
+        if (
+            source is None or source.scenario_run_id or source.state not in FAILURE_QUEUE_STATES
+            or await repo.has_successor(db, source.id)
+        ):
             skipped += 1
             continue
         if source.test_run_id:

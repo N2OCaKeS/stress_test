@@ -9,6 +9,9 @@ from tests.test_queue import (
     _create_stand, _create_test_def,
     mock_server_service as mock_server_service, recorded_calls as recorded_calls,
 )
+from tests.test_zephyr_folder import (
+    rc_release_variable as rc_release_variable, zephyr_folder_api as zephyr_folder_api,
+)
 
 
 async def test_campaign_uses_every_catalog_kernel(client, admin_token, mock_server_service, monkeypatch):
@@ -53,7 +56,7 @@ async def test_rotated_log_keeps_attempt_result(client, admin_token, mock_server
 
 
 async def test_stp_only_os_discovers_kernels_and_all_modes(
-    client, admin_token, dept_a, mock_server_service, monkeypatch,
+    client, admin_token, dept_a, mock_server_service, monkeypatch, rc_release_variable, zephyr_folder_api,
 ):
     """Без явного `mode` /stp/generate обходит оба режима — но каждый тест
     попадает только в прогон своего собственного режима (§ mode fixed on test)."""

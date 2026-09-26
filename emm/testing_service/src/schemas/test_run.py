@@ -119,6 +119,13 @@ class TestRunPreviewEntry(BaseModel):
         ),
     )
     reason: str | None = None
+    scenario_id: str | None = Field(
+        default=None,
+        description=(
+            "При action=launch: тест-кейс запускается многостендовым сценарием (`ready`-сценарий отдела "
+            "с этим stp_test_case_code), а не одиночным тестом на стенде."
+        ),
+    )
     stp_test_run_id: str | None = Field(
         default=None,
         description=(
@@ -225,6 +232,13 @@ class TestRunQueueItemResponse(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     error: str | None = None
+    verdict: str | None = Field(
+        default=None,
+        description="Вердикт: passed/failed/unknown; unknown — результат не определён.",
+    )
+    zephyr_status_raw: str | None = Field(
+        default=None, description="Статус тест-кейса в Zephyr как есть (последний прочитанный).",
+    )
 
 
 class TestRunEntryResponse(BaseModel):
@@ -240,6 +254,10 @@ class TestRunEntryResponse(BaseModel):
     mode: str = Field(description="Режим безопасности теста на момент постановки в очередь.")
     enqueue_error_code: str | None = None
     enqueue_error: str | None = None
+    scenario_run_id: str | None = Field(
+        default=None,
+        description="Запись запущена многостендовым сценарием (`GET /scenario-runs/{id}`), а не одиночным item'ом.",
+    )
 
 
 class TestRunDetailResponse(TestRunResponse):

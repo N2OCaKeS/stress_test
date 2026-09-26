@@ -82,6 +82,8 @@ export interface Stand {
   queue: QueueItem[];
   /** физический стенд по умолчанию (undefined); "virtual" — ВМ на vms_hub, доступна только в dev-режиме запуска теста */
   kind?: "physical" | "virtual";
+  /** Живой ВМ-стенд testing_service: готовится откатом снимка ВМ. */
+  isVm?: boolean;
   /** Реальные id стенда и его очереди — только в живом режиме. */
   live?: StandLive;
 }

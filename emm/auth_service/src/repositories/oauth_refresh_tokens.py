@@ -5,7 +5,7 @@ reuse-detection по sliding-window истории и kill-switch по всей 
 (client_id, user_id).
 """
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models.oauth_refresh_token import PREVIOUS_TOKEN_HASH_WINDOW, OAuthRefreshToken
@@ -172,3 +172,21 @@ class OAuthRefreshTokenRepository:
             count += 1
         await self._db.flush()
         return count
+
+    async def revoke_all_for_user(self, user_id: str) -> int:
+        """Revoke все активные refresh юзера по всем клиентам.
+
+        Вызывается там же, где `SessionRepository.revoke_all_for_user`:
+        смена/сброс пароля, ban, блокировка, hard delete. Возвращает число
+        revoked'нутых токенов.
+        """
+        result = await self._db.execute(
+            update(OAuthRefreshToken)
+            .where(
+                OAuthRefreshToken.user_id == user_id,
+                OAuthRefreshToken.is_active.is_(True),
+            )
+            .values(is_active=False, revoked_at=utcnow())
+            .returning(OAuthRefreshToken.id)
+        )
+        return len(result.scalars().all())

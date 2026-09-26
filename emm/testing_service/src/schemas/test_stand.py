@@ -8,8 +8,9 @@
 """
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class TestStandTestCredentialsResponse(BaseModel):
@@ -32,11 +33,22 @@ class TestStandTestCredentialsResponse(BaseModel):
 
 
 class TestStandCreate(BaseModel):
-    """Тело POST /test-stands. `server_id` уникален — один сервер, один стенд."""
+    """Тело POST /test-stands. `server_id`/`vm_id` уникален — один сервер/ВМ, один стенд.
 
-    server_id: str = Field(
-        ..., min_length=1, max_length=64,
-        description="Server/Vm.id из server_service. UNIQUE.",
+    `target_type=server` + `server_id` (физический стенд, как было) или
+    `target_type=vm` + `vm_id` (ВМ server_service). Ровно одно из двух id.
+    """
+
+    target_type: Literal["server", "vm"] = Field(
+        default="server", description="Тип стенда: физический сервер (ACS) или ВМ (откат снимка).",
+    )
+    server_id: str | None = Field(
+        default=None, min_length=1, max_length=64,
+        description="Server.id из server_service. UNIQUE. Для `target_type=server`.",
+    )
+    vm_id: str | None = Field(
+        default=None, min_length=1, max_length=64,
+        description="Vm.id из server_service. UNIQUE. Для `target_type=vm`.",
     )
     legacy_token: str | None = Field(
         default=None, max_length=32,
@@ -48,6 +60,15 @@ class TestStandCreate(BaseModel):
     )
     queue_enabled: bool = Field(default=True, description="Участвует ли стенд в очереди тестов.")
     is_active: bool = Field(default=True, description="Активен ли стенд.")
+
+    @model_validator(mode="after")
+    def _one_target(self) -> "TestStandCreate":
+        if self.target_type == "vm":
+            if not self.vm_id or self.server_id:
+                raise ValueError("target_type=vm requires vm_id and no server_id")
+        elif not self.server_id or self.vm_id:
+            raise ValueError("target_type=server requires server_id and no vm_id")
+        return self
 
 
 class TestStandUpdate(BaseModel):
@@ -76,7 +97,9 @@ class TestStandResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str = Field(description="Test stand ID (prefix stand_).")
-    server_id: str = Field(description="Server/Vm.id из server_service.")
+    target_type: Literal["server", "vm"] = Field(default="server", description="Тип стенда.")
+    server_id: str | None = Field(default=None, description="Server.id из server_service (физический стенд).")
+    vm_id: str | None = Field(default=None, description="Vm.id из server_service (ВМ-стенд).")
     department_id: str = Field(
         description="Отдел-владелец — скопирован с Server.department_id в момент создания стенда.",
     )
@@ -98,6 +121,22 @@ class TestStandResponse(BaseModel):
             "Live-вызов к server_service не удался (сервер удалён, сеть "
             "недоступна) — карточка стенда отдана без server-блока."
         ),
+    )
+
+
+class TestStandVmSnapshotsResponse(BaseModel):
+    """Ответ GET /test-stands/{id}/vm-snapshots — сопоставление снимков ВМ и версий ОС.
+
+    Живой список server_service (`GET /internal/vms/{id}/snapshots`): каждый
+    снимок, пригодный для отката, и версия/режим, которые server_service
+    прочитал из имени по шаблонам. Отдельной таблицы сопоставления нет (T7).
+    """
+
+    stand_id: str
+    vm_id: str
+    templates: list[str] = Field(description="Шаблоны имени снимка (настройка server_service), по порядку.")
+    snapshots: list[dict] = Field(
+        description="`name`, `version_name`, `normalized_version`, `mode`, `template`, `kind`, `is_current`.",
     )
 
 

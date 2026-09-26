@@ -50,6 +50,15 @@ vi.mock("@/api/testing/statistics", () => ({
       : new Promise(() => {}),
 }));
 
+// Плашка ожидания внешних сервисов — статус управляется из теста.
+let currentPreflightStatus: import("@/api/testing/types").PreflightStatus | null = null;
+vi.mock("@/api/testing/preflight", () => ({
+  getPreflightStatus: () =>
+    currentPreflightStatus
+      ? Promise.resolve(currentPreflightStatus)
+      : new Promise(() => {}),
+}));
+
 // Тяжёлые дочерние блоки панели тянут API/провайдеры — для теста навигации
 // они не нужны, подменяем заглушками.
 vi.mock("@/components/notifications/NotificationBell", () => ({
@@ -93,6 +102,7 @@ function renderPanel(persona: Persona) {
 beforeEach(() => {
   currentNavLinks = [];
   currentStatisticsStatus = null;
+  currentPreflightStatus = null;
 });
 
 describe("LeftPanel — настраиваемая кнопка allta", () => {
@@ -282,5 +292,32 @@ describe("LeftPanel — индикатор пересчёта статистик
     );
     await screen.findByText("ОС");
     expect(screen.queryByText("Статистика")).not.toBeInTheDocument();
+  });
+});
+
+describe("LeftPanel — ожидание внешних сервисов", () => {
+  const serverUser = () =>
+    makePersona({
+      username: "regular",
+      service_roles: { server: "reader" },
+      accessible_services: ["server"] as ServiceName[],
+    });
+
+  it("при waiting показывает «тестирование приостановлено» и недоступные сервисы", async () => {
+    currentPreflightStatus = {
+      state: "waiting", unavailable: ["dns", "https://git.astralinux.ru"],
+      since: "2026-09-24T10:00:00Z", waiting_items: 2,
+    };
+    renderPanel(serverUser());
+    expect(await screen.findByText("Ожидание доступности сервисов")).toBeInTheDocument();
+    expect(screen.getByText("тестирование приостановлено")).toBeInTheDocument();
+    expect(screen.getByText(/недоступны: dns, https:\/\/git\.astralinux\.ru/)).toBeInTheDocument();
+  });
+
+  it("при ok не рендерится", async () => {
+    currentPreflightStatus = { state: "ok", unavailable: [], since: null, waiting_items: 0 };
+    renderPanel(serverUser());
+    await screen.findByText("ОС");
+    expect(screen.queryByTestId("preflight-wait-panel")).not.toBeInTheDocument();
   });
 });

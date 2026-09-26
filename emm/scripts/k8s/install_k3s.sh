@@ -107,7 +107,7 @@ echo "  core_pattern: $(cat /proc/sys/kernel/core_pattern)"
 # inline-цепочка `daemon-reload → enable k3s` внутри install.sh воспроизводимо
 # валит pid 1 по SIGABRT в startswith()/manager_load_unit() (libsystemd-shared).
 # Coredump лежит в /var/lib/systemd/coredump/. Воркэраунд — пропустить
-# systemctl-команды в установщике и выполнить их отдельным шагом (§7).
+# systemctl-команды в установщике и выполнить их отдельным шагом.
 if command -v k3s >/dev/null 2>&1; then
     echo "→ k3s уже установлен: $(k3s --version | head -1)"
 else

@@ -1,8 +1,7 @@
 """Настройки testing_worker'а. Все через env (pydantic-settings).
 
-Волна 5 плана миграции превращает воркер из пустого broker-каркаса в
-реальный SSH-исполнитель: он поллит `testing_service` за готовыми
-заданиями и подключается к стендам напрямую, поэтому здесь появляются
+Воркер поллит `testing_service` за готовыми заданиями и подключается
+к стендам напрямую по SSH, поэтому здесь появляются
 `testing_service_url`/`testing_service_internal_api_key` (канал
 `POST /internal/queue/claim` и `/completed`) и таймауты SSH-сессии.
 """
@@ -10,6 +9,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -84,13 +84,37 @@ class Settings(BaseSettings):
         ),
     )
 
+    # Preflight. Источник истины — настройки тестов отдела в
+    # testing_service (`department_test_settings.preflight`), они приходят в
+    # claim payload (`item["preflight"]`) и имеют приоритет. `PREFLIGHT_*`
+    # ниже — только фолбэк на случай, когда поля в payload нет (testing_service
+    # старше). Исключение — `PREFLIGHT_FORCE_DISABLED`, он сильнее payload.
+    preflight_force_disabled: bool = Field(
+        default=False,
+        alias="PREFLIGHT_FORCE_DISABLED",
+        description=(
+            "Аварийный выключатель preflight на уровне воркера: при `true` "
+            "проверка не выполняется, что бы ни пришло в claim payload. Для "
+            "изолированных окружений (dev-стек), где внешних адресов нет вообще."
+        ),
+    )
     preflight_enabled: bool = Field(
         default=True,
         alias="PREFLIGHT_ENABLED",
         description=(
-            "Проверять доступность внешних сервисов (Jira/Confluence/git/"
-            "releases/DNS) перед запуском теста на стенде. Выключение имеет "
-            "смысл в изолированных окружениях, где этих адресов нет вообще."
+            "Фолбэк (нет `preflight` в claim payload): проверять ли доступность "
+            "внешних сервисов (Jira/Confluence/git/releases/DNS) перед запуском "
+            "теста на стенде."
+        ),
+    )
+    preflight_http_ok_status: Literal["200", "lt500"] = Field(
+        default="lt500",
+        alias="PREFLIGHT_HTTP_OK_STATUS",
+        description=(
+            "Фолбэк: какой HTTP-ответ считать «доступен» для `PREFLIGHT_HTTP_URLS`. "
+            "`lt500` — любой статус < 500 (поведение воркера до), `200` — "
+            "строго 200 после редиректов, как в легаси. В настройках отдела "
+            "дефолт — `200`."
         ),
     )
     preflight_http_urls: str = Field(

@@ -11,6 +11,10 @@
  *   GET/PUT /api/testing/v1/statistics/settings
  * Гейтится матрицей `(statistics_settings, *, update)` — тот же круг, что и
  * «Стенды пула» (department_admin своего отдела или носитель testing.admin).
+ *
+ * Ниже — справочник семейств для пер-категорийного пересчёта (D18,
+ * `StatisticsCategoriesEditor`): то, что выбирается в модалке «Пересчитать
+ * статистику» на страницах прогонов и СТП.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -26,6 +30,7 @@ import {
   updateStatisticsSettings,
 } from "@/api/testing/statistics";
 import type { StatisticsSettings } from "@/api/testing/types";
+import { StatisticsCategoriesEditor } from "./StatisticsCategoriesEditor";
 
 function saveError(e: unknown): string {
   if (e instanceof ApiError) {
@@ -52,6 +57,7 @@ export function ServicesStatisticsSettings() {
 
       <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-6">
         <StatisticsSettingsForm />
+        <StatisticsCategoriesEditor />
       </div>
     </div>
   );
@@ -131,10 +137,10 @@ function StatisticsSettingsForm() {
           </label>
 
           <div className="text-xs text-dim">
-            Пересчёт запускается автоматически в конце прогона либо вручную
-            кнопкой «Пересчитать статистику» на странице одиночных тестов, и
-            всегда выполняется в фоне — не блокирует постановку новых тестов
-            в очередь. Учётка Confluence для вызова берётся из настроек
+            Пересчёт запускается автоматически в конце прогона либо вручную —
+            кнопкой «Пересчитать статистику» на страницах прогонов, СТП и
+            одиночных тестов, — и всегда выполняется в фоне: не блокирует
+            постановку новых тестов в очередь. Учётка Confluence для вызова берётся из настроек
             интеграции того отдела, который триггерит пересчёт.
           </div>
 

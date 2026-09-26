@@ -85,6 +85,9 @@ class TestAcsSnapshotList:
         version_names = {item["name"]: item["version_name"] for item in body["snapshots"]}
         assert version_names[f"{srv.hostname}-Astra 1.7 aaa"] == "Astra 1.7 aaa"
         assert version_names[f"{srv.hostname}-Astra 1.8 zzz"] == "Astra 1.8 zzz"
+        # Некомпактный хвост нормализация не трогает.
+        assert body["snapshots"][0]["normalized_version"] == "Astra 1.7 aaa"
+        assert body["hostname"] == srv.hostname
 
     async def test_no_matching_snapshots_returns_empty(
         self, client, admin_role_token_a, make_server, db, monkeypatch,

@@ -13,6 +13,24 @@ async def get_by_id(db: AsyncSession, vm_id: str) -> Vm | None:
     ).scalar_one_or_none()
 
 
+async def get_for_update(db: AsyncSession, vm_id: str) -> Vm | None:
+    """SELECT ВМ по PK с FOR UPDATE row-lock (сервисная бронь).
+
+    Release/смена стадии/takeover решают по свежей строке под локом — тот же
+    приём, что `repositories/server.get_for_update` у серверной брони.
+    """
+    stmt = select(Vm).where(Vm.id == vm_id).with_for_update(of=Vm)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def get_many_by_ids(db: AsyncSession, vm_ids: list[str]) -> dict[str, Vm]:
+    """SELECT ВМ из списка одним `WHERE id IN (...)` (batch-status обзора пула)."""
+    if not vm_ids:
+        return {}
+    rows = list((await db.execute(select(Vm).where(Vm.id.in_(vm_ids)))).scalars())
+    return {vm.id: vm for vm in rows}
+
+
 async def get_by_department_number(
     db: AsyncSession, department_id: str, number: int
 ) -> Vm | None:

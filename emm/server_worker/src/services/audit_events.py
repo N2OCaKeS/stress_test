@@ -45,6 +45,9 @@ SERVICE_EVENTS = [
     # Инвентаризация и bootstrap — tasks/inventory.py, tasks/prepare.py
     {"action": "server.inventory_sync", "description": "Снятие hardware-фактов сервера по SSH", "default_severity": "INFO"},
     {"action": "server.prepare", "description": "Бутстрап управляющей учётки на сервере (useradd + authorized_keys)", "default_severity": "INFO"},
+    {"action": "server.prepare_for_test", "description": "Подготовка стенда к тесту: учётка, ядро, режим, настройка стенда, перезагрузка и ожидание подъёма", "default_severity": "WARNING"},
+    {"action": "server.stand_setup", "description": "Настройка стенда без restore (параметры ядра, скрипт, перезагрузка) — перед шагом многоступенчатого теста", "default_severity": "WARNING"},
+    {"action": "server.node_exporter_installed", "description": "Установка node_exporter на сервер по SSH", "default_severity": "INFO"},
     # Обновление ОС — tasks/astra_update.py
     {"action": "server.astra_update", "description": "Обновление ОС Astra по SSH: перезапись sources.list + apt update && astra-update", "default_severity": "WARNING"},
     # Снимки диска через ACS (Clonezilla-обёртка) — tasks/acs_snapshots.py
@@ -74,6 +77,9 @@ SERVICE_EVENTS = [
     {"action": "vm.snapshot_create", "description": "Создание снимка ВМ по SSH: virsh snapshot-create-as (disk-only/live)", "default_severity": "WARNING"},
     {"action": "vm.snapshot_delete", "description": "Удаление снимка ВМ по SSH: virsh snapshot-delete", "default_severity": "WARNING"},
     {"action": "vm.snapshot_revert", "description": "Откат ВМ на снимок по SSH: virsh snapshot-revert", "default_severity": "WARNING"},
+    {"action": "vm.node_exporter_installed", "description": "Установка node_exporter в гостя ВМ по SSH", "default_severity": "INFO"},
+    {"action": "vm.prepare_for_test", "description": "подготовка ВМ-стенда под тест: откат снимка на hub'е, ожидание гостя, учётка теста, ядро, режим, настройка стенда, перезагрузка", "default_severity": "WARNING"},
+    {"action": "vm.stand_setup", "description": "Настройка ВМ-стенда без отката снимка (параметры ядра, скрипт, перезагрузка) — перед шагом многоступенчатого теста", "default_severity": "WARNING"},
     {"action": "vm.astra_update", "description": "Обновление ОС ВМ по SSH: revert _build → sources.list → astra-update → reboot → снимок новой версии", "default_severity": "CRITICAL"},
     {"action": "vm.allta_update", "description": "Обновление guest-allta по снимкам ВМ по SSH: revert → wget/apt install deb → пересъёмка", "default_severity": "WARNING"},
     {"action": "vm.passwd", "description": "Смена пароля гостевого u по снимкам ВМ по SSH: chpasswd + пересъёмка", "default_severity": "WARNING"},

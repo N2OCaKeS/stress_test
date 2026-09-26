@@ -24,7 +24,7 @@ from src.core.constants import (
     SERVICE_RESERVATION_ACS,
     SERVICE_RESERVATION_TESTING,
 )
-from src.core.exceptions import NotFoundError
+from src.core.exceptions import DomainValidationError, NotFoundError
 from src.dependencies.auth import CurrentIdentity, require_internal_caller
 from src.dependencies.db import get_db
 from src.schemas.prepare_for_test import (
@@ -33,8 +33,12 @@ from src.schemas.prepare_for_test import (
     PrepareForTestCallbackResponse,
     PrepareForTestRequest,
     PrepareForTestStatusResponse,
+    StandSetupAcceptedResponse,
+    StandSetupCallbackRequest,
+    StandSetupRequest,
 )
 from src.services import internal_service, prepare_for_test as pft_svc
+from src.services import stand_setup as stand_setup_svc
 
 # Тот же whitelist, что у брони от имени сервиса: `testing_service` —
 # штатный потребитель, `acs` заведён заранее под ретрофит снимков.
@@ -56,11 +60,16 @@ def _to_status_response(request) -> PrepareForTestStatusResponse:
     return PrepareForTestStatusResponse(
         prepare_request_id=request.id,
         server_id=request.server_id,
+        vm_id=request.vm_id,
+        vm_snapshot_name=request.vm_snapshot_name,
         correlation_id=request.correlation_id,
         os_version_id=request.os_version_id,
         kernel=request.kernel,
         mode=request.mode,
+        preparation=request.preparation,
+        skip_pam_fix=request.skip_pam_fix,
         test_username=request.test_username,
+        test_account_credential_id=request.test_account_credential_id,
         status=request.status,
         stage=request.stage,
         failed_step=request.failed_step,
@@ -109,6 +118,12 @@ async def start_prepare_for_test(
 
     Audit: `server.prepare_for_test_requested`.
     """
+    if body.target is not None and body.target.type != "server":
+        # ВМ готовится через `/internal/vms/{vm_id}/prepare-for-test`.
+        raise DomainValidationError(
+            error_code="PREPARE_TARGET_MISMATCH",
+            message="target.type=vm must be sent to /internal/vms/{vm_id}/prepare-for-test",
+        )
     request = await pft_svc.start(
         db,
         server_id=server_id,
@@ -119,6 +134,11 @@ async def start_prepare_for_test(
         test_username=body.test_username,
         requested_by_department_id=body.requested_by_department_id,
         correlation_id=body.correlation_id,
+        test_account_credential_id=body.test_account_credential_id,
+        stand_setup=body.stand_setup.model_dump() if body.stand_setup else None,
+        provisioning=body.provisioning.model_dump() if body.provisioning else None,
+        preparation=body.preparation,
+        skip_pam_fix=body.skip_pam_fix,
     )
     return PrepareForTestAcceptedResponse(
         prepare_request_id=request.id, status=request.status,
@@ -190,3 +210,60 @@ async def record_prepare_for_test_done(
         target_department_id=x_target_department_id,
     )
     return PrepareForTestCallbackResponse(**data)
+
+
+# ── Настройка стенда без restore ──────────────────────
+
+
+@router.post(
+    "/{server_id}/stand-setup",
+    response_model=StandSetupAcceptedResponse,
+    status_code=202,
+    responses={**_COMMON_RESPONSES, 503: {"description": "Worker недоступен (WORKER_*)."}},
+)
+async def start_stand_setup(
+    body: StandSetupRequest,
+    server_id: str = Path(description="ID сервера-стенда."),
+    db: AsyncSession = Depends(get_db),
+    caller: str = Depends(require_internal_caller(*_ALLOWED_IDENTITIES)),
+) -> StandSetupAcceptedResponse:
+    """Настроить уже подготовленный стенд: PAM-правка (по профилю), параметры
+    ядра и скрипт теста, перезагрузка и ожидание — без restore, без учётки и
+    без смены ядра/режима. Бронь сервера держит вызывающий.
+
+    Исход — callback `{TESTING_SERVICE_URL}/internal/stand-setup/{id}/completed`.
+    Повтор с тем же `correlation_id` возвращает уже созданный запрос.
+
+    Audit: `server.stand_setup_requested`.
+    """
+    request = await stand_setup_svc.start(
+        db, server_id=server_id, service_name=caller,
+        correlation_id=body.correlation_id,
+        requested_by_department_id=body.requested_by_department_id,
+        test_username=body.test_username,
+        stand_setup=body.stand_setup.model_dump(),
+        provisioning=body.provisioning.model_dump() if body.provisioning else None,
+    )
+    return StandSetupAcceptedResponse(stand_setup_request_id=request.id, status=request.status)
+
+
+@worker_router.post(
+    "/servers/{server_id}/stand-setup-done",
+    response_model=PrepareForTestCallbackResponse,
+    responses={
+        403: {"description": "PERMISSION_DENIED."},
+        404: {"description": "SERVER_NOT_FOUND / STAND_SETUP_REQUEST_NOT_FOUND."},
+    },
+)
+async def record_stand_setup_done(
+    server_id: str,
+    body: StandSetupCallbackRequest,
+    identity: CurrentIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> PrepareForTestCallbackResponse:
+    """Worker сообщает исход `server.stand_setup`. Доступ: `(server, *, prepare_callback)`.
+
+    Audit: `server.stand_setup_completed`.
+    """
+    status, delivered = await stand_setup_svc.record_done(db, identity, server_id, body)
+    return PrepareForTestCallbackResponse(status=status, callback_delivered=delivered)

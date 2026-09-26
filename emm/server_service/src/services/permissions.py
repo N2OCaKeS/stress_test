@@ -11,7 +11,7 @@
 этом сервисе.
 
 Platform-роли (account_admin / loging_admin / loging_reader) не имеют
-сервисных ролей по модели §7-8 и блокируются `platform_admin_guard`
+сервисных ролей по модели безопасности и блокируются `platform_admin_guard`
 middleware на 403 ДО endpoint-логики (всё, кроме health/ready/openapi/
 docs/redoc). Матрица здесь — единственный источник истины: если
 middleware снимут, без явной service-роли всё равно ничего не пройдёт.

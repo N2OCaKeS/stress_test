@@ -23,7 +23,9 @@ _REAL_SLEEP = asyncio.sleep
 def _settings(**overrides) -> SimpleNamespace:
     """Минимальный settings-дубль: только поля, которые читает preflight."""
     base = {
+        "preflight_force_disabled": False,
         "preflight_enabled": True,
+        "preflight_http_ok_status": "lt500",
         "preflight_http_urls": "https://jira.test,https://git.test",
         "preflight_dns_hosts": "10.0.0.1,10.0.0.2",
         "preflight_dns_port": 53,
@@ -33,6 +35,11 @@ def _settings(**overrides) -> SimpleNamespace:
     }
     base.update(overrides)
     return SimpleNamespace(**base)
+
+
+def _config(**overrides) -> preflight.PreflightConfig:
+    """Env-конфиг проверки поверх `_settings` (критерий по умолчанию — `lt500`)."""
+    return preflight.config_from_env(_settings(**overrides))
 
 
 @pytest.fixture
@@ -76,18 +83,18 @@ class TestCheckOnce:
     async def test_all_available(self, monkeypatch):
         _mock_http(monkeypatch, lambda request: httpx.Response(200))
         _stub_dns(monkeypatch, {"10.0.0.1": True, "10.0.0.2": True})
-        assert await preflight.check_once(_settings()) == []
+        assert await preflight.check_once(_config()) == []
 
     async def test_one_dns_alive_is_enough(self, monkeypatch):
         """Легаси-семантика `0 in available_dns.values()` — достаточно одного."""
         _mock_http(monkeypatch, lambda request: httpx.Response(200))
         _stub_dns(monkeypatch, {"10.0.0.1": False, "10.0.0.2": True})
-        assert await preflight.check_once(_settings()) == []
+        assert await preflight.check_once(_config()) == []
 
     async def test_no_dns_alive_is_unavailable(self, monkeypatch):
         _mock_http(monkeypatch, lambda request: httpx.Response(200))
         _stub_dns(monkeypatch, {})
-        unavailable = await preflight.check_once(_settings())
+        unavailable = await preflight.check_once(_config())
         assert unavailable == ["dns(10.0.0.1,10.0.0.2)"]
 
     async def test_names_every_unreachable_url(self, monkeypatch):
@@ -98,12 +105,12 @@ class TestCheckOnce:
 
         _mock_http(monkeypatch, handler)
         _stub_dns(monkeypatch, {"10.0.0.1": True})
-        assert await preflight.check_once(_settings()) == ["https://git.test"]
+        assert await preflight.check_once(_config()) == ["https://git.test"]
 
     async def test_5xx_counts_as_unavailable(self, monkeypatch):
         _mock_http(monkeypatch, lambda request: httpx.Response(503))
         _stub_dns(monkeypatch, {"10.0.0.1": True})
-        unavailable = await preflight.check_once(_settings())
+        unavailable = await preflight.check_once(_config())
         assert unavailable == ["https://jira.test", "https://git.test"]
 
     @pytest.mark.parametrize("status", [200, 302, 401, 403, 404])
@@ -112,12 +119,12 @@ class TestCheckOnce:
         редирект на SSO или 401 доказывают доступность так же."""
         _mock_http(monkeypatch, lambda request: httpx.Response(status))
         _stub_dns(monkeypatch, {"10.0.0.1": True})
-        assert await preflight.check_once(_settings()) == []
+        assert await preflight.check_once(_config()) == []
 
     async def test_empty_config_skips_that_half(self, monkeypatch):
         _stub_dns(monkeypatch, {})
-        settings = _settings(preflight_http_urls="", preflight_dns_hosts="")
-        assert await preflight.check_once(settings) == []
+        config = _config(preflight_http_urls="", preflight_dns_hosts="")
+        assert await preflight.check_once(config) == []
 
 
 class TestWaitForExternalServices:
@@ -130,6 +137,67 @@ class TestWaitForExternalServices:
         monkeypatch.setattr(preflight, "check_once", boom)
         result = await preflight.wait_for_external_services()
         assert result.ok is True
+
+    async def test_force_disabled_beats_payload(self, monkeypatch):
+        """`PREFLIGHT_FORCE_DISABLED` — аварийный выключатель, он сильнее payload."""
+        monkeypatch.setattr(preflight, "get_settings", lambda: _settings(preflight_force_disabled=True))
+
+        async def boom(config):
+            raise AssertionError("check_once must not be called when force-disabled")
+
+        monkeypatch.setattr(preflight, "check_once", boom)
+        result = await preflight.wait_for_external_services(preflight=_payload(enabled=True))
+        assert result.ok is True
+
+    async def test_payload_settings_drive_the_wait(self, monkeypatch, no_sleep):
+        """Интервал, таймаут и адреса — из payload, а не из env."""
+        monkeypatch.setattr(preflight, "get_settings", lambda: _settings())
+        seen: list[preflight.PreflightConfig] = []
+
+        async def never(config):
+            seen.append(config)
+            return ["https://payload.test"]
+
+        monkeypatch.setattr(preflight, "check_once", never)
+        result = await preflight.wait_for_external_services(
+            preflight=_payload(poll_interval_seconds=10, timeout_seconds=30),
+        )
+        assert result.ok is False
+        assert no_sleep == [10.0, 10.0, 10.0]
+        assert seen[0].source == "payload"
+        assert [probe.url for probe in seen[0].http] == ["https://payload.test"]
+
+    async def test_payload_disabled_skips_even_if_env_enabled(self, monkeypatch):
+        monkeypatch.setattr(preflight, "get_settings", lambda: _settings(preflight_enabled=True))
+
+        async def boom(config):
+            raise AssertionError("check_once must not be called when payload disables preflight")
+
+        monkeypatch.setattr(preflight, "check_once", boom)
+        result = await preflight.wait_for_external_services(preflight=_payload(enabled=False))
+        assert result.ok is True
+
+    async def test_payload_enabled_even_if_env_disabled(self, monkeypatch, no_sleep):
+        """`PREFLIGHT_ENABLED=false` — лишь фолбэк: payload его перекрывает."""
+        monkeypatch.setattr(preflight, "get_settings", lambda: _settings(preflight_enabled=False))
+        calls = {"n": 0}
+
+        async def all_good(config):
+            calls["n"] += 1
+            return []
+
+        monkeypatch.setattr(preflight, "check_once", all_good)
+        result = await preflight.wait_for_external_services(preflight=_payload())
+        assert result.ok is True
+        assert calls["n"] == 1
+
+    async def test_invalid_payload_fails_item(self, monkeypatch):
+        monkeypatch.setattr(preflight, "get_settings", lambda: _settings())
+        result = await preflight.wait_for_external_services(
+            preflight=_payload(http=[{"url": "https://x.test", "ok_status": "301"}]),
+        )
+        assert result.ok is False
+        assert "invalid preflight settings" in (result.error or "")
 
     async def test_ok_on_first_round_does_not_sleep(self, monkeypatch, no_sleep):
         monkeypatch.setattr(preflight, "get_settings", lambda: _settings())
@@ -261,3 +329,113 @@ class TestWaitForExternalServices:
         monkeypatch.setattr(preflight, "check_once", flaky)
         result = await preflight.wait_for_external_services(on_wait=on_wait)
         assert result.ok is True
+
+
+def _payload(**overrides) -> dict:
+    """Поле `preflight` claim payload (CONTRACTS.md C3)."""
+    base = {
+        "enabled": True,
+        "http": [{"url": "https://payload.test", "ok_status": "200"}],
+        "dns_hosts": ["10.9.9.9"],
+        "dns_port": 5353,
+        "poll_interval_seconds": 60,
+        "timeout_seconds": 600,
+        "probe_timeout_seconds": 3,
+    }
+    base.update(overrides)
+    return base
+
+
+class TestResolveConfig:
+    """настройки из payload приоритетнее env, env — только фолбэк."""
+
+    def test_no_payload_uses_env(self):
+        config = preflight.resolve_config(None, _settings())
+        assert config.source == "env"
+        assert [probe.url for probe in config.http] == ["https://jira.test", "https://git.test"]
+        assert {probe.ok_status for probe in config.http} == {"lt500"}
+        assert config.dns_hosts == ("10.0.0.1", "10.0.0.2")
+        assert config.poll_interval_seconds == 180.0
+        assert config.timeout_seconds == 7200.0
+
+    def test_payload_overrides_every_env_value(self):
+        config = preflight.resolve_config(_payload(), _settings())
+        assert config.source == "payload"
+        assert config.enabled is True
+        assert config.http == (preflight.HttpProbe("https://payload.test", "200"),)
+        assert config.dns_hosts == ("10.9.9.9",)
+        assert config.dns_port == 5353
+        assert config.poll_interval_seconds == 60.0
+        assert config.timeout_seconds == 600.0
+        assert config.probe_timeout_seconds == 3.0
+
+    def test_missing_optional_field_falls_back_to_env(self):
+        payload = _payload()
+        del payload["probe_timeout_seconds"]
+        config = preflight.resolve_config(payload, _settings(preflight_probe_timeout_seconds=9.0))
+        assert config.probe_timeout_seconds == 9.0
+
+    def test_empty_lists_in_payload_disable_that_half(self):
+        config = preflight.resolve_config(_payload(http=[], dns_hosts=[]), _settings())
+        assert config.http == ()
+        assert config.dns_hosts == ()
+
+    def test_default_ok_status_is_strict_200(self):
+        config = preflight.resolve_config(_payload(http=[{"url": "https://a.test"}]), _settings())
+        assert config.http[0].ok_status == "200"
+
+    def test_unknown_ok_status_rejected(self):
+        with pytest.raises(ValueError):
+            preflight.resolve_config(_payload(http=[{"url": "https://a.test", "ok_status": "2xx"}]), _settings())
+
+
+class TestOkStatus:
+    """Критерий доступности на пробу: `200` (легаси) или `lt500`."""
+
+    @pytest.mark.parametrize("status", [302, 401, 403, 404])
+    async def test_strict_200_rejects_non_200(self, monkeypatch, status):
+        _mock_http(monkeypatch, lambda request: httpx.Response(status))
+        _stub_dns(monkeypatch, {"10.9.9.9": True})
+        config = preflight.resolve_config(_payload(), _settings())
+        assert await preflight.check_once(config) == ["https://payload.test"]
+
+    async def test_strict_200_accepts_200(self, monkeypatch):
+        _mock_http(monkeypatch, lambda request: httpx.Response(200))
+        _stub_dns(monkeypatch, {"10.9.9.9": True})
+        config = preflight.resolve_config(_payload(), _settings())
+        assert await preflight.check_once(config) == []
+
+    async def test_strict_200_follows_redirects_like_requests(self, monkeypatch):
+        """Легаси `requests.get` шёл по редиректам — итоговые 200 засчитываются."""
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/":
+                return httpx.Response(302, headers={"Location": "https://payload.test/login"})
+            return httpx.Response(200)
+
+        _mock_http(monkeypatch, handler)
+        _stub_dns(monkeypatch, {"10.9.9.9": True})
+        config = preflight.resolve_config(_payload(), _settings())
+        assert await preflight.check_once(config) == []
+
+    async def test_mixed_criteria_per_probe(self, monkeypatch):
+        _mock_http(monkeypatch, lambda request: httpx.Response(403))
+        _stub_dns(monkeypatch, {"10.9.9.9": True})
+        payload = _payload(http=[
+            {"url": "https://strict.test", "ok_status": "200"},
+            {"url": "https://loose.test", "ok_status": "lt500"},
+        ])
+        config = preflight.resolve_config(payload, _settings())
+        assert await preflight.check_once(config) == ["https://strict.test"]
+
+    async def test_dns_port_from_payload(self, monkeypatch):
+        seen: list[tuple[str, int]] = []
+
+        async def fake_probe(host, port, timeout):
+            seen.append((host, port))
+            return True
+
+        _mock_http(monkeypatch, lambda request: httpx.Response(200))
+        monkeypatch.setattr(preflight, "_probe_tcp", fake_probe)
+        config = preflight.resolve_config(_payload(), _settings())
+        assert await preflight.check_once(config) == []
+        assert seen == [("10.9.9.9", 5353)]

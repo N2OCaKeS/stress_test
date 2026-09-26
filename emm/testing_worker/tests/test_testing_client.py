@@ -40,11 +40,10 @@ _VALID_CLAIM_ITEM = {
     "host": "10.0.0.1",
     "test_username": "u",
     "test_ssh_private_key": "keydata",
-    "command": ["sudo", "bash", "/home/u/starter.sh"],
-    "command_masked": ["sudo", "bash", "/home/u/starter.sh"],
-    "dates_content": "-sn 1",
-    "dates_content_masked": "-sn 1",
-    "dates_filename": "dates_qi_1.conf",
+    "files": [{"path": "/home/u/dates_qi_1.conf", "content": "-sn 1", "mode": "0644", "sensitive": False}],
+    "launch_command": "sudo bash /home/u/starter.sh",
+    "launch_command_masked": "sudo bash /home/u/starter.sh",
+    "stop_command": "STOP-TREE",
     "debug_mode": False,
     "is_retry": False,
 }
@@ -67,10 +66,31 @@ class TestClaim:
         assert item is not None
         assert item["queue_item_id"] == "qi_1"
         assert item["host"] == "10.0.0.1"
-        assert item["command"] == ["sudo", "bash", "/home/u/starter.sh"]
+        assert item["launch_command"] == "sudo bash /home/u/starter.sh"
+        assert item["files"][0]["path"] == "/home/u/dates_qi_1.conf"
+        assert item["use_pty"] is True
         assert recorded["path"] == "/internal/queue/claim"
         assert recorded["auth"] == f"Bearer {WORKER_SECRET}"
         assert recorded["identity"] == "testing_worker"
+
+    async def test_preflight_is_kept_and_optional(self, monkeypatch):
+        """`preflight` из payload доходит до `_run_one_item`; без него — `None`."""
+        settings = {
+            "enabled": True, "http": [{"url": "https://x.test", "ok_status": "lt500"}],
+            "dns_hosts": ["10.0.0.53"], "dns_port": 53,
+            "poll_interval_seconds": 180, "timeout_seconds": 7200,
+        }
+        bodies = iter([{**_VALID_CLAIM_ITEM, "preflight": settings}, _VALID_CLAIM_ITEM])
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={"item": next(bodies)})
+
+        _install_transport(monkeypatch, handler)
+
+        with_preflight = await testing_client.claim()
+        without_preflight = await testing_client.claim()
+        assert with_preflight is not None and with_preflight["preflight"] == settings
+        assert without_preflight is not None and without_preflight["preflight"] is None
 
     async def test_unknown_fields_are_dropped_not_fatal(self, monkeypatch):
         """Лишнее поле в ответе (например, устаревшее `test_password`) не повод падать."""
@@ -436,3 +456,58 @@ class TestSharedClient:
 
         assert len(built) == 2
         await testing_client.aclose()
+
+
+class TestReportPreflightState:
+    """состояние ожидания внешних сервисов для левой панели UI."""
+
+    async def test_posts_waiting_and_ok(self, monkeypatch):
+        recorded = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            recorded.append((request.url.path, _json.loads(request.content)))
+            return httpx.Response(200, json={"ok": True})
+
+        _install_transport(monkeypatch, handler)
+
+        await testing_client.report_preflight_state("qi_1", waiting=True, unavailable=["dns"])
+        await testing_client.report_preflight_state("qi_1", waiting=False)
+
+        assert recorded == [
+            ("/internal/queue/qi_1/preflight-state", {"state": "waiting", "unavailable": ["dns"]}),
+            ("/internal/queue/qi_1/preflight-state", {"state": "ok", "unavailable": []}),
+        ]
+
+    async def test_does_not_raise_on_failures(self, monkeypatch):
+        def handler(request: httpx.Request) -> httpx.Response:
+            raise httpx.ConnectError("refused", request=request)
+
+        _install_transport(monkeypatch, handler)
+        await testing_client.report_preflight_state("qi_1", waiting=True, unavailable=["dns"])
+
+        _install_transport(monkeypatch, lambda request: httpx.Response(404, json={}))
+        await testing_client.report_preflight_state("qi_1", waiting=False)
+
+
+class TestClaimLegacyFormat:
+    async def test_pre_tp09_item_is_failed_with_a_clear_reason(self, monkeypatch):
+        """Задание до (argv + dates_*) воркер не исполняет, а честно проваливает."""
+        calls = []
+        legacy = {
+            "queue_item_id": "qi_old", "host": "10.0.0.1", "test_username": "u",
+            "test_ssh_private_key": "k", "command": ["sudo", "bash", "/home/u/starter.sh"],
+            "dates_content": "-sn 1", "dates_filename": "dates_qi_old.conf",
+            "debug_mode": False, "is_retry": False,
+        }
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/claim"):
+                return httpx.Response(200, json={"item": legacy})
+            calls.append((request.url.path, _json.loads(request.content)))
+            return httpx.Response(200, json={})
+
+        _install_transport(monkeypatch, handler)
+
+        assert await testing_client.claim() is None
+        assert calls and calls[0][0] == "/internal/queue/qi_old/completed"
+        assert "legacy format" in calls[0][1]["error"]

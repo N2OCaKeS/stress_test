@@ -28,6 +28,11 @@ def test_command_arg_id() -> str:
     return _new_id("targ_")
 
 
+def test_step_id() -> str:
+    """`tstep_<uuid>` — для test_steps."""
+    return _new_id("tstep_")
+
+
 def test_stand_id() -> str:
     """`stand_<uuid>` — для test_stands."""
     return _new_id("stand_")
@@ -122,3 +127,64 @@ def stp_pull_operation_id() -> str:
 def queue_orchestration_event_id() -> str:
     """`qoe_<uuid>` — для queue_orchestration_events."""
     return _new_id("qoe_")
+
+
+def statistics_category_id() -> str:
+    """`stcat_<uuid>` — для statistics_categories."""
+    return _new_id("stcat_")
+
+
+def zephyr_folder_id() -> str:
+    """`zfold_<uuid>` — для zephyr_folders."""
+    return _new_id("zfold_")
+
+
+def zephyr_status_mapping_id() -> str:
+    """`zsm_<uuid>` — для zephyr_status_mappings."""
+    return _new_id("zsm_")
+
+
+def launch_profile_id() -> str:
+    """`lp_<uuid>` — для launch_profiles."""
+    return _new_id("lp_")
+
+
+def launch_profile_version_id() -> str:
+    """`lpv_<uuid>` — для launch_profile_versions."""
+    return _new_id("lpv_")
+
+
+def provisioning_profile_id() -> str:
+    """`pp_<uuid>` — для provisioning_profiles."""
+    return _new_id("pp_")
+
+
+def scenario_id() -> str:
+    """`scn_<uuid>` — для scenarios."""
+    return _new_id("scn_")
+
+
+def scenario_stand_id() -> str:
+    """`scs_<uuid>` — для scenario_stands."""
+    return _new_id("scs_")
+
+
+def scenario_action_id() -> str:
+    """`sca_<uuid>` — для scenario_actions."""
+    return _new_id("sca_")
+
+
+def compat_network_id() -> str:
+    """`cnet_<uuid>` — для compat_allowed_networks."""
+    return _new_id("cnet_")
+
+
+def scenario_run_id() -> str:
+    """`scr_<uuid>` — для scenario_runs."""
+    return _new_id("scr_")
+
+
+def scenario_run_stand_id() -> str:
+    """`srs_<uuid>` — для scenario_run_stands."""
+    return _new_id("srs_")
+

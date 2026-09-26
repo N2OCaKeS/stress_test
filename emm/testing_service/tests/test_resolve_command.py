@@ -1,7 +1,7 @@
 """Тесты `services.test_command_arg.resolve_command`.
 
 Резолв не выставлен наружу отдельным HTTP-эндпоинтом — это внутренний вызов,
-которым воркер (волна 5 плана миграции) достанет готовый `list[str]` перед
+которым воркер достанет готовый `list[str]` перед
 SSH-исполнением. Тесты зовут сервисный слой напрямую с открытой сессией, как
 это сделает будущий воркер.
 """
@@ -132,12 +132,12 @@ class TestResolveCommand:
 class TestResolveCommandMasked:
     async def test_sensitive_variable_is_masked(self, client, admin_token):
         test_id = await _create_test(client, admin_token)
-        password_id = await _variable_id(client, admin_token, "TEST_PASSWORD")
+        password_id = await _variable_id(client, admin_token, "TEST_SSH_KEY")
         await _add_literal(client, admin_token, test_id, "--password", position=0)
         await _add_variable(client, admin_token, test_id, password_id, position=1)
         async with AsyncSessionLocal() as db:
-            args = await svc.resolve_command(db, test_id, {"TEST_PASSWORD": "hunter2"})
-            masked = await svc.resolve_command_masked(db, test_id, {"TEST_PASSWORD": "hunter2"})
+            args = await svc.resolve_command(db, test_id, {"TEST_SSH_KEY": "hunter2"})
+            masked = await svc.resolve_command_masked(db, test_id, {"TEST_SSH_KEY": "hunter2"})
         assert args == ["--password", "hunter2"]
         assert masked == ["--password", "***"]
 
@@ -182,14 +182,15 @@ class TestResolveDatesContent:
 
     async def test_masked_hides_sensitive_variable(self, client, admin_token):
         test_id = await _create_test(client, admin_token)
-        password_id = await _variable_id(client, admin_token, "TEST_PASSWORD")
+        password_id = await _variable_id(client, admin_token, "TEST_SSH_KEY")
         await _add_literal(client, admin_token, test_id, "-ba", position=0)
         await _add_variable(client, admin_token, test_id, password_id, position=1)
         async with AsyncSessionLocal() as db:
-            content = await svc.resolve_dates_content(db, test_id, {"TEST_PASSWORD": "hunter2"})
-            masked = await svc.resolve_dates_content_masked(db, test_id, {"TEST_PASSWORD": "hunter2"})
+            content = await svc.resolve_dates_content(db, test_id, {"TEST_SSH_KEY": "hunter2"})
+            masked = await svc.resolve_dates_content_masked(db, test_id, {"TEST_SSH_KEY": "hunter2"})
         assert content == "-ba hunter2"
-        assert masked == "-ba ***"
+        # Маска экранируется так же, как значение (dates_quoting=shell, D4).
+        assert masked == "-ba '***'"
 
     async def test_unknown_test_id_raises_not_found(self):
         async with AsyncSessionLocal() as db:

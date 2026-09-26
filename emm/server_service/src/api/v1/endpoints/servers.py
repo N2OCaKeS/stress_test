@@ -239,7 +239,7 @@ async def get_server(
 @router.get(
     "/{server_id}/test-credentials",
     response_model=ServerTestCredentialsResponse,
-    summary="Учётка исполнения теста стенда (живая отладка, план ALLTA MIGRATION §5.3)",
+    summary="Учётка исполнения теста стенда (живая отладка)",
     description=(
         "Без `?reveal=true` — только метаданные (`exists`/`username`/"
         "`ssh_public_key`/`rotated_at`). С `?reveal=true` добавляет "

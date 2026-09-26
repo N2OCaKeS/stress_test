@@ -7,6 +7,10 @@
 вызывает `queue.enqueue()`), так что общая логика живёт здесь, чтобы не
 заводить цикл импортов.
 
+Запись кампании, запущенная сценарием (`scenario_runs.test_run_entry_id`),
+считается по состоянию запуска сценария, а не по item'ам его действий
+(у них нет `test_run_id`).
+
 Статус материализован на `test_runs.status`, не вычисляется на лету при
 каждом чтении — иначе `GET /test-runs` с фильтром по `status` требовал бы по
 запросу к дочерним `queue_items` на каждую кампанию в странице.
@@ -16,15 +20,18 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import (
     ACTIVE_QUEUE_STATES,
     FAILURE_QUEUE_STATES,
+    ACTIVE_SCENARIO_RUN_STATES,
     QueueItemState,
+    ScenarioRunState,
     TestRunStatus,
 )
-from src.models import QueueItem, TestRunEntry
+from src.models import QueueItem, ScenarioRun, TestRunEntry
 from src.repositories import queue_item as queue_item_repo
 from src.repositories import test_run as repo
 from src.repositories import test_run_entry as entry_repo
@@ -42,13 +49,48 @@ def latest_attempts(items: Sequence[QueueItem]) -> list[QueueItem]:
     return [item for item in items if item.id not in superseded]
 
 
-def result_states(items: Sequence[QueueItem], entries: Sequence[TestRunEntry]) -> list[str]:
+# Исход запуска сценария в терминах item'а: остановка — как skip, решение
+# оператора, а не провал.
+_SCENARIO_RESULT_STATE = {
+    ScenarioRunState.SUCCEEDED: QueueItemState.SUCCEEDED,
+    ScenarioRunState.FAILED: QueueItemState.FAILED,
+    ScenarioRunState.STOPPED: QueueItemState.SKIPPED,
+}
+
+
+def scenario_result_state(run: ScenarioRun) -> str:
+    if run.state in ACTIVE_SCENARIO_RUN_STATES:
+        return QueueItemState.RUNNING
+    return _SCENARIO_RESULT_STATE.get(run.state, QueueItemState.FAILED)
+
+
+def latest_scenario_runs(scenario_runs: Sequence[ScenarioRun]) -> dict[str, ScenarioRun]:
+    """`test_run_entry_id → последний запуск сценария` этой записи кампании."""
+    latest: dict[str, ScenarioRun] = {}
+    for run in sorted(scenario_runs, key=lambda r: r.created_at):
+        if run.test_run_entry_id:
+            latest[run.test_run_entry_id] = run
+    return latest
+
+
+def result_states(
+    items: Sequence[QueueItem], entries: Sequence[TestRunEntry], scenario_runs: Sequence[ScenarioRun] = (),
+) -> list[str]:
+    """Текущий исход каждой записи кампании: последняя попытка item'а, запуск
+    сценария (запись кампании, ушедшая в сценарий) или состояние постановки."""
     latest = latest_attempts(items)
-    attempted_entries = {item.test_run_entry_id for item in items}
-    return [item.state for item in latest] + [
+    by_entry = latest_scenario_runs(scenario_runs)
+    attempted_entries = {item.test_run_entry_id for item in items} | set(by_entry)
+    return [item.state for item in latest] + [scenario_result_state(run) for run in by_entry.values()] + [
         QueueItemState.FAILED if entry.enqueue_error_code else QueueItemState.QUEUED
         for entry in entries if entry.id not in attempted_entries
     ]
+
+
+async def list_scenario_runs(db: AsyncSession, test_run_id: str) -> list[ScenarioRun]:
+    return list((await db.execute(
+        select(ScenarioRun).where(ScenarioRun.test_run_id == test_run_id).order_by(ScenarioRun.created_at)
+    )).scalars())
 
 
 def compute_status(states: list[str]) -> str:
@@ -100,7 +142,8 @@ async def recompute(db: AsyncSession, test_run_id: str, *, emit_audit: bool = Tr
         return None
     items = await queue_item_repo.list_by_test_run_id(db, test_run_id)
     entries = await entry_repo.list_for_run(db, test_run_id)
-    new_status = compute_status(result_states(items, entries))
+    scenario_runs = await list_scenario_runs(db, test_run_id)
+    new_status = compute_status(result_states(items, entries, scenario_runs))
     if run.status != new_status:
         old_status = run.status
         run.status = new_status

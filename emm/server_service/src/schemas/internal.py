@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.core.password_policy import validate_password
 
@@ -753,8 +753,8 @@ class ServerConnectionInfoResponse(BaseModel):
     Единственный внутренний потребитель — `testing_worker`: у него нет
     пользовательского bearer'а для pass-through `GET /servers/{id}`
     (`_ensure_visible` гейтит его по department_id держателя токена), а
-    прошивать IP стенда в `test_stands` намеренно не стали (§4 плана
-    миграции — "надстройка без дублирования"). Отдаёт только то, что нужно
+    прошивать IP стенда в `test_stands` намеренно не стали (надстройка без
+    дублирования). Отдаёт только то, что нужно
     для SSH-подключения, не полную карточку сервера.
     """
 
@@ -763,13 +763,28 @@ class ServerConnectionInfoResponse(BaseModel):
 
 
 class ServerBatchStatusRequest(BaseModel):
-    """Тело POST /internal/servers/batch-status."""
+    """Тело POST /internal/servers/batch-status.
+
+    Смешанный список: серверы и ВМ пула одним вызовом.
+    Хотя бы один id в сумме обязателен.
+    """
 
     server_ids: list[str] = Field(
-        min_length=1,
+        default_factory=list,
         max_length=500,
         description="ID серверов одним запросом — не устраивать N вызовов на N стендов пула.",
     )
+    vm_ids: list[str] = Field(
+        default_factory=list,
+        max_length=500,
+        description="ID ВМ-стендов. Ответ — в `vms`.",
+    )
+
+    @model_validator(mode="after")
+    def _not_empty(self) -> "ServerBatchStatusRequest":
+        if not self.server_ids and not self.vm_ids:
+            raise ValueError("server_ids or vm_ids must not be empty")
+        return self
 
 
 class ServerStatusItem(BaseModel):
@@ -786,7 +801,22 @@ class ServerStatusItem(BaseModel):
     ping_checked_at: datetime | None = Field(default=None, description="Момент последнего ping-замера (UTC).")
 
 
+class VmStatusItem(BaseModel):
+    """Одна ВМ в ответе batch-status — бронь в терминах `Server.busy_state` + ping гостя."""
+
+    vm_id: str = Field(description="ID ВМ, как в запросе.")
+    found: bool = Field(description="False — ВМ с этим id нет.")
+    busy_state: str | None = Field(default=None, description="См. `VmServiceReservationResponse.busy_state`.")
+    busy_service_name: str | None = None
+    busy_user_id: str | None = None
+    busy_actor_type: str | None = None
+    busy_note: str | None = None
+    ping_reachable: bool | None = Field(default=None, description="Последняя проба ping гостя.")
+    ping_checked_at: datetime | None = None
+
+
 class ServerBatchStatusResponse(BaseModel):
     """Ответ POST /internal/servers/batch-status."""
 
     servers: list[ServerStatusItem] = Field(description="Один элемент на каждый запрошенный server_id, в любом порядке.")
+    vms: list[VmStatusItem] = Field(default_factory=list, description="Один элемент на каждый запрошенный vm_id.")

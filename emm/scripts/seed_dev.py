@@ -706,7 +706,7 @@ def seed_secrets(dept_id: str, user_ids: dict[str, str]) -> None:
 # ── testing_service ──────────────────────────────────────────────────────────
 
 
-# Dev-дефолты несекретных полей `department_integration_settings` (G3).
+# Dev-дефолты несекретных полей `department_integration_settings`.
 # `stp_matrix_confluence_space`/`stp_matrix_confluence_root_page_title` и
 # `jira_board_id`/`tempo_team_id` воспроизводят прежние платформенные
 # хардкоды легаси allta_app (см. docstring
@@ -738,7 +738,7 @@ def seed_integration_settings_defaults(dept_id: str) -> None:
     `credential_id`/`confluence_credential_id`/`bitbucket_credential_id`
     намеренно НЕ заполняются: это ссылки на реальные secret_service-записи
     Jira/Git/Confluence, угадать которые нельзя — их вводит владелец через
-    `/home/integration-onboarding` (G3) уже после seed'а. `seed_auth` создаёт
+    `/home/integration-onboarding` уже после seed'а. `seed_auth` создаёт
     новый `dept_id` на каждый прогон, поэтому строка тут всегда свежая
     (никогда не конфликтует с предыдущим прогоном) — `ON CONFLICT` оставлен
     ради `seed-refresh`/повторных ручных вызовов, но трогает только
@@ -872,7 +872,7 @@ def find_existing_test_server(dept_id: str) -> str:
 
 
 def refresh_seed() -> None:
-    """Недеструктивный повтор: только каталог тестов + демо-логи (G4).
+    """Недеструктивный повтор: только каталог тестов + демо-логи.
 
     НЕ трогает отдел/юзеров (`seed_auth`), НЕ трогает `seed_secrets` и НЕ
     трогает `seed_integration_settings_defaults` — реальные Jira/Git/Confluence

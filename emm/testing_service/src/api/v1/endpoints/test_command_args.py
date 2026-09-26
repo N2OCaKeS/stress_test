@@ -7,7 +7,7 @@
 редактирования теста.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.dependencies.auth import CurrentUserIdentity
@@ -28,20 +28,24 @@ router = APIRouter(prefix="/test-definitions/{test_id}/args")
     "",
     response_model=list[TestCommandArgResponse],
     summary="Слоты команды теста",
-    description="Все слоты теста, упорядоченные по `position`. Видимость — как у самого теста.",
+    description=(
+        "Слоты шага теста, упорядоченные по `position`: `step_id` — шаг, "
+        "без него — первый шаг. Видимость — как у самого теста."
+    ),
     responses={
         401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
         403: {"description": "DEPARTMENT_ISOLATION — тест чужого отдела."},
-        404: {"description": "Тест не найден."},
+        404: {"description": "Тест не найден; TEST_STEP_NOT_FOUND — шаг не этого теста."},
     },
 )
 async def list_command_args(
     test_id: str,
     identity: CurrentUserIdentity,
+    step_id: str | None = Query(default=None, max_length=64, description="Шаг теста; пусто — первый."),
     db: AsyncSession = Depends(get_db),
 ) -> list[TestCommandArgResponse]:
-    """List слотов теста по порядку. Видимость — как у самого теста."""
-    items = await svc.list_command_args(db, identity, test_id)
+    """List слотов шага по порядку. Видимость — как у самого теста."""
+    items = await svc.list_command_args(db, identity, test_id, step_id)
     return [TestCommandArgResponse.model_validate(i) for i in items]
 
 
@@ -51,7 +55,8 @@ async def list_command_args(
     status_code=201,
     summary="Добавить слот в команду",
     description=(
-        "Добавляет слот в конец списка (или на явную `position`). "
+        "Добавляет слот в конец списка шага `step_id` (без него — первого шага; "
+        "или на явную `position`). "
         "`kind=literal` требует `literal_value` и пустой `variable_id`; "
         "`kind=variable` требует `variable_id` и пустой `literal_value`."
     ),
@@ -78,7 +83,8 @@ async def create_command_arg(
     response_model=list[TestCommandArgResponse],
     summary="Скопировать параметры другого теста",
     description=(
-        "Заменяет все слоты текущего теста независимой копией слотов источника. "
+        "Заменяет слоты шага `step_id` текущего теста (без него — первого) независимой "
+        "копией слотов шага `source_step_id` источника (без него — первого). "
         "Порядок, литералы, ссылки на переменные и переопределения сохраняются. "
         "Замена выполняется целиком в одной транзакции. Нужен update на test_definition."
     ),
@@ -94,7 +100,9 @@ async def copy_command_args(
     identity: CurrentUserIdentity,
     db: AsyncSession = Depends(get_db),
 ) -> list[TestCommandArgResponse]:
-    items = await svc.copy_command_args(db, identity, test_id, body.source_test_id)
+    items = await svc.copy_command_args(
+        db, identity, test_id, body.source_test_id, step_id=body.step_id, source_step_id=body.source_step_id,
+    )
     return [TestCommandArgResponse.model_validate(i) for i in items]
 
 

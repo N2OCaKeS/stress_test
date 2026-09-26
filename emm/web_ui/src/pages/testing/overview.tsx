@@ -14,7 +14,8 @@
  * живая карточка сервера приходит вложенной в ответ `getTestStand`); очередь
  * стенда — реальные элементы `GET /queue-items`, сгруппированные по стенду.
  * Управление очередью («Пропустить»/«Остановить»/«Продолжить») ходит в
- * `POST /queue-items/{id}/skip|pause` и `POST /test-stands/{id}/resume-queue`.
+ * `POST /queue-items/{id}/skip|pause` и `POST /test-stands/{id}/resume-queue`;
+ * перестановка ещё не начатых — `PATCH /test-stands/{id}/queue/order`.
  * Пока прерывание не подтвердил воркер, активный item несёт
  * `interrupt_action` — кнопки на это время дизейблятся.
  *
@@ -26,6 +27,8 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  ArrowDown,
+  ArrowUp,
   BarChart3,
   CheckCircle2,
   ChevronDown,
@@ -34,6 +37,7 @@ import {
   Cpu,
   ExternalLink,
   Gauge,
+  GripVertical,
   HelpCircle,
   LayoutGrid,
   ListChecks,
@@ -46,6 +50,7 @@ import {
   SkipForward,
   Thermometer,
 } from "lucide-react";
+import { withStepProgress } from "./queueStepProgress";
 import { LaunchRunModal, type RunsState } from "./runs";
 import { Dropdown } from "@/components/ui/Dropdown";
 import {
@@ -86,6 +91,7 @@ import {
   launchQueueItem,
   listQueueItems,
   pauseQueueItem,
+  reorderStandQueue,
   resumeStandQueue,
   retryQueueItem,
   skipQueueItem,
@@ -129,6 +135,8 @@ interface LaunchableTest {
 
 /** Поля живой карточки сервера (`TestStand.server`), нужные этой странице. */
 interface LiveServerCard {
+  /** Имя ВМ — у карточки ВМ-стенда. */
+  name?: string | null;
   hostname?: string | null;
   display_name?: string | null;
   ip_address?: string | null;
@@ -169,7 +177,7 @@ function mapQueueItemState(state: string): QueueState {
   if (state === "skipped") return "skipped";
   if (state === "paused") return "paused";
   if (state === "queued") return "pending";
-  return "running"; // preparing | ready | running
+  return "running"; // preparing | ready | running | awaiting_verdict
 }
 
 const QUEUE_STATE_NOTE: Record<string, string> = {
@@ -182,10 +190,11 @@ const QUEUE_STATE_NOTE: Record<string, string> = {
   succeeded: "завершён успешно",
   failed: "завершён с ошибкой",
   timed_out: "провален по таймауту",
+  awaiting_verdict: "ждём статус теста из Zephyr",
 };
 
 /** Состояния, в которых item считается активной работой стенда. */
-const ACTIVE_QUEUE_STATES = ["queued", "preparing", "ready", "running"];
+const ACTIVE_QUEUE_STATES = ["queued", "preparing", "ready", "running", "awaiting_verdict"];
 
 const TERMINAL_QUEUE_STATES = ["succeeded", "failed", "timed_out", "skipped"];
 
@@ -206,7 +215,10 @@ function itemTitle(item: PublicQueueItem): string {
 
 /** `PublicQueueItem` → презентационный элемент очереди. */
 function toQueueItem(item: PublicQueueItem): QueueItem {
-  const note = QUEUE_STATE_NOTE[item.state] ?? item.state;
+  const note =
+    item.state === "succeeded" && item.verdict === "unknown"
+      ? "результат не определён — смотрите лог/Confluence"
+      : withStepProgress(QUEUE_STATE_NOTE[item.state] ?? item.state, item);
   const interrupt = item.interrupt_action ?? null;
   return {
     title: itemTitle(item),
@@ -291,7 +303,7 @@ function mapLiveStands(
         : busy === "free" || busy == null
           ? "idle"
           : "manual";
-    const name = server?.display_name || server?.hostname || stand.server_id;
+    const name = server?.display_name || server?.hostname || server?.name || stand.server_id || stand.vm_id || stand.id;
     const ip = server?.ip_address || "—";
     const os = server?.os_version_id ? osNameById.get(server.os_version_id) ?? "—" : "—";
     const standQueue = queues.get(stand.id) ?? { active: null, paused: null };
@@ -322,6 +334,7 @@ function mapLiveStands(
       currentMeta,
       metrics: liveMetrics(metricsById.get(stand.id)),
       queue,
+      isVm: stand.target_type === "vm",
       live: {
         standId: stand.id,
         activeItemId: standQueue.active?.id ?? null,
@@ -331,6 +344,20 @@ function mapLiveStands(
       },
     };
   });
+}
+
+/** Имя стенда с признаком «ВМ». */
+function StandTitle({ stand }: { stand: Stand }) {
+  return (
+    <div className="font-semibold truncate flex items-center gap-1.5 min-w-0">
+      <span className="truncate">{stand.name}</span>
+      {stand.isVm && (
+        <Badge kind="info" className="shrink-0" title="Виртуальный стенд: готовится откатом снимка ВМ">
+          ВМ
+        </Badge>
+      )}
+    </div>
+  );
 }
 
 /** Ключ, по которому тест считается закреплённым за стендом. */
@@ -1026,7 +1053,7 @@ function StripsConcept({
                   {meta.label}
                 </Badge>
                 <div className="min-w-0">
-                  <div className="font-semibold truncate">{stand.name}</div>
+                  <StandTitle stand={stand} />
                   <div className="mono text-xs text-dim truncate">{stand.ip}</div>
                 </div>
               </div>
@@ -1374,13 +1401,38 @@ function LaunchTestModal({
 }
 
 /**
+ * Порядок строк модалки очереди: сначала то, что уже не ждёт (провал,
+ * исполняющийся, остановленный) — хронологически, затем ещё не начатые
+ * (`queued`) в порядке исполнения (`position`). Список приходит от новых к
+ * старым (`order: "desc"`), поэтому не-`queued` разворачиваются.
+ */
+function orderQueueRows(items: PublicQueueItem[]): PublicQueueItem[] {
+  const started = items.filter((item) => item.state !== "queued").reverse();
+  const queued = items
+    .filter((item) => item.state === "queued")
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0) || a.created_at.localeCompare(b.created_at));
+  return [...started, ...queued];
+}
+
+/** Переставить `sourceId` на место `targetId` в списке id. */
+function moveId(ids: string[], sourceId: string, targetId: string): string[] {
+  const from = ids.indexOf(sourceId);
+  const to = ids.indexOf(targetId);
+  if (from < 0 || to < 0 || from === to) return ids;
+  const next = ids.filter((id) => id !== sourceId);
+  next.splice(to, 0, sourceId);
+  return next;
+}
+
+/**
  * Очередь стенда: реальный упорядоченный список элементов и управление
  * активным/остановленным из него же.
  *
- * Переупорядочивание перетаскиванием и точечное удаление будущего элемента
- * сознательно не реализованы — под них нет эндпоинтов на стороне
- * `testing_service`, а подделывать их локальным состоянием (как было в
- * demo-макете) значит показывать пользователю то, чего не произошло.
+ * Ещё не начатые (`queued`) элементы переставляются перетаскиванием (или
+ * кнопками «Выше»/«Ниже») — `PATCH /test-stands/{id}/queue/order` (D15):
+ * меняется реальный порядок исполнения на стенде. Активный и остановленный
+ * элементы не перетаскиваются — их сервис не переставляет. Точечное удаление
+ * будущего элемента по-прежнему не показывается.
  */
 function QueueModal({
   stand,
@@ -1418,7 +1470,32 @@ function QueueModal({
   const liveItems = (itemsQuery.data?.items ?? []).filter(
     (item) => item.state !== "failed" || item.is_current !== false,
   );
-  const rows: QueueItem[] = live ? liveItems.slice().reverse().map(toQueueItem) : stand.queue;
+  const [pendingOrder, setPendingOrder] = useState<string[] | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  let orderedLive = orderQueueRows(liveItems);
+  if (pendingOrder) {
+    // Оптимистично показываем новый порядок, пока сервис его сохраняет.
+    const byId = new Map(orderedLive.map((item) => [item.id, item]));
+    const moved = pendingOrder.map((id) => byId.get(id)).filter((item): item is PublicQueueItem => !!item);
+    orderedLive = [...orderedLive.filter((item) => item.state !== "queued"), ...moved];
+  }
+  const queuedIds = orderedLive.filter((item) => item.state === "queued").map((item) => item.id);
+  const rows: QueueItem[] = live ? orderedLive.map(toQueueItem) : stand.queue;
+
+  async function reorder(nextIds: string[]) {
+    if (!standId || pendingOrder || nextIds.join() === queuedIds.join()) return;
+    setPendingOrder(nextIds);
+    try {
+      await reorderStandQueue(standId, nextIds);
+      toast.success("Порядок очереди изменён");
+      onChanged();
+    } catch (error) {
+      toast.error(apiErrMsg(error, "Не удалось изменить порядок очереди"));
+    } finally {
+      itemsQuery.refetch();
+      setPendingOrder(null);
+    }
+  }
 
   async function retry(itemId: string) {
     if (retryingId) return;
@@ -1448,8 +1525,8 @@ function QueueModal({
         {live && (
           <div className="surface-2 border border-token rounded p-3 mb-3 flex items-center justify-between gap-3 flex-wrap">
             <div className="text-xs text-dim">
-              Порядок очереди задаёт сам сервис — перетаскивание и удаление отдельного элемента из середины пока не
-              поддерживаются.
+              Ещё не начатые тесты можно перетащить — так меняется порядок их исполнения на стенде. Текущий и
+              остановленный тесты не переставляются.
             </div>
             <Button size="sm" type="button" className="inline-flex items-center gap-1" onClick={itemsQuery.refetch}>
               <RefreshCcw className="w-3.5 h-3.5" />
@@ -1468,13 +1545,32 @@ function QueueModal({
         <div>
           {rows.length ? (
             <div className="grid gap-2">
-              {rows.map((item, index) => (
+              {rows.map((item, index) => {
+                const queuedIndex = live && item.itemId && item.rawState === "queued" ? queuedIds.indexOf(item.itemId) : -1;
+                const movable = queuedIndex >= 0 && queuedIds.length > 1 && !pendingOrder;
+                const itemId = item.itemId as string;
+                return (
                 <div
                   key={item.itemId ?? `${item.title}-${index}`}
-                  className="surface-2 border border-token rounded p-3 grid grid-cols-1 lg:grid-cols-[42px_1fr_auto] gap-3 items-center"
+                  data-testid={queuedIndex >= 0 ? "queue-row-queued" : undefined}
+                  draggable={movable}
+                  onDragStart={movable ? (e) => {
+                    setDragId(itemId);
+                    e.dataTransfer?.setData("text/plain", itemId);
+                    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+                  } : undefined}
+                  onDragOver={queuedIndex >= 0 && dragId ? (e) => e.preventDefault() : undefined}
+                  onDrop={queuedIndex >= 0 ? (e) => {
+                    e.preventDefault();
+                    const source = dragId ?? e.dataTransfer?.getData("text/plain");
+                    setDragId(null);
+                    if (source) void reorder(moveId(queuedIds, source, itemId));
+                  } : undefined}
+                  onDragEnd={() => setDragId(null)}
+                  className={`surface-2 border border-token rounded p-3 grid grid-cols-1 lg:grid-cols-[42px_1fr_auto] gap-3 items-center${movable ? " cursor-grab" : ""}${dragId === item.itemId ? " opacity-50" : ""}`}
                 >
                   <div className="mono text-xs text-dim flex items-center gap-2">
-                    <ListTree className="w-3.5 h-3.5" />
+                    {movable ? <GripVertical className="w-3.5 h-3.5" aria-hidden /> : <ListTree className="w-3.5 h-3.5" />}
                     {index + 1}
                   </div>
                   <div className="min-w-0">
@@ -1512,9 +1608,32 @@ function QueueModal({
                         Ретрай
                       </Button>
                     )}
+                    {movable && (
+                      <>
+                        <Button
+                          size="sm"
+                          type="button"
+                          aria-label={`Выше: ${item.title} (${index + 1})`}
+                          disabled={queuedIndex === 0}
+                          onClick={() => void reorder(moveId(queuedIds, itemId, queuedIds[queuedIndex - 1]))}
+                        >
+                          <ArrowUp className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          type="button"
+                          aria-label={`Ниже: ${item.title} (${index + 1})`}
+                          disabled={queuedIndex === queuedIds.length - 1}
+                          onClick={() => void reorder(moveId(queuedIds, itemId, queuedIds[queuedIndex + 1]))}
+                        >
+                          <ArrowDown className="w-4 h-4" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <EmptySearch text="Очередь пуста" />
@@ -1532,7 +1651,7 @@ function QueueConcept({ stands, controls }: { stands: Stand[]; controls: QueueCo
         <div key={stand.id} className="surface border border-token rounded p-4">
           <div className="flex items-start justify-between gap-3 mb-3">
             <div className="min-w-0">
-              <div className="font-semibold truncate">{stand.name}</div>
+              <StandTitle stand={stand} />
               <div className="mono text-xs text-dim truncate">{stand.ip}</div>
             </div>
             <StatusBadge status={stand.status} />
@@ -1580,7 +1699,7 @@ function StandCard({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Server className="w-4 h-4 text-dim shrink-0" />
-              <div className="font-semibold truncate">{stand.name}</div>
+              <StandTitle stand={stand} />
             </div>
             <div className="mono text-xs text-dim mt-1">{stand.ip}</div>
           </div>

@@ -43,6 +43,7 @@ const QUEUE_STATE_BADGE: Record<string, BadgeKind> = {
   failed: "danger",
   skipped: "neutral",
   paused: "neutral",
+  awaiting_verdict: "warn",
 };
 
 function statusBadgeKind(status: TaskStatus): BadgeKind {

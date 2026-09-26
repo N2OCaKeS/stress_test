@@ -202,7 +202,7 @@ def _identity_body(
     # Дефолт allowed_services: обычным пользователям и department_admin
     # отдаём `["server_service"]`, чтобы они проходили `SERVICE_ACCESS_DENIED`
     # гейт в `dependencies/auth.py`. Platform-admin'ам (`account_admin`,
-    # `loging_admin`, `loging_reader`) по модели §7 пустой список — они
+    # `loging_admin`, `loging_reader`) по модели безопасности пустой список — они
     # вообще не имеют сервисных ролей в прикладных сервисах, а доступ к
     # business endpoint'ам режется в platform_admin_guard middleware.
     if allowed_services is None:
@@ -426,9 +426,9 @@ async def admin_token_b(make_token, dept_b) -> str:
 
 @pytest_asyncio.fixture
 async def account_admin_token(make_token) -> str:
-    """Platform-роль ``account_admin`` без департамента (§7 модели безопасности).
+    """Platform-роль ``account_admin`` без департамента.
 
-    По §7-8 имеет нулевой доступ к бизнес-данным `server_service` —
+    По модели безопасности имеет нулевой доступ к бизнес-данным `server_service` —
     `platform_admin_guard` middleware отбивает любой business endpoint
     403 ``PLATFORM_ADMIN_BUSINESS_DATA_DENIED``. Используется только в
     `tests/integration/test_platform_admin_block.py` для проверки самого

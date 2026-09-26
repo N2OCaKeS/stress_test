@@ -44,6 +44,13 @@ def response(item):
                 "finished_at",
                 "error",
                 "interrupt_action",
+                "position",
+                "verdict",
+                "verdict_source",
+                "zephyr_status_raw",
+                "verdict_resolved_at",
+                "current_step_index",
+                "step_count",
             )
         },
         rc=ctx.get("RC"),
@@ -166,6 +173,12 @@ async def clear_queue(db: AsyncSession, identity: Identity, stand_id: str) -> in
     return await queue.clear_queue(db, stand)
 
 
+async def reorder_queue(db: AsyncSession, identity: Identity, stand_id: str, queue_item_ids: list[str]) -> list:
+    """Переставить ещё не начатые элементы очереди стенда; активный не трогается."""
+    stand = await authorize(db, identity, stand_id)
+    return await queue.reorder_queue(db, stand, queue_item_ids)
+
+
 async def retry_failed(
     db: AsyncSession, identity: Identity, stand_id: str, *, force: bool = False,
 ) -> tuple[list, int]:
@@ -202,6 +215,14 @@ async def retry(
     if existing:
         return existing
     source = await repo.get_by_id_for_update(db, item_id)
+    if source.scenario_run_id:
+        # Действие сценария вне сценария (без брони остальных стендов и без
+        # подготовки) не имеет смысла — перезапускается сценарий целиком.
+        raise ConflictError(
+            error_code="RETRY_NOT_ALLOWED",
+            message="Действие сценария повторяется только новым запуском сценария",
+            details={"scenario_run_id": source.scenario_run_id},
+        )
     if source.state in ACTIVE_QUEUE_STATES or await repo.has_successor(db, item_id):
         raise ConflictError(
             error_code="RETRY_NOT_ALLOWED",

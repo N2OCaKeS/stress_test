@@ -11,7 +11,7 @@ scope=service — так бот `testing_service` (платформенный с
 завести такую credential — задача department_admin'а этого отдела (см.
 `services/secret_client.py`).
 
-Поля волны 10 (HR-отчёт по активности, §9.1, `services/activity_report.py`):
+Поля HR-отчёта по активности (§9.1, `services/activity_report.py`):
 
 * `bitbucket_base_url`/`bitbucket_project_key`/`bitbucket_repo_slug` — куда и
   какой репозиторий опрашивать за коммитами. `bitbucket_credential_id` —
@@ -56,6 +56,16 @@ scope=service — так бот `testing_service` (платформенный с
   `'Состав тестового прогона'` платформенно на все отделы — здесь оба поля
   per-department, тот же credential_id, что и выше (Jira/Confluence общий
   на отдел).
+
+Поля (D7, `services/zephyr_folder.py`):
+
+* `zephyr_folder_path_template` — шаблон пути папки Zephyr для прогонов СТП
+  одной версии ОС; резолвится без стенда и теста (одна папка на пару
+  «отдел × версия ОС»), поэтому может ссылаться только на переменные РЦ и
+  отдела.
+* `zephyr_run_name_template` — шаблон имени Zephyr test-run'а стенда
+  (контекст: версия ОС, режим, ядро, стенд). Скрипт находит свой прогон по
+  `TEST_CYCLE_NAME`, поэтому шаблон должен давать то же значение.
 """
 
 from datetime import datetime
@@ -64,6 +74,15 @@ from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
+
+# Легаси-формат папки прогона: `zefir.py` складывал `/stress_test/{release}/{rc}`
+# (`allta_app_full/libs/liballta.py:2122-2130` — `"name": f"/stress_test/{name}"`,
+# где `name` = `<release>/<rc>`). Имя прогона — `-tcyc`
+# (`allta_app_full/allta_back.py:175`: `f'{release}_{mode}_{kernel}_{stand}'`),
+# та же формула, что у переменной `TEST_CYCLE_NAME`. Здесь — только DDL-дефолт
+# колонки; значения существующим строкам ставит миграция `tp06_zephyr_folder`.
+DEFAULT_ZEPHYR_FOLDER_PATH_TEMPLATE = "/stress_test/{RC_RELEASE}/{RC_NAME}"
+DEFAULT_ZEPHYR_RUN_NAME_TEMPLATE = "{RC_NAME}_{MODE}_{KERNEL}_{STAND_TOKEN}"
 
 
 class DepartmentIntegrationSettings(Base):
@@ -84,7 +103,7 @@ class DepartmentIntegrationSettings(Base):
     # общей учёткой).
     confluence_credential_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    # ── HR-отчёт по активности (§9.1, волна 10) ──────────────────────────────
+    # ── HR-отчёт по активности (§9.1) ─────────────────────────────────────────
     bitbucket_base_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
     bitbucket_project_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
     bitbucket_repo_slug: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -107,6 +126,17 @@ class DepartmentIntegrationSettings(Base):
     # ── СТП-матрица (§D2/D3) ──────────────────────────────────────────────
     stp_matrix_confluence_space: Mapped[str | None] = mapped_column(String(64), nullable=True)
     stp_matrix_confluence_root_page_title: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    # ── Папка и имя прогона Zephyr ────────────────────────────
+    # Шаблоны с подстановками `{CODE}` глобальных переменных (резолвер
+    # `services/variable_resolver.py`). Значения по умолчанию — легаси-формат,
+    # их же проставляет миграция `tp06_zephyr_folder` существующим строкам.
+    zephyr_folder_path_template: Mapped[str] = mapped_column(
+        String(512), nullable=False, server_default=DEFAULT_ZEPHYR_FOLDER_PATH_TEMPLATE,
+    )
+    zephyr_run_name_template: Mapped[str] = mapped_column(
+        String(512), nullable=False, server_default=DEFAULT_ZEPHYR_RUN_NAME_TEMPLATE,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

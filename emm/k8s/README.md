@@ -136,7 +136,7 @@ Traefik (k3s) подхватывает его автоматически.
 **cert-manager в edge-цепочке не используется.** Issuer'ы и leaf-сертификаты,
 которые могли быть в репо ранее (`auth-service-tls`, `logging-service-tls`,
 `server-service-tls`), к Ingress'у не подключены — Traefik читает только
-`dbos-ingress-tls`. См. также §«Авто-ротация сертификатов» ниже.
+`dbos-ingress-tls`. См. также раздел «Авто-ротация сертификатов» ниже.
 
 **Service-to-service TLS** — между подами не используется (NetworkPolicy
 default-deny в namespace, plain http между ClusterIP-сервисами). Cluster-internal
@@ -222,7 +222,7 @@ cert-manager (см. шаг 2a).
 
 `SERVER_ENCRYPTION_KEY` — корень envelope encryption паролей `server_account`/IPMI. Wire-format ciphertext'а версионирован (`v<N>$<nonce>$<ct>`), KDF — HKDF-SHA256. Ротация без re-encrypt'а возможна: старый ключ остаётся в Secret под `SERVER_ENCRYPTION_KEY__v<old>`, новый шифрует новые строки, фоновый `secrets.reencrypt_lazy` в server-worker перешивает существующие.
 
-Полный runbook — `obsidian/infra/runbooks/Rotation.md` (§1-3 «Master keys»). Краткая последовательность:
+Полный runbook — `obsidian/infra/runbooks/Rotation.md`, раздел «Master keys». Краткая последовательность:
 
 ```bash
 # 1. Проверить, что предыдущая миграция завершена (remaining=0):
@@ -251,7 +251,7 @@ kubectl -n dbos exec deploy/server-service -- \
 bash scripts/k8s/rotate_master_key.sh --finalize
 ```
 
-**Compromise мастер-ключа** (утёк в git / чат / dump pod env) — см. `obsidian/infra/runbooks/Incident-response.md` (§5) и `obsidian/infra/runbooks/Rotation.md`. Кратко: ротация + параллельно ротировать сами пароли в системах назначения через `/server-accounts/<id>/rotate-password` и `/ipmi-controllers/<id>/rotate-credentials`.
+**Compromise мастер-ключа** (утёк в git / чат / dump pod env) — см. `obsidian/infra/runbooks/Incident-response.md` и `obsidian/infra/runbooks/Rotation.md`. Кратко: ротация + параллельно ротировать сами пароли в системах назначения через `/server-accounts/<id>/rotate-password` и `/ipmi-controllers/<id>/rotate-credentials`.
 
 ### 2a. Edge-TLS-сертификат
 
@@ -395,6 +395,53 @@ kubectl -n dbos create secret tls dbos-ingress-tls \
 shred -u /tmp/tls.key
 # Traefik подхватит обновлённый Secret без рестарта подов.
 ```
+
+### Легаси /rest/api
+
+Скрипты на стендах ходят на `http://allta.devos.astralinux.ru/rest/api/...`
+(`get-repo-path`, `get-confluence-url`, ...) по plain HTTP без токена. Их
+обслуживает testing_service (`/rest/api/*`, доступ — только из подсетей
+таблицы `compat_allowed_networks`, UI «Администрирование → Легаси /rest/api»).
+
+- Имя хоста — `LEGACY_COMPAT_HOST` в `k8s/deploy.env` (пример —
+  `deploy.env.example`). `make k8s-secrets` рендерит
+  `52-legacy-compat-ingress.yaml` (entrypoint `web`, только `/rest/api`),
+  `deploy.sh` его применяет. Пустое имя — любой Host.
+- Порт 80 traefik'а должен оставаться открытым (entrypoint `web`), хотя
+  `make prepare-k3s` советует его закрыть: без него маршрута нет.
+- Адрес стенда должен дойти до пода неизменным. Для k3s (klipper-lb) —
+  `externalTrafficPolicy: Local` у Service traefik, например через
+  `/var/lib/rancher/k3s/server/manifests/traefik-config.yaml`:
+
+  ```yaml
+  apiVersion: helm.cattle.io/v1
+  kind: HelmChartConfig
+  metadata:
+    name: traefik
+    namespace: kube-system
+  spec:
+    valuesContent: |-
+      service:
+        spec:
+          externalTrafficPolicy: Local
+  ```
+
+  Иначе testing_service видит адрес ноды, а не стенда: запрос получит 403
+  (или отдел по умолчанию, если подсеть ноды разрешена).
+- Проверка до переноса DNS (с машины из подсети стендов):
+  `curl -H 'Host: allta.devos.astralinux.ru' http://<IP платформы>/rest/api/get-repo-path`.
+- Перенос DNS: A-запись `allta.devos.astralinux.ru` → IP платформы. Адреса
+  infocollector (`:18181`), FTP, devpi (`:3141`) и docker registry (`:21503`)
+  легаси-хоста при этом **не переезжают**: для `starter.sh` из профиля
+  запуска они заданы переменными `INFOCOLLECTOR_URL`, `FTP_URL`, `DEVPI_URL`,
+  `DOCKER_REGISTRY`; ветки, которые обращаются к `allta.devos.astralinux.ru:3141`
+  / `:21503` по имени, после переноса DNS будут ходить на платформу — эти
+  сервисы нужно оставить доступными по старому имени (отдельная запись) или
+  поднять на платформе.
+
+Ограничение: манифест `63-testing-service.yaml` пока не имеет egress-политик
+и Job'а миграций в `45-migrations.yaml`; `80-networkpolicy.yaml` описывает
+для testing-service только вход от traefik.
 
 ## Повседневные операции
 

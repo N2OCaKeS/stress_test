@@ -4,7 +4,7 @@
 открыто любому аутентифицированному актору, запись (create/update/delete)
 идёт под матрицей прав `(test_definition, *, ...)`. В отличие от глобальных
 переменных тест несёт `department_id`, но сам грант на запись — по-прежнему
-system-wide роль `admin` (§16 волна 3 плана миграции); per-department гранты
+system-wide роль `admin` (§16 плана миграции); per-department гранты
 кастомным ролям появятся вместе с администрированием отдела.
 
 `department_id` — nullable: `NULL` значит платформенный тест каталога (так
@@ -23,15 +23,31 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.constants import Action, EntityType
-from src.core.exceptions import AuthorizationError, ConflictError, NotFoundError
+from src.core.exceptions import AuthorizationError, ConflictError, DomainValidationError, NotFoundError
+from src.services import provisioning_profile as provisioning_svc
 from src.dependencies.auth import Identity
 from src.models import TestDefinition
 from src.repositories import test_definition as repo
 from src.schemas.test_definition import TestDefinitionCreate, TestDefinitionUpdate
-from src.services import audit_service, permissions
+from src.services import audit_service, permissions, test_step
 from src.utils.ids import test_definition_id as new_id
 
 logger = logging.getLogger(__name__)
+
+
+async def _check_launch_profile(db: AsyncSession, profile_id: str | None, department_id: str | None) -> None:
+    """Профиль запуска теста должен существовать и быть общим или профилем отдела теста."""
+    if not profile_id:
+        return
+    from src.repositories import launch_profile as launch_profile_repo
+
+    profile = await launch_profile_repo.get_by_id(db, profile_id)
+    if profile is None or (profile.department_id is not None and profile.department_id != department_id):
+        raise DomainValidationError(
+            error_code="LAUNCH_PROFILE_INVALID",
+            message="Launch profile not found or belongs to another department",
+            details={"launch_profile_id": profile_id},
+        )
 
 
 async def create_test_definition(
@@ -64,10 +80,15 @@ async def create_test_definition(
         raise
 
     data = payload.model_dump(mode="json")
+    # `stand_setup`/`starter_suffix` — поля первого шага теста.
+    first_step = test_step.pop_first_step_fields(data)
+    await _check_launch_profile(db, data.get("launch_profile_id"), data.get("department_id"))
+    await provisioning_svc.check_assignable(db, data.get("provisioning_profile_id"), data.get("department_id"))
     data["id"] = new_id()
     data["created_by"] = identity.user_id
     try:
         obj = await repo.create(db, data)
+        await test_step.create_first_step(db, obj.id, **first_step)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -86,6 +107,7 @@ async def create_test_definition(
             details={"hint": "уникальное поле — code"},
         ) from exc
     await db.refresh(obj)
+    await test_step.attach_first_step(db, [obj])
     audit_service.emit(
         "test_definition.create",
         target_id=obj.id, target_type="test_definition",
@@ -106,6 +128,7 @@ async def get_test_definition(
             message="Test definition not found",
         )
     permissions.require_own_department(identity, obj.department_id)
+    await test_step.attach_first_step(db, [obj])
     return obj
 
 
@@ -120,6 +143,7 @@ async def get_test_definition_by_code(
             message="Test definition not found",
         )
     permissions.require_own_department(identity, obj.department_id)
+    await test_step.attach_first_step(db, [obj])
     return obj
 
 
@@ -150,6 +174,7 @@ async def list_test_definitions(
         db, department_id=scope, category=category, readiness=readiness,
         include_unscoped=True,
     )
+    await test_step.attach_first_step(db, items)
     return items, total
 
 
@@ -199,7 +224,18 @@ async def update_test_definition(
 
     changes = payload.model_dump(exclude_unset=True, mode="json")
     if not changes:
+        await test_step.attach_first_step(db, [obj])
         return obj
+    fields = sorted(changes)
+    first_step = test_step.pop_first_step_fields(changes)
+    if changes.get("launch_profile_id"):
+        await _check_launch_profile(
+            db, changes["launch_profile_id"], changes.get("department_id", obj.department_id),
+        )
+    if changes.get("provisioning_profile_id"):
+        await provisioning_svc.check_assignable(
+            db, changes["provisioning_profile_id"], changes.get("department_id", obj.department_id),
+        )
 
     if "department_id" in changes and changes["department_id"] != obj.department_id:
         new_department_id = changes["department_id"]
@@ -219,6 +255,7 @@ async def update_test_definition(
 
     try:
         await repo.update(db, obj, changes)
+        await test_step.apply_first_step_fields(db, obj.id, first_step)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -230,18 +267,19 @@ async def update_test_definition(
             "test_definition.update",
             target_id=test_id, target_type="test_definition",
             status="failure", allowed=True,
-            details={"reason": "duplicate", "fields": list(changes.keys())},
+            details={"reason": "duplicate", "fields": fields},
         )
         raise ConflictError(
             error_code="TEST_DEFINITION_DUPLICATE",
             message="Update collides with an existing test definition (code UNIQUE)",
         ) from exc
     await db.refresh(obj)
+    await test_step.attach_first_step(db, [obj])
     audit_service.emit(
         "test_definition.update",
         target_id=obj.id, target_type="test_definition",
         status="success", allowed=True,
-        details={"fields": list(changes.keys()), "code": obj.code},
+        details={"fields": fields, "code": obj.code},
     )
     return obj
 
@@ -251,7 +289,7 @@ async def delete_test_definition(
     identity: Identity,
     test_id: str,
 ) -> None:
-    """Hard-delete теста. Каскадом сносит его test_command_args.
+    """Hard-delete теста. Каскадом сносит его шаги и test_command_args.
 
     Строка читается ДО авторизации — тот же приём, что в `update_test_definition`.
     """

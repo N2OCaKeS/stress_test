@@ -26,13 +26,16 @@ import {
   Activity,
   BarChart3,
   Bug,
+  PauseCircle,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { usePersona } from "@/contexts/PersonaContext";
 import { useQuery } from "@/api/auth/useQuery";
 import { getNavLinks } from "@/api/auth/navLinks";
+import { getPreflightStatus } from "@/api/testing/preflight";
 import { getStatisticsStatus } from "@/api/testing/statistics";
-import type { StatisticsRecalcStatus } from "@/api/testing/types";
+import type { PreflightStatus, StatisticsRecalcStatus } from "@/api/testing/types";
 import {
   hasServerZoneAccess,
   hasAuditLogAccess,
@@ -124,6 +127,7 @@ const TESTING_CHIP: ServiceChip = {
   label: "Тестирование",
   subItems: [
     { to: "/testing/tests", icon: FileText, label: "Тесты" },
+    { to: "/testing/scenarios", icon: Workflow, label: "Сценарии" },
     { to: "/testing/runs", icon: ListChecks, label: "Прогоны" },
     { to: "/testing/debug", icon: Bug, label: "Все запуски" },
     { to: "/testing/logs", icon: FileText, label: "Логи" },
@@ -346,6 +350,7 @@ export function LeftPanel({ width, collapsed, onToggleCollapsed }: LeftPanelProp
           />
         ))}
         <ServicesHealthPanel collapsed={collapsed} />
+        {hasServerZoneAccess(persona) && <PreflightWaitPanel collapsed={collapsed} />}
         {hasServerZoneAccess(persona) && <StatisticsRecalcPanel collapsed={collapsed} />}
       </nav>
 
@@ -558,7 +563,7 @@ function StatisticsRecalcPanel({ collapsed }: { collapsed: boolean }) {
   const lastAt = status.finished_at ?? status.started_at;
   const tooltip = [
     `Пересчёт статистики: ${meta.label}`,
-    `объём: ${status.category ?? "всё сразу"}`,
+    `объём: ${status.categories?.length ? status.categories.join(", ") : status.category ?? "всё сразу"}`,
     lastAt ? `последний раз: ${new Date(lastAt).toLocaleString("ru-RU")}` : null,
     status.error ? `ошибка: ${status.error}` : null,
   ]
@@ -585,6 +590,75 @@ function StatisticsRecalcPanel({ collapsed }: { collapsed: boolean }) {
       <span className="text-xs flex-1 min-w-0 truncate">Статистика</span>
       <Badge kind={meta.badge} className="shrink-0">
         {meta.label}
+      </Badge>
+    </Link>
+  );
+}
+
+const PREFLIGHT_POLL_INTERVAL_MS = 15_000;
+
+/**
+ * «Ожидание доступности сервисов — тестирование приостановлено».
+ *
+ * Перед каждым тестом воркер проверяет внешние сервисы (Jira, Confluence, git,
+ * DNS — список в настройках отдела); пока хоть один недоступен, тест ждёт.
+ * Плашка видна только в это время (`GET /preflight/status` → `waiting`) и
+ * перечисляет недоступные сервисы.
+ */
+function PreflightWaitPanel({ collapsed }: { collapsed: boolean }) {
+  const [status, setStatus] = useState<PreflightStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function poll() {
+      try {
+        const next = await getPreflightStatus();
+        if (!cancelled) setStatus(next);
+      } catch {
+        // Best-effort индикатор — тихо оставляем предыдущее значение при сбое опроса.
+      }
+    }
+
+    poll();
+    const timer = setInterval(poll, PREFLIGHT_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  if (status === null || status.state !== "waiting") return null;
+  const services = status.unavailable.length ? status.unavailable.join(", ") : "—";
+  const tooltip = [
+    "Ожидание доступности сервисов — тестирование приостановлено",
+    `недоступны: ${services}`,
+    status.since ? `с ${new Date(status.since).toLocaleString("ru-RU")}` : null,
+    `ждут тестов: ${status.waiting_items}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  if (collapsed) {
+    return (
+      <div className="mt-1 flex justify-center" data-testid="preflight-wait-panel">
+        <Link to="/testing" title={tooltip} className="chip justify-center">
+          <PauseCircle className="w-4 h-4 shrink-0 animate-pulse text-warn" />
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <Link to="/testing" title={tooltip} className="chip items-start" data-testid="preflight-wait-panel">
+      <PauseCircle className="w-4 h-4 shrink-0 animate-pulse text-warn mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <div className="text-xs">Ожидание доступности сервисов</div>
+        <div className="text-[11px] text-dim">тестирование приостановлено</div>
+        <div className="text-[11px] text-dim truncate">недоступны: {services}</div>
+      </div>
+      <Badge kind="warn" className="shrink-0">
+        пауза
       </Badge>
     </Link>
   );

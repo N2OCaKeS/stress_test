@@ -4,7 +4,7 @@ Revision ID: c4e8b1f6a930
 Revises: f3a1d8c6b4e2
 Create Date: 2026-09-10 17:00:00.000000
 
-Девятый домен testing_service (§2.7, §9.2 плана миграции, волна 10):
+Девятый домен testing_service (§2.7, §9.2 плана миграции):
 end-of-run идемпотентный комментарий в Confluence-блоге — перенос легаси
 `SendCommentToConfluence`. Одна строка на `test_run_id`, `confluence_comment_id`
 хранится для UPDATE при повторном прогоне того же RC (не только для проверки

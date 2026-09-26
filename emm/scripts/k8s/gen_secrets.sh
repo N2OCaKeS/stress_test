@@ -59,6 +59,10 @@ INGRESS_TEMPLATE="$K8S_DIR/50-ingress.yaml.template"
 # наполняет Secret dbos-ingress-tls листом от внутреннего CA (dbos-ca-issuer).
 # Применяется deploy.sh'ем после готовности cert-manager (не через kustomize).
 INGRESS_CERT_OUT="$K8S_DIR/51-ingress-cert.yaml"
+# Публичный compat легаси-путей /rest/api/* по plain HTTP. Host — из
+# LEGACY_COMPAT_HOST в deploy.env (пусто — любой Host). Применяет deploy.sh.
+LEGACY_COMPAT_INGRESS_OUT="$K8S_DIR/52-legacy-compat-ingress.yaml"
+LEGACY_COMPAT_INGRESS_TEMPLATE="$K8S_DIR/52-legacy-compat-ingress.yaml.template"
 ENV_FILE="$K8S_DIR/.env.k8s"
 # Operator-конфиг с предсказуемыми кредами (admin-пароль, force-change и т.д.).
 # Оператор копирует его из deploy.env.example и заполняет ДО make k8s-zero.
@@ -474,7 +478,7 @@ WORKER_BOT_TOKEN="${WORKER_BOT_TOKEN:-dbos_bot_$(rand "$RAND_S2S_KEY_LEN")}"
 # в /internal/migration_status для гейтинга `--auto-finalize` master-ротаций.
 ROTATION_RUNNER_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
 # Бронь стенда от имени testing_service (acquire-for-service/release-for-
-# service/service-status/prepare-for-test, §5.1/§5.2 плана миграции).
+# service/service-status/prepare-for-test).
 # Bearer == SERVER_SERVICE_INTERNAL_API_KEY у testing_service ниже.
 SERVER_SERVICE_INTERNAL_API_KEY=$(rand "$RAND_S2S_KEY_LEN")
 # Inbound SERVICE_API_KEYS-map для server_service: worker_bot + rotation_runner
@@ -501,8 +505,8 @@ SECRET_INTERNAL_API_KEY="${SECRET_INBOUND_AUTH_KEY}"
 
 # testing_service: introspect ключ для исходящих /authorization/introspect +
 # inbound s2s map. `server_service` шлёт сюда callback завершения
-# prepare-for-test (§5.1 плана миграции), `testing_worker` — claim/completed
-# очереди (§5.5).
+# prepare-for-test, `testing_worker` — claim/completed
+# очереди.
 TESTING_INTROSPECT_SERVICE_API_KEY=$(rand "$RAND_INTROSPECT_KEY_LEN")
 TESTING_INBOUND_AUTH_KEY=$(rand "$RAND_S2S_KEY_LEN")
 TESTING_INBOUND_SERVER_KEY=$(rand "$RAND_S2S_KEY_LEN")
@@ -641,7 +645,7 @@ cat <<EOF
   SERVER_SERVICE_API_KEY: ${SERVER_SERVICE_API_KEY}
   SERVER_INBOUND_SERVICE_API_KEYS: '${SERVER_INBOUND_SERVICE_API_KEYS}'
   # server_service: исходящий callback prepare-for-test → testing_service
-  # (§5.1 плана миграции). Bearer == ключ server_service в inbound-map
+  # Bearer == ключ server_service в inbound-map
   # testing_service (TESTING_INBOUND_SERVICE_API_KEYS выше).
   TESTING_SERVICE_API_KEY: ${TESTING_SERVICE_API_KEY}
   # testing_service: канал брони/подготовки в server_service (acquire-for-
@@ -670,7 +674,7 @@ cat <<EOF
   SECRET_INTERNAL_API_KEY: ${SECRET_INTERNAL_API_KEY}
 
   # testing_service: s2s (introspect + inbound map под будущий callback
-  # server_service → testing_service, §5.1 плана миграции)
+  # server_service → testing_service)
   TESTING_INTROSPECT_SERVICE_API_KEY: ${TESTING_INTROSPECT_SERVICE_API_KEY}
   TESTING_INBOUND_SERVICE_API_KEYS: '${TESTING_INBOUND_SERVICE_API_KEYS_JSON}'
   # testing_service: шифрование Redis-стэша кред тестового пользователя
@@ -757,6 +761,27 @@ fi
 # после готовности cert-manager (не через kustomize — там нет CRD cert-manager).
 emit_ingress_cert_file
 
+# ── 52-legacy-compat-ingress.yaml — /rest/api/* по plain HTTP ────────────────
+# LEGACY_COMPAT_HOST (deploy.env) — DNS-имя легаси-хоста, которое переводится
+# на платформу (allta.devos.astralinux.ru). Пусто — правило без host: маршрут
+# отвечает на любой Host, в т.ч. на IP (проверка до переноса DNS).
+echo "→ Генерируем $LEGACY_COMPAT_INGRESS_OUT (host=${LEGACY_COMPAT_HOST:-<любой>})..."
+python3 -c '
+import sys, re
+src = open(sys.argv[1]).read()
+host = sys.argv[2].strip()
+if host:
+    src = src.replace("__LEGACY_COMPAT_HOST__", host)
+else:
+    src = re.sub(
+        r"^([ \t]*)-[ \t]+host:[ \t]+__LEGACY_COMPAT_HOST__[ \t]*\n[ \t]+http:[ \t]*$",
+        lambda m: f"{m.group(1)}- http:",
+        src,
+        flags=re.MULTILINE,
+    )
+sys.stdout.write(src)
+' "$LEGACY_COMPAT_INGRESS_TEMPLATE" "${LEGACY_COMPAT_HOST:-}" > "$LEGACY_COMPAT_INGRESS_OUT"
+
 # ── .env.k8s — сохраним домен для повторных запусков ──────────────────────────
 echo "INGRESS_HOST=${DOMAIN}" > "$ENV_FILE"
 chmod 600 "$ENV_FILE"
@@ -832,6 +857,7 @@ echo "    $SECRETS_OUT       (Secret dbos-secrets, chmod 600)"
 echo "    $KEYSTORE_OUT  (bootstrap keystore: dbos-server/secret-encryption-keys, create-only)"
 echo "    $INGRESS_OUT       (Ingress + Middleware с host=$DOMAIN)"
 echo "    $INGRESS_CERT_OUT  (Certificate dbos-ingress-cert, issuer=dbos-ca-issuer)"
+echo "    $LEGACY_COMPAT_INGRESS_OUT  (/rest/api/* по HTTP, host=${LEGACY_COMPAT_HOST:-<любой>})"
 echo "    $ENV_FILE          (домен для повторных запусков)"
 echo "    $SUMMARY_OUT       (summary — admin-пароль + master-key + DB-passwords)"
 echo ""

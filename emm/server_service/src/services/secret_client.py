@@ -1,6 +1,7 @@
 """Получение сервисных учётных данных (ACS, host-control SSH) без локального кэша значений."""
 import base64
 import binascii
+import json
 from urllib.parse import quote, urlencode
 
 import httpx
@@ -117,3 +118,59 @@ async def list_host_ssh_credentials(department_id: str) -> list[dict]:
         if cursor in seen:
             raise ServiceUnavailableError(error_code="SECRET_SERVICE_ERROR", message="Некорректная пагинация сервиса секретов")
         seen.add(cursor)
+
+
+# ── Тестовая учётка отдела ──────────────────────────────────────────
+
+TEST_ACCOUNT_SERVICE = "test_account"
+
+
+async def check_test_account_credential(credential_id: str, department_id: str) -> dict:
+    """Метаданные тестовой учётки отдела — без раскрытия секрета.
+
+    Та же проверка владельца, что у `reveal_host_ssh_key`: credential
+    обязан быть сервисным (`scope=service`), системы `test_account` и
+    принадлежать отделу сервера, иначе вызывающий мог бы поставить на свой
+    стенд учётку чужого отдела.
+    """
+    path = f"/credentials/{quote(credential_id, safe='')}"
+    metadata = response_body(await request("GET", path), unavailable_error_code="TEST_ACCOUNT_CREDENTIAL_UNAVAILABLE")
+    if (
+        metadata.get("scope") != "service"
+        or str(metadata.get("service", "")).lower() != TEST_ACCOUNT_SERVICE
+        or metadata.get("owner_dept_id") != department_id
+    ):
+        raise BadRequestError(
+            error_code="TEST_ACCOUNT_CREDENTIAL_INVALID",
+            message="Тестовая учётка должна быть сервисной записью системы test_account отдела сервера",
+        )
+    return metadata
+
+
+async def reveal_test_account(credential_id: str, department_id: str) -> dict:
+    """Логин, пароль и SSH-пара тестовой учётки отдела.
+
+    Формат секрета задаёт testing_service (`services/test_account.py`):
+    `login` credential + JSON `{"v": 1, "password", "private_key",
+    "public_key"}`. Возвращает `{"username", "password", "ssh_public_key",
+    "ssh_private_key"}`.
+    """
+    await check_test_account_credential(credential_id, department_id)
+    path = f"/credentials/{quote(credential_id, safe='')}/reveal"
+    body = response_body(await request("POST", path), unavailable_error_code="TEST_ACCOUNT_CREDENTIAL_UNAVAILABLE")
+    try:
+        data = json.loads(base64.b64decode(body["secret_b64"], validate=True).decode("utf-8"))
+        account = {
+            "username": body.get("login") or "",
+            "password": data["password"],
+            "ssh_public_key": data["public_key"],
+            "ssh_private_key": data["private_key"],
+        }
+        if all(isinstance(value, str) and value for value in account.values()):
+            return account
+    except (KeyError, TypeError, ValueError, binascii.Error):
+        pass
+    raise BadRequestError(
+        error_code="TEST_ACCOUNT_CREDENTIAL_INVALID",
+        message="Тестовая учётка в сервисе секретов неполна: задайте её заново в администрировании тестирования",
+    )

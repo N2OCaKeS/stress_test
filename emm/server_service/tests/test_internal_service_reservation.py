@@ -896,20 +896,29 @@ class TestAcsSnapshotsForService:
         await _enable_acs(db)
 
         async def fake_list_snapshots(base_url, password):
-            return [f"{srv.hostname}-1.8.5", "othertest-1.8.5", "unrelated"]
+            return [
+                f"{srv.hostname}-1.8.5", f"{srv.hostname}-1710rc52",
+                f"{srv.hostname}2-1.8.5", "othertest-1.8.5", "unrelated",
+            ]
 
-        monkeypatch.setattr(
-            "src.api.v1.endpoints.internal_service_reservation.acs_client.list_snapshots",
-            fake_list_snapshots,
-        )
+        monkeypatch.setattr("src.services.acs_client.list_snapshots", fake_list_snapshots)
 
         resp = await client.get(
             f"{BASE}/{srv.id}/acs-snapshots", headers=_hdr(TESTING_SECRET),
         )
         assert resp.status_code == 200, resp.text
-        assert resp.json()["snapshots"] == [
-            {"name": f"{srv.hostname}-1.8.5", "version_name": "1.8.5"},
-        ]
+        # `normalized_version` — хвост в форме каталога версий ОС, по
+        # нему testing_service сверяет РЦ; `hostname` — для имени снимка в
+        # ошибке. Хост с похожим префиксом (`…2-`) не подхватывается.
+        assert resp.json() == {
+            "hostname": srv.hostname,
+            "snapshots": [
+                {"name": f"{srv.hostname}-1.8.5", "version_name": "1.8.5",
+                 "normalized_version": "1.8.5"},
+                {"name": f"{srv.hostname}-1710rc52", "version_name": "1710rc52",
+                 "normalized_version": "1.7.10.52"},
+            ],
+        }
 
     async def test_acs_disabled_503(self, client, make_server, db, configure_service_keys):
         srv = await make_server()

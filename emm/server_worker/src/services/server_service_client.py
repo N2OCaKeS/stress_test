@@ -1207,8 +1207,8 @@ async def submit_prepare_for_test_result(
     testing_service, снять бронь, записать `failed_step` — решает
     server_service на этом callback'е.
 
-    `failed_step` — один из `user_provision` / `kernel_change` /
-    `mode_switch` / `reboot_verify`; стадии `restore` и `prepare` до этого
+    `failed_step` — один из `user_provision` / `pam_fix` / `stand_setup` /
+    `kernel_change` / `mode_switch` / `reboot_verify`; стадии `restore` и `prepare` до этого
     таска не доходят, их закрывают callback'и существующей ACS-цепочки.
 
     `error_message` при `succeeded=True` — не провал, а non-fatal
@@ -1238,6 +1238,108 @@ async def submit_prepare_for_test_result(
         target_department_id=target_department_id,
         json=body,
         details={"server_id": server_id},
+        allow_empty_body=True,
+    )
+
+
+async def submit_vm_prepare_for_test_result(
+    vm_id: str,
+    prepare_request_id: str,
+    succeeded: bool,
+    target_department_id: str | None = None,
+    *,
+    failed_step: str | None = None,
+    error_message: str | None = None,
+) -> dict:
+    """Сообщить server_service исход `vm.prepare_for_test`.
+
+    Тот же контракт тела, что у `submit_prepare_for_test_result`, но путь ВМ
+    и `failed_step` может быть ещё `vm_revert` / `prepare` — задача ВМ делает
+    все шаги сама, включая откат снимка.
+
+    Возвращает тело `POST /api/server/v1/internal/vms/{id}/prepare-for-test-done`.
+
+    Возможные ошибки: `CredentialFetchError` (`SERVER_SERVICE_UNREACHABLE`,
+    `PREPARE_FOR_TEST_DONE_REJECTED`).
+    """
+    body: dict = {"prepare_request_id": prepare_request_id, "succeeded": succeeded}
+    if failed_step is not None:
+        body["failed_step"] = failed_step
+    if error_message is not None:
+        body["error"] = error_message
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/vms/{vm_id}/prepare-for-test-done",
+        reject_code="PREPARE_FOR_TEST_DONE_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"vm_id": vm_id},
+        allow_empty_body=True,
+    )
+
+
+async def submit_stand_setup_result(
+    server_id: str,
+    stand_setup_request_id: str,
+    succeeded: bool,
+    target_department_id: str | None = None,
+    *,
+    failed_step: str | None = None,
+    error_message: str | None = None,
+) -> dict:
+    """Сообщить server_service исход `server.stand_setup`.
+
+    `failed_step` — `pam_fix` / `stand_setup` / `reboot_verify`.
+    Возвращает тело `POST /api/server/v1/internal/servers/{id}/stand-setup-done`.
+
+    Возможные ошибки: `CredentialFetchError` (`SERVER_SERVICE_UNREACHABLE`,
+    `STAND_SETUP_DONE_REJECTED`).
+    """
+    body: dict = {"stand_setup_request_id": stand_setup_request_id, "succeeded": succeeded}
+    if failed_step is not None:
+        body["failed_step"] = failed_step
+    if error_message is not None:
+        body["error"] = error_message
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/servers/{server_id}/stand-setup-done",
+        reject_code="STAND_SETUP_DONE_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"server_id": server_id},
+        allow_empty_body=True,
+    )
+
+
+async def submit_vm_stand_setup_result(
+    vm_id: str,
+    stand_setup_request_id: str,
+    succeeded: bool,
+    target_department_id: str | None = None,
+    *,
+    failed_step: str | None = None,
+    error_message: str | None = None,
+) -> dict:
+    """Сообщить server_service исход `vm.stand_setup`.
+
+    Тот же контракт тела, что у `submit_stand_setup_result`, путь ВМ.
+    Возвращает тело `POST /api/server/v1/internal/vms/{id}/stand-setup-done`.
+
+    Возможные ошибки: `CredentialFetchError` (`SERVER_SERVICE_UNREACHABLE`,
+    `STAND_SETUP_DONE_REJECTED`).
+    """
+    body: dict = {"stand_setup_request_id": stand_setup_request_id, "succeeded": succeeded}
+    if failed_step is not None:
+        body["failed_step"] = failed_step
+    if error_message is not None:
+        body["error"] = error_message
+    return await _request(
+        "post",
+        f"/api/server/v1/internal/vms/{vm_id}/stand-setup-done",
+        reject_code="STAND_SETUP_DONE_REJECTED",
+        target_department_id=target_department_id,
+        json=body,
+        details={"vm_id": vm_id},
         allow_empty_body=True,
     )
 

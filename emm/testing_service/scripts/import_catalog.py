@@ -73,7 +73,8 @@ from src.repositories import test_stand as test_stand_repo
 from src.schemas.test_command_arg import TestCommandArgCreate
 from src.schemas.test_definition import TestDefinitionCreate
 from src.schemas.test_stand import TestStandCreate
-from src.services import audit_context, audit_outbox, test_command_arg, test_definition, test_stand
+from src.schemas.test_step import TestStepCreate
+from src.services import audit_context, audit_outbox, test_command_arg, test_definition, test_stand, test_step
 
 logger = logging.getLogger("import_catalog")
 
@@ -276,11 +277,19 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
             stats.skip(f"test {code} уже существует (id={existing.id})")
             continue
 
+        # Многоступенчатый тест: `command` — общее начало команды
+        # всех шагов, `steps[].command` — окончание команды шага; нет
+        # `steps` — один шаг с командой `command`.
+        steps = item.get("steps") or [{}]
         try:
-            slots = await _resolve_command_slots(db, item.get("command") or [])
+            common = item.get("command") or []
+            step_slots = [
+                await _resolve_command_slots(db, [*common, *(step.get("command") or [])]) for step in steps
+            ]
         except ValueError as exc:
             stats.fail(f"test {code}", exc)
             continue
+        slots = [slot for per_step in step_slots for slot in per_step]
 
         pinned_stand_id, unresolved_token = await _resolve_pinned_stand(db, item)
         if unresolved_token:
@@ -296,6 +305,8 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
                 full_name=item.get("full_name") or code,
                 category=item.get("category"),
                 matrix_label=item.get("matrix_label"),
+                short_name=item.get("short_name"),
+                dates_quoting=item.get("dates_quoting") or "shell",
                 owner=item.get("owner"),
                 readiness={"draft": "development", "blocked": "broken"}.get(
                     item.get("readiness"), item.get("readiness") or "development",
@@ -304,8 +315,10 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
                 department_id=item.get("department_id"),
                 pinned_stand_id=pinned_stand_id,
                 changelog_component=item.get("changelog_component"),
-                starter_suffix=item.get("starter_suffix"),
+                starter_suffix=steps[0].get("starter_suffix", item.get("starter_suffix")),
+                stand_setup=steps[0].get("stand_setup"),
                 timeout_seconds=item.get("timeout_seconds"),
+                launch_profile_id=item.get("launch_profile_id"),
             )
             obj = await test_definition.create_test_definition(db, _SYSTEM_IDENTITY, payload)
         except Exception as exc:  # noqa: BLE001 — одна плохая запись не должна ронять импорт
@@ -314,13 +327,30 @@ async def _import_tests(db, items: list[dict], *, dry_run: bool, stats: ImportSt
             continue
 
         try:
-            for slot in slots:
-                await test_command_arg.create_command_arg(db, _SYSTEM_IDENTITY, obj.id, slot)
+            step_id = None
+            for index, (step, per_step) in enumerate(zip(steps, step_slots)):
+                if index > 0:
+                    created_step = await test_step.create_step(db, _SYSTEM_IDENTITY, obj.id, TestStepCreate(
+                        name=step.get("name") or "",
+                        starter_suffix=step.get("starter_suffix", item.get("starter_suffix")),
+                        run_mode=step.get("run_mode") or "rerun",
+                        stand_setup=step.get("stand_setup"),
+                    ))
+                    step_id = created_step.id
+                elif step.get("name"):
+                    first = await test_step.ensure_first_step(db, obj.id)
+                    first.name = step["name"]
+                    await db.commit()
+                for slot in per_step:
+                    await test_command_arg.create_command_arg(
+                        db, _SYSTEM_IDENTITY, obj.id, slot.model_copy(update={"step_id": step_id}),
+                    )
         except Exception as exc:  # noqa: BLE001 — тест уже создан, слоты — best effort
-            stats.fail(f"test {code} создан, но слоты команды — нет ({obj.id})", exc)
+            stats.fail(f"test {code} создан, но шаги/слоты команды — нет ({obj.id})", exc)
             continue
 
-        stats.ok(f"test {code} → {obj.id} ({len(slots)} слот(ов))")
+        steps_note = f", {len(steps)} шаг(ов)" if len(steps) > 1 else ""
+        stats.ok(f"test {code} → {obj.id} ({len(slots)} слот(ов){steps_note})")
 
     if unresolved_stands:
         print(

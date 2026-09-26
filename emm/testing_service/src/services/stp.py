@@ -26,6 +26,12 @@
 5. `stp_compositions` (одна строка на `(department_id, os_version_id)`)
    несёт текущий `scope` + `revision`; `revision` растёт только когда
    `scope` РЕАЛЬНО меняется (changelog↔full), не на каждый вызов.
+6. Папка Zephyr и имя прогона — шаблоны настроек интеграций отдела
+   (`zephyr_folder_path_template`, `zephyr_run_name_template`),
+   резолвятся `services/variable_resolver.py`. id папки находится или
+   создаётся в Zephyr и сохраняется в `zephyr_folders` (см.
+   `services/zephyr_folder.py`); ошибка шаблона пути — 422 до любых записей,
+   ненайденный id папки — `zephyr_folder.error` в ответе, не провал генерации.
 
 Провал одного стенда (нет интеграционных настроек, reveal не прошёл, Zephyr
 недоступен) не должен рушить остальные — собирается в `errors`, тем же
@@ -43,7 +49,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.constants import Action, EntityType, StpCellStatus, StpCompositionScope, TestReadiness
 from src.core.exceptions import AppException, AuthorizationError, DomainValidationError, NotFoundError
 from src.dependencies.auth import Identity
-from src.models import StpComposition, StpTestRun, TestDefinition
+from src.models import DepartmentIntegrationSettings, StpComposition, StpTestRun, TestDefinition, TestStand
 from src.repositories import department_integration_settings as dis_repo
 from src.repositories import stp_cell as stp_cell_repo
 from src.repositories import stp_composition as stp_composition_repo
@@ -51,7 +57,15 @@ from src.repositories import stp_test_case as stp_test_case_repo
 from src.repositories import stp_test_run as stp_test_run_repo
 from src.repositories import test_definition as test_definition_repo
 from src.repositories import test_stand as test_stand_repo
-from src.services import audit_service, changelog_service, permissions, secret_client, server_client, zephyr_client
+from src.services import (
+    audit_service,
+    changelog_service,
+    permissions,
+    secret_client,
+    server_client,
+    zephyr_client,
+)
+from src.services import zephyr_folder as zephyr_folder_svc
 from src.services.zephyr_client import ZephyrRunItem
 from src.utils.ids import stp_cell_id as new_cell_id
 from src.utils.ids import stp_composition_id as new_composition_id
@@ -99,35 +113,6 @@ async def _filter_by_changelog(
         return tests
     changed_set = set(changed)
     return [t for t in tests if t.changelog_component and t.changelog_component in changed_set]
-
-
-def _derive_release(rc: str, *, is_urgent_update: bool = False) -> str:
-    """Родительская папка Zephyr по номеру РЦ: `1.8.5.46` → `1.8.5`.
-
-    Правило легаси (`liballta.py::TestrunManager.create_test_run`): обычный
-    релиз из 4 сегментов → первые ТРИ сегмента, хотфикс из 6 сегментов с
-    маркером `UU` на четвёртом месте → первые ПЯТЬ (`1.7.3.UU.1.2` →
-    `1.7.3.UU.1`). Дальше `zefir.py` складывает из этого
-    `/stress_test/{release}/{rc}`, поэтому глубина здесь определяет, в какую
-    ветку дерева папок Jira садится ран — легаси-раны того же РЦ лежат именно
-    там.
-
-    `is_urgent_update` — структурный флаг `os_versions.is_urgent_update`
-    (сервер знает, хотфикс это или нет, а не только по виду строки — легаси
-    хранил только строку и парсинг был единственным сигналом; emm флаг есть,
-    используем его как ворота: без него 6-сегментная строка, случайно не
-    являющаяся хотфиксом, не свернёт в укороченный формат). Сравнение с `UU`
-    регистронезависимое — владелец может ввести версию как `uu`.
-
-    Формат, не подпадающий ни под один случай (в легаси такого не было, там
-    `release` просто оставался неинициализированным), сводим к первым трём
-    сегментам — тот же консервативный дефолт, что у
-    `run_summary.render_titles`.
-    """
-    parts = rc.split(".")
-    if is_urgent_update and len(parts) == 6 and parts[3].upper() == "UU":
-        return ".".join(parts[:5])
-    return ".".join(parts[:3]) if len(parts) >= 3 else rc
 
 
 async def _resolve_jira_bearer(db: AsyncSession, department_id: str) -> tuple[str, str] | None:
@@ -203,8 +188,8 @@ async def get_stp_composition_effective(
 
 async def _create_stand_run(
     db: AsyncSession, *,
-    department_id: str, os_version_id: str, rc_number: str, mode: str, kernel: str, stand_id: str,
-    release: str, stand_token: str,
+    department_id: str, os_version_id: str, mode: str, kernel: str, stand_id: str,
+    stand: TestStand | None, folder: str, settings: DepartmentIntegrationSettings | None,
     pairs: list[tuple],
     target_codes: set[str],
 ) -> tuple[StpTestRun | None, dict | None]:
@@ -234,12 +219,20 @@ async def _create_stand_run(
             test_case_key=case.zephyr_id, environment=kernel, assigned_to_key=assignee_key,
         ))
 
-    folder = f"/stress_test/{release}/{rc_number}"
-    # Первый сегмент имени — человеческий номер РЦ (не внутренний
-    # os_version_id), как у легаси; четвёртый — человеческое имя стенда
-    # (`stand3`), по нему же `stp_pull_from_life` разбирает чужие раны обратно.
-    name = f"{rc_number}_{mode}_{kernel}_{stand_token}"
+    if stand is None:
+        return None, {
+            "stand_id": stand_id, "error_code": "TEST_STAND_NOT_FOUND",
+            "message": "pinned stand of the tests no longer exists",
+        }
+    # Имя — шаблон отдела (`zephyr_run_name_template`, по умолчанию
+    # `{RC_NAME}_{MODE}_{KERNEL}_{STAND_TOKEN}` = `TEST_CYCLE_NAME`): по нему
+    # скрипт находит свой прогон (`-tcyc`), а `stp_pull_from_life` разбирает
+    # чужие раны обратно.
     try:
+        name = await zephyr_folder_svc.render_run_name(
+            db, department_id=department_id, os_version_id=os_version_id, mode=mode, kernel=kernel,
+            stand=stand, settings=settings,
+        )
         zephyr_test_run_key = await zephyr_client.create_test_run(
             base_url=base_url, bearer_token=bearer_token, folder=folder, name=name, items=items,
         )
@@ -356,8 +349,8 @@ async def _reconcile_existing_run(
 
 
 async def _reconcile_stand_runs(
-    db: AsyncSession, *, os_version_id: str, rc_number: str, is_urgent_update: bool, mode: str,
-    kernel: str, scope: str, department_id: str,
+    db: AsyncSession, *, os_version_id: str, mode: str, kernel: str, scope: str, department_id: str,
+    folder: str, settings: DepartmentIntegrationSettings | None,
 ) -> tuple[list[StpTestRun], list[dict]]:
     tests = await test_definition_repo.list_by_department_pinned(db, department_id)
     # Полный набор — это все тесты со статусом «Рабочий» и СВОИМ режимом,
@@ -380,11 +373,7 @@ async def _reconcile_stand_runs(
     for t in tests:
         by_stand[t.pinned_stand_id].append(t)
 
-    release = _derive_release(rc_number, is_urgent_update=is_urgent_update)
-    stand_tokens = {
-        s.id: (s.legacy_token or s.id)
-        for s in await test_stand_repo.list_by_ids(db, list(by_stand.keys()))
-    }
+    stands = {s.id: s for s in await test_stand_repo.list_by_ids(db, list(by_stand.keys()))}
     touched: list[StpTestRun] = []
     errors: list[dict] = []
 
@@ -408,9 +397,9 @@ async def _reconcile_stand_runs(
 
         if existing_run is None:
             run, error = await _create_stand_run(
-                db, department_id=department_id, os_version_id=os_version_id, rc_number=rc_number,
-                mode=mode, kernel=kernel, stand_id=stand_id, release=release,
-                stand_token=stand_tokens.get(stand_id, stand_id),
+                db, department_id=department_id, os_version_id=os_version_id,
+                mode=mode, kernel=kernel, stand_id=stand_id, stand=stands.get(stand_id),
+                folder=folder, settings=settings,
                 pairs=pairs, target_codes=target_codes,
             )
             if error is not None:
@@ -438,14 +427,16 @@ async def generate_stp_runs(
     kernel: str | None,
     scope: str,
     department_id: str,
-) -> tuple[list[StpTestRun], list[dict]]:
+) -> tuple[list[StpTestRun], list[dict], dict]:
     """Сгенерировать/переключить состав СТП-прогонов отдела для одной РЦ (§D4/D5).
 
     `scope` — явный `changelog`/`full`, задаётся вызывающим (кнопки UI), не
     выводится из RC. Возвращает `(test_runs, errors)` — `test_runs` несёт как
     вновь созданные, так и уже существующие (реконциленные) прогоны, `errors`
     — список `{"stand_id", "error_code", "message"}` частичных провалов;
-    стенды без единого пригодного тест-кейса молча пропускаются.
+    стенды без единого пригодного тест-кейса молча пропускаются. Третий
+    элемент — папка Zephyr (`zephyr_folder.as_dict`, с `error`, если id
+    папки получить не удалось).
 
     RBAC — `require_department_action` на `(stp_test_run, *, create)`, тем же
     приёмом, что `stp_matrix.py::publish_stp_matrix`: `department_id` тут
@@ -467,6 +458,13 @@ async def generate_stp_runs(
 
     _validate_scope(scope)
 
+    # Путь папки — до любых записей: ошибка шаблона (неизвестная переменная,
+    # не настроен источник) — 422 целиком, а не полусозданный состав.
+    settings = await dis_repo.get_by_department(db, department_id)
+    folder, _folder_record = await zephyr_folder_svc.effective_folder_path(
+        db, department_id=department_id, os_version_id=os_version_id, settings=settings,
+    )
+
     composition = await _resolve_composition(
         db, department_id=department_id, os_version_id=os_version_id, scope=scope, identity=identity,
     )
@@ -478,22 +476,33 @@ async def generate_stp_runs(
         kernels = [kernel]
         modes = [mode]
 
-    # Резолвится один раз на вызов (не на каждую пару режим/ядро) — Jira видит
-    # человеческую версию РЦ, не внутренний id каталога ОС.
-    os_version_info = await server_client.resolve_os_version_info(os_version_id)
-    rc_number = os_version_info.name
+    # До прогонов: папки может ещё не быть — её надо создать раньше, чем в
+    # неё полезут test-run'ы.
+    jira_ctx = await _resolve_jira_bearer(db, department_id)
+    folder_record, folder_error = await zephyr_folder_svc.sync_folder(
+        db, department_id=department_id, os_version_id=os_version_id, folder_path=folder,
+        jira_ctx=jira_ctx, allow_create=True,
+    )
 
     all_runs: list[StpTestRun] = []
     all_errors: list[dict] = []
     for selected_kernel in kernels:
         for selected_mode in modes:
             runs, errors = await _reconcile_stand_runs(
-                db, os_version_id=os_version_id, rc_number=rc_number,
-                is_urgent_update=os_version_info.is_urgent_update, mode=selected_mode,
+                db, os_version_id=os_version_id, mode=selected_mode,
                 kernel=selected_kernel, scope=scope, department_id=department_id,
+                folder=folder, settings=settings,
             )
             all_runs.extend(runs)
             all_errors.extend(errors)
+
+    if folder_error is not None and jira_ctx is not None and all_runs:
+        # Папка уже была, но пустая (создать нельзя — «уже есть», искать не
+        # по чему); теперь в ней наши прогоны — ищем ещё раз.
+        folder_record, folder_error = await zephyr_folder_svc.sync_folder(
+            db, department_id=department_id, os_version_id=os_version_id, folder_path=folder,
+            jira_ctx=jira_ctx, allow_create=False,
+        )
 
     audit_service.emit(
         "stp_test_run.generate",
@@ -508,9 +517,16 @@ async def generate_stp_runs(
             "composition_revision": composition.revision,
             "touched_run_count": len(all_runs),
             "error_count": len(all_errors),
+            "zephyr_folder_path": folder,
+            "zephyr_folder_tree_id": folder_record.folder_tree_id if folder_record else None,
+            "zephyr_folder_error": folder_error.error_code if folder_error else None,
         },
     )
-    return all_runs, all_errors
+    folder_info = zephyr_folder_svc.as_dict(
+        folder_record, department_id=department_id, os_version_id=os_version_id,
+        folder_path=folder, error=folder_error,
+    )
+    return all_runs, all_errors, folder_info
 
 
 async def list_stp_test_runs(

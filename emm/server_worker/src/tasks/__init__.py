@@ -22,6 +22,7 @@ from src.tasks import (  # noqa: F401
     vms_lifecycle,
     vms_network,
     vms_packages,
+    vms_prepare_for_test,
     vms_snapshots,
     vms_status,
 )

@@ -265,6 +265,12 @@ class VmResponse(BaseModel):
     cred_strategy: str = Field(description="per_snapshot / reroll.")
     busy_state: str | None = Field(default=None, description="Lifecycle-lock (creating/deleting/updating/powering) или None.")
     busy_since: datetime | None = Field(default=None, description="Когда поставлен lifecycle-lock.")
+    service_busy_state: str | None = Field(
+        default=None,
+        description="Сервисная бронь: acs / testing / busy / testing_done или None.",
+    )
+    busy_service_name: str | None = Field(default=None, description="Сервис-держатель брони.")
+    busy_note: str | None = Field(default=None, description="Метка сервисной брони.")
     ping_reachable: bool | None = Field(default=None, description="Отвечает ли гость на ping (None — пробы не было).")
     ping_checked_at: datetime | None = Field(default=None, description="Когда последний раз пробовали ping гостя (UTC; None — пробы не было).")
     ssh_reachable: bool | None = Field(default=None, description="Доступен ли SSH гостя (None — пробы не было).")

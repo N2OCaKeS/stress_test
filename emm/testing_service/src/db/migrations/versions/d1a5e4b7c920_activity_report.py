@@ -4,7 +4,7 @@ Revision ID: d1a5e4b7c920
 Revises: c4e8b1f6a930
 Create Date: 2026-09-10 18:30:00.000000
 
-Десятый домен testing_service (§2.7, §9.1 плана миграции, волна 10):
+Десятый домен testing_service (§2.7, §9.1 плана миграции):
 HR/продуктивити-отчёт по активности отдела — перенос легаси
 `allta_app/reports/departament_reports/libreport.py`.
 

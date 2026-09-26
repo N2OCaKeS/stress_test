@@ -28,7 +28,7 @@ from src.schemas.test_run import (
 from src.services import log_availability
 from src.services import run_summary as run_summary_svc
 from src.services import test_run as svc
-from src.services.test_run_status import latest_attempts, result_states
+from src.services.test_run_status import latest_attempts, latest_scenario_runs, list_scenario_runs, result_states
 from src.repositories import test_run_entry as entry_repo
 from collections import Counter
 
@@ -176,8 +176,15 @@ async def get_test_run(
     run, items = await svc.get_test_run(db, identity, run_id)
     response = TestRunDetailResponse.model_validate(run)
     entries = await entry_repo.list_for_run(db, run_id)
-    response.entries = [TestRunEntryResponse.model_validate(entry) for entry in entries]
-    states = result_states(items, entries)
+    scenario_runs = await list_scenario_runs(db, run_id)
+    scenario_by_entry = latest_scenario_runs(scenario_runs)
+    response.entries = [
+        TestRunEntryResponse.model_validate(entry).model_copy(update={
+            "scenario_run_id": scenario_by_entry[entry.id].id if entry.id in scenario_by_entry else None,
+        })
+        for entry in entries
+    ]
+    states = result_states(items, entries, scenario_runs)
     response.progress = {"total": len(states), "attempts": len(items), **dict(Counter(states))}
     current_ids = {item.id for item in latest_attempts(items)}
     logs = await log_availability.for_items(db, items)
@@ -196,6 +203,8 @@ async def get_test_run(
             started_at=item.started_at,
             finished_at=item.finished_at,
             error=item.error,
+            verdict=item.verdict,
+            zephyr_status_raw=item.zephyr_status_raw,
         )
         for item in items
     ]

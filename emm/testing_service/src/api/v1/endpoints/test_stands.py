@@ -19,6 +19,8 @@ from src.schemas.common import OkResponse, PaginatedResponse
 from src.schemas.public_queue import (
     PublicQueueItem,
     QueueClearResponse,
+    QueueReorderRequest,
+    QueueReorderResponse,
     QueueRetryFailedResponse,
     RetryFailedRequest,
 )
@@ -31,6 +33,7 @@ from src.schemas.test_stand import (
     TestStandResponse,
     TestStandTestCredentialsResponse,
     TestStandUpdate,
+    TestStandVmSnapshotsResponse,
 )
 from src.services import public_queue as public_queue_svc
 from src.services import queue as queue_svc
@@ -67,14 +70,18 @@ async def list_test_stands(
     queue_enabled: bool | None = Query(default=None, description="Фильтр по участию в очереди."),
     server_id: str | None = Query(
         default=None,
-        description="Фильтр по привязанному Server/Vm.id — UNIQUE, значит 0 либо 1 элемент в ответе.",
+        description="Фильтр по привязанному Server.id — UNIQUE, значит 0 либо 1 элемент в ответе.",
+    ),
+    vm_id: str | None = Query(
+        default=None,
+        description="Фильтр по привязанному Vm.id (ВМ-стенд) — UNIQUE.",
     ),
 ) -> PaginatedResponse[TestStandResponse]:
     """List стендов. Свой отдел."""
     items, total = await svc.list_test_stands(
         db, identity, limit=limit, offset=offset,
         department_id=department_id, is_active=is_active, queue_enabled=queue_enabled,
-        server_id=server_id,
+        server_id=server_id, vm_id=vm_id,
     )
     return PaginatedResponse[TestStandResponse](
         items=[TestStandResponse.model_validate(i) for i in items],
@@ -90,10 +97,11 @@ async def list_test_stands(
     status_code=201,
     summary="Завести новый стенд",
     description=(
-        "Регистрирует сервер/ВМ из server_service как тестовый стенд. "
-        "`department_id` не принимается от клиента — резолвится живым "
+        "Регистрирует сервер (`target_type=server`, `server_id`) или ВМ "
+        "(`target_type=vm`, `vm_id`) из server_service как тестовый "
+        "стенд. `department_id` не принимается от клиента — резолвится живым "
         "запросом к server_service (с bearer'ом вызывающего) в момент "
-        "создания. UNIQUE(server_id) — повтор → 409."
+        "создания. UNIQUE(server_id)/UNIQUE(vm_id) — повтор → 409."
     ),
     responses={
         201: {"description": "Стенд создан."},
@@ -170,6 +178,32 @@ async def get_test_stand(
     response.server = server
     response.server_unavailable = server_unavailable
     return response
+
+
+@router.get(
+    "/{stand_id}/vm-snapshots",
+    response_model=TestStandVmSnapshotsResponse,
+    summary="Снимки ВМ-стенда и версии ОС, на которые они откатывают",
+    description=(
+        "живой список снимков ВМ из server_service с версией и режимом, "
+        "прочитанными из имени по шаблонам (`/settings/vm-test` server_service). "
+        "Отдельной таблицы сопоставления нет (решение T7): при подготовке "
+        "server_service ищет снимок нужной версии тем же правилом."
+    ),
+    responses={
+        403: {"description": "DEPARTMENT_ISOLATION — стенд чужого отдела."},
+        404: {"description": "Стенд не найден / VM_NOT_FOUND."},
+        409: {"description": "TEST_STAND_NOT_VM — стенд не ВМ."},
+        503: {"description": "server_service недоступен."},
+    },
+)
+async def get_vm_snapshots(
+    stand_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> TestStandVmSnapshotsResponse:
+    """Сопоставление снимков ВМ-стенда. Свой отдел."""
+    return TestStandVmSnapshotsResponse(**await svc.get_vm_snapshot_mapping(db, identity, stand_id))
 
 
 @router.get(
@@ -287,6 +321,45 @@ async def clear_queue(
     """Bulk-очистка очереди стенда. Доступ: как у постановки в очередь."""
     count = await public_queue_svc.clear_queue(db, identity, stand_id)
     return QueueClearResponse(cleared_count=count)
+
+
+@router.patch(
+    "/{stand_id}/queue/order",
+    response_model=QueueReorderResponse,
+    summary="Переставить ещё не начатые элементы очереди стенда",
+    description=(
+        "Задаёт новый порядок `queued`-элементов стенда (меняет их `position`): "
+        "в теле — все текущие `queued`-элементы в желаемом порядке. Активный "
+        "(`preparing`/`ready`/`running`) и остановленный (`paused`) элементы не "
+        "переставляются. Порядок прогона РЦ задаётся правилом отдела при "
+        "постановке (`campaign_sort_rule`), эта операция — ручная правка после."
+    ),
+    responses={
+        403: {"description": "Нет прав на этот стенд."},
+        404: {"description": "Стенд не найден."},
+        409: {
+            "description": (
+                "QUEUE_ITEM_NOT_QUEUED — в списке активный/остановленный элемент; "
+                "QUEUE_ORDER_STALE — список не совпадает с текущими queued-элементами "
+                "(в `details` — `unexpected`/`missing`)."
+            ),
+        },
+        422: {"description": "QUEUE_ORDER_DUPLICATE_IDS — один элемент указан дважды."},
+    },
+)
+async def reorder_queue(
+    stand_id: str,
+    body: QueueReorderRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> QueueReorderResponse:
+    """Перестановка очереди стенда. Доступ: как у постановки в очередь."""
+    items = await public_queue_svc.reorder_queue(db, identity, stand_id, body.queue_item_ids)
+    logs = await log_availability.for_items(db, items) if items else {}
+    return QueueReorderResponse(items=[
+        public_queue_svc.response(item).model_copy(update={"log_status": logs[item.id]})
+        for item in items
+    ])
 
 
 @router.post(

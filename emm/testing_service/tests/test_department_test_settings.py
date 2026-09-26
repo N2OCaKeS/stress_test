@@ -93,3 +93,84 @@ class TestUpsert:
             json={"retry_enabled": False},
         )
         assert resp.status_code == 403, resp.text
+
+
+# легаси `available_astra_services_checker` (`liballta.py:1784-1836`).
+LEGACY_PREFLIGHT = {
+    "enabled": True,
+    "http": [
+        {"url": "https://jira.astralinux.ru", "ok_status": "200"},
+        {"url": "https://life.astralinux.ru", "ok_status": "200"},
+        {"url": "https://git.astralinux.ru", "ok_status": "200"},
+        {"url": "https://releases.devos.astralinux.ru", "ok_status": "200"},
+    ],
+    "dns_hosts": ["10.177.128.198", "10.177.180.246", "10.177.181.142"],
+    "dns_port": 53,
+    "poll_interval_seconds": 180,
+    "timeout_seconds": 7200,
+    "probe_timeout_seconds": 15,
+}
+
+
+class TestPreflight:
+    """настройки preflight отдела (CONTRACTS.md C3/C6)."""
+
+    async def test_defaults_are_legacy(self, client, admin_token):
+        resp = await client.get(f"{BASE}/{_dept()}", headers=_hdr(admin_token))
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["preflight"] == LEGACY_PREFLIGHT
+
+    async def test_row_without_preflight_reports_defaults(self, client, admin_token):
+        resp = await client.put(f"{BASE}/{_dept()}", headers=_hdr(admin_token), json={"retry_enabled": False})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["preflight"] == LEGACY_PREFLIGHT
+
+    async def test_put_replaces_preflight_and_keeps_other_fields(self, client, admin_token):
+        dept = _dept()
+        await client.put(f"{BASE}/{dept}", headers=_hdr(admin_token), json={"test_username": "tester"})
+        custom = {
+            "enabled": True,
+            "http": [{"url": "https://repo.example.test/health", "ok_status": "lt500"}],
+            "dns_hosts": [" 10.1.1.1 "],
+            "dns_port": 5353,
+            "poll_interval_seconds": 30,
+            "timeout_seconds": 600,
+        }
+        resp = await client.put(f"{BASE}/{dept}", headers=_hdr(admin_token), json={"preflight": custom})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["test_username"] == "tester"
+        assert body["preflight"] == {**custom, "dns_hosts": ["10.1.1.1"], "probe_timeout_seconds": 15}
+
+        again = await client.get(f"{BASE}/{dept}", headers=_hdr(admin_token))
+        assert again.json()["preflight"]["http"] == custom["http"]
+
+        # Правка другого поля preflight не трогает.
+        other = await client.put(f"{BASE}/{dept}", headers=_hdr(admin_token), json={"retry_enabled": False})
+        assert other.json()["preflight"]["dns_port"] == 5353
+
+    async def test_null_resets_to_defaults(self, client, admin_token):
+        dept = _dept()
+        await client.put(
+            f"{BASE}/{dept}", headers=_hdr(admin_token),
+            json={"preflight": {**LEGACY_PREFLIGHT, "enabled": False}},
+        )
+        resp = await client.put(f"{BASE}/{dept}", headers=_hdr(admin_token), json={"preflight": None})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["preflight"] == LEGACY_PREFLIGHT
+
+    @pytest.mark.parametrize("bad", [
+        {"http": [{"url": "https://x.test", "ok_status": "2xx"}]},
+        {"http": [{"url": "ftp://x.test"}]},
+        {"http": [{"url": "https://x.test/a b"}]},
+        {"dns_hosts": [""]},
+        {"dns_port": 0},
+        {"poll_interval_seconds": 0},
+        {"timeout_seconds": -1},
+        {"unexpected": 1},
+    ])
+    async def test_invalid_preflight_rejected(self, client, admin_token, bad):
+        resp = await client.put(
+            f"{BASE}/{_dept()}", headers=_hdr(admin_token), json={"preflight": {**LEGACY_PREFLIGHT, **bad}},
+        )
+        assert resp.status_code == 422, resp.text

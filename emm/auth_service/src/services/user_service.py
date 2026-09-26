@@ -11,6 +11,8 @@ from src.core.security import hash_password, mask_email, verify_password
 from src.repositories.bans import BanRepository
 from src.repositories.departments import DepartmentRepository
 from src.repositories.groups import GroupRepository
+from src.repositories.oauth_clients import OAuthCodeRepository
+from src.repositories.oauth_refresh_tokens import OAuthRefreshTokenRepository
 from src.repositories.roles import RoleRepository
 from src.repositories.service_role_definitions import ServiceRoleDefinitionRepository
 from src.repositories.sessions import SessionRepository
@@ -509,13 +511,24 @@ async def create_user(
     return _to_response(user, dept.name if dept else None)
 
 
+async def _revoke_oauth_for_user(db: AsyncSession, user_id: str) -> tuple[int, int]:
+    """Отозвать OAuth refresh юзера и погасить его необменянные коды.
+
+    Возвращает (refresh отозвано, кодов погашено). Только flush — commit
+    делает caller вместе с остальными revoke'ами.
+    """
+    refresh_revoked = await OAuthRefreshTokenRepository(db).revoke_all_for_user(user_id)
+    codes_invalidated = await OAuthCodeRepository(db).invalidate_unused_for_user(user_id)
+    return refresh_revoked, codes_invalidated
+
+
 async def _revoke_sessions_on_block(
     db: AsyncSession,
     user,
     actor_id: str,
     request_id: str | None,
 ) -> list[dict]:
-    """Снести активные сессии и PAT при PATCH status → BLOCKED.
+    """Снести активные сессии, PAT и OAuth-гранты при PATCH status → BLOCKED.
 
     Возвращает список pending-audit dict'ов (пустой — если revoke'ить было
     нечего ни там, ни там). Audit-emit + commit делает caller — мы только
@@ -554,6 +567,21 @@ async def _revoke_sessions_on_block(
             "details": {
                 "target_username": user.username,
                 "pat_revoked": revoked_pats,
+                "source": "patch_user_status_blocked",
+            },
+            "request_id": request_id,
+        })
+    oauth_refresh_revoked, oauth_codes_invalidated = await _revoke_oauth_for_user(db, user.id)
+    if oauth_refresh_revoked or oauth_codes_invalidated:
+        pending.append({
+            "action": "user.oauth_revoked_on_block",
+            "actor_id": actor_id,
+            "target_id": user.id,
+            "target_type": "user",
+            "details": {
+                "target_username": user.username,
+                "oauth_refresh_revoked_count": oauth_refresh_revoked,
+                "oauth_codes_invalidated_count": oauth_codes_invalidated,
                 "source": "patch_user_status_blocked",
             },
             "request_id": request_id,
@@ -1084,6 +1112,7 @@ async def reset_password(
     pat_revoked_count = await token_repo.revoke_all_for_user(
         user_id, reason="admin_reset"
     )
+    oauth_refresh_revoked, oauth_codes_invalidated = await _revoke_oauth_for_user(db, user_id)
     await db.commit()
     # Сессии и PAT'ы юзера сняты — identity-кэш может ещё нести `is_active=True`
     # и пускать ранее закэшированный access-token до TTL. Сбрасываем сразу.
@@ -1111,6 +1140,8 @@ async def reset_password(
             "sessions_revoked": True,
             "tokens_revoked": True,
             "pat_revoked_count": pat_revoked_count,
+            "oauth_refresh_revoked_count": oauth_refresh_revoked,
+            "oauth_codes_invalidated_count": oauth_codes_invalidated,
             "actor_role": audit_actor_role,
         },
         request_id=request_id,
@@ -1261,6 +1292,7 @@ async def change_own_password(
     pat_revoked_count = await token_repo.revoke_all_for_user(
         user_id, reason="admin_reset"
     )
+    oauth_refresh_revoked, oauth_codes_invalidated = await _revoke_oauth_for_user(db, user_id)
     await db.commit()
     # Identity-cache: без сброса закэшированный access-token продолжит
     # пускать юзера на /me и introspect до истечения TTL даже после revoke
@@ -1276,6 +1308,8 @@ async def change_own_password(
             "sessions_revoked": True,
             "tokens_revoked": True,
             "pat_revoked_count": pat_revoked_count,
+            "oauth_refresh_revoked_count": oauth_refresh_revoked,
+            "oauth_codes_invalidated_count": oauth_codes_invalidated,
             "actor_role": "self",
             "must_change_password_was_forced": was_forced,
         },
@@ -1536,6 +1570,8 @@ async def ban_user(
     # `revoked_reason="ban"` нужен для `unban_user`: реактивирует именно
     # ban-revoked PAT, а не вручную отозванные через DELETE /tokens/{id}.
     pat_revoked_count = await token_repo.revoke_all_for_user(user_id, reason="ban")
+    # OAuth-гранты не реактивируются при unban: клиент пройдёт /authorize заново.
+    oauth_refresh_revoked, oauth_codes_invalidated = await _revoke_oauth_for_user(db, user_id)
     # by-design: bots survive ban. Ботов и их токены при бане владельца не
     # трогаем — бот живёт отдельной identity'ю, привязан к отделу, и
     # выпадение владельца не должно валить CI/integrations отдела. После
@@ -1557,6 +1593,8 @@ async def ban_user(
             # отслеживать «ban стоил N токенов» для compliance-отчётов.
             "pat_revoked": True,
             "pat_revoked_count": pat_revoked_count,
+            "oauth_refresh_revoked_count": oauth_refresh_revoked,
+            "oauth_codes_invalidated_count": oauth_codes_invalidated,
             # Боты намеренно остаются живыми (см. комментарий выше). Поля с
             # bot-counter'ами оставляем нулевыми для обратной совместимости
             # SIEM-правил, ожидающих эти ключи в `user.ban`. Явный
@@ -1813,6 +1851,7 @@ async def hard_delete_user(
     # Снимаем счётчики ДО delete'а, чтобы попасть в audit-detail.
     sessions_revoked = await session_repo.revoke_all_for_user(user_id)
     pat_revoked = await token_repo.revoke_all_for_user(user_id, reason="hard_delete")
+    oauth_refresh_revoked, _ = await _revoke_oauth_for_user(db, user_id)
 
     await user_repo.delete(user)
     await db.commit()
@@ -1829,6 +1868,7 @@ async def hard_delete_user(
             "reason": reason,
             "sessions_revoked": sessions_revoked,
             "pat_revoked_count": pat_revoked,
+            "oauth_refresh_revoked_count": oauth_refresh_revoked,
         },
         request_id=request_id,
     )

@@ -7,6 +7,11 @@
 Health/ready пропускаются (k8s probe ходит на pod-network http). В dev/test/local
 middleware выключен.
 
+Публичный compat `/rest/api/*` тоже пропускается: скрипты на стендах
+ходят на `http://allta.devos.astralinux.ru/rest/api/...` и схему не меняют
+(ветки не трогаем, D17). Там только несекретные справочники, доступ ограничен
+подсетями стендов на уровне самого роутера.
+
 Регистрируется в `main.py` ПОСЛЕ SecurityHeadersMiddleware → outermost-слой.
 """
 
@@ -21,6 +26,9 @@ from starlette.responses import JSONResponse
 from src.core.constants import HEALTH_PATHS
 
 HTTPS_REQUIRED_ENVS: frozenset[str] = frozenset({"production", "staging"})
+
+# Префикс публичного compat (`api/legacy_public.py`) — plain HTTP по замыслу.
+LEGACY_PUBLIC_PREFIX = "/rest/api/"
 
 
 def _is_request_https(request: Request) -> bool:
@@ -74,6 +82,8 @@ class HTTPSRequiredMiddleware(BaseHTTPMiddleware):
         if not self._enabled:
             return await call_next(request)
         if request.url.path in HEALTH_PATHS:
+            return await call_next(request)
+        if request.url.path.startswith(LEGACY_PUBLIC_PREFIX):
             return await call_next(request)
         if _is_request_https(request):
             return await call_next(request)

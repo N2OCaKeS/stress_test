@@ -53,6 +53,8 @@ services:
       - ../src:/app/src
       - ../scripts:/app/scripts
       - ../alembic.ini:/app/alembic.ini:ro
+      # Golden-parity тесты сверяются с реальным легаси-кодом, не с копией.
+      - ../../allta_app_full:/allta_app_full:ro
     # 0 миграций этой волной — `alembic upgrade head` no-op, но команда должна
     # отработать чисто (проверка §"Проверка" волны 1) перед запуском pytest.
     command: >

@@ -315,6 +315,23 @@ async def vm_snapshot_delete(task_id: str) -> None:
 # ── vm.snapshot_revert ───────────────────────────────────────────────────────
 
 
+async def revert_domain(ssh, vm_name: str, snap: str, host: str) -> str:
+    """`virsh snapshot-revert` + `virsh domstate` → power_state.
+
+    Общий шаг `vm.snapshot_revert` и отката ВМ-стенда перед тестом
+    (`vm.prepare_for_test`). `vm_name`/`snap` уже провалидированы.
+    """
+    await run_hub_cmd(
+        ssh,
+        f"virsh snapshot-revert --domain {vm_name} --snapshotname {snap}",
+        host, "VM_SNAPSHOT_FAILED", f"не удалось откатить на снимок {snap}",
+    )
+    _rc, dom_out, _err = await ssh.run(
+        f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}", sudo=True,
+    )
+    return map_domstate(dom_out)
+
+
 @broker.task("vm.snapshot_revert")
 async def vm_snapshot_revert(task_id: str) -> None:
     """Откатить ВМ на снимок (`virsh snapshot-revert`).
@@ -349,15 +366,7 @@ async def vm_snapshot_revert(task_id: str) -> None:
         try:
             session, host = await open_hub_session(payload)
             async with session as ssh:
-                await run_hub_cmd(
-                    ssh,
-                    f"virsh snapshot-revert --domain {vm_name} --snapshotname {snap}",
-                    host, "VM_SNAPSHOT_FAILED", f"не удалось откатить на снимок {snap}",
-                )
-                _rc, dom_out, _err = await ssh.run(
-                    f"{LIBVIRT_SESSION_ENV} virsh domstate {vm_name}", sudo=True,
-                )
-                power_state = map_domstate(dom_out)
+                power_state = await revert_domain(ssh, vm_name, snap, host)
         except Exception as exc:
             await _report_snapshot_error(
                 vm_id, snapshot_id, snap, target_dept, "vm.snapshot_revert", exc,

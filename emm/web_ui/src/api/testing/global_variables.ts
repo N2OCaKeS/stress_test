@@ -12,6 +12,7 @@ import type {
   ChoicesResponse,
   GlobalVariable,
   GlobalVariableCreateRequest,
+  GlobalVariableSourceOptions,
   GlobalVariableUpdateRequest,
   TestingOkResponse,
   TestingPaginatedResponse,
@@ -40,6 +41,16 @@ export function getGlobalVariableByCode(code: string): Promise<GlobalVariable> {
   return apiGet<GlobalVariable>(
     `${BASE}/global-variables/by-code/${encodeURIComponent(code)}`,
   );
+}
+
+/**
+ * `GET /global-variables/source-options` — допустимые значения `source_ref`
+ * по источникам (поля теста, стенда, колонки интеграций отдела, …). Из них
+ * строится форма ссылки источника; сервис проверяет те же множества при
+ * сохранении.
+ */
+export function getGlobalVariableSourceOptions(): Promise<GlobalVariableSourceOptions> {
+  return apiGet<GlobalVariableSourceOptions>(`${BASE}/global-variables/source-options`);
 }
 
 /** `GET /global-variables/{id}` — карточка по id. */

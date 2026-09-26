@@ -9,6 +9,7 @@ export const CURRENT_STATE_LABELS: Record<string, string> = {
   ready: "готов к запуску",
   running: "выполняется",
   paused: "на паузе",
+  awaiting_verdict: "ожидание вердикта",
 };
 
 /**

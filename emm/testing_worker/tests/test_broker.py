@@ -24,7 +24,7 @@ def test_main_registers_system_ping():
 
 
 def test_tasks_package_imports():
-    """Empty for now (wave 5 fills it in) but must import cleanly."""
+    """Empty for now but must import cleanly."""
     from src import tasks
 
     assert tasks is not None

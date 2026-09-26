@@ -19,8 +19,11 @@
 
 Кроме полного пересчёта легаси давало восемь отдельных кнопок по семействам
 тестов (`allta_app/allta_front.py:729-880` — по Flask-роуту на кнопку, тела
-запросов из `allta_app/statistics_conf.py`). Девять триггеров всего; все
-восемь перенесены в `_CATEGORY_SPECS` ниже, вызов — `trigger_category_statistics`.
+запросов из `allta_app/statistics_conf.py`). Раньше они жили здесь константой;
+по решению D18 это справочник `statistics_categories` в БД (сид —
+те же восемь семейств, миграция `tp17_statistics_categories`), редактируемый
+в настройках статистики. `load_categories` читает его, вызов одного
+семейства — `trigger_category_statistics(spec=...)`.
 
 Аутентификация одинаковая для всех маршрутов — та же пара Confluence
 username/token, что уже резолвится в EMM через
@@ -36,8 +39,11 @@ import logging
 from typing import NamedTuple
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.exceptions import ServiceUnavailableError
+from src.models.statistics_category import StatisticsCategory
+from src.repositories import statistics_category as category_repo
 
 logger = logging.getLogger("testing_service.statistics_client")
 
@@ -45,7 +51,11 @@ _ALL_STATISTICS_PATH = "/all-statistics"
 
 
 class CategorySpec(NamedTuple):
-    """Что именно слать во внешний сервис ради одного семейства тестов."""
+    """Что именно слать во внешний сервис ради одного семейства тестов.
+
+    Снимок строки `statistics_categories`, отвязанный от сессии БД: фоновая
+    задача пересчёта живёт дольше сессии вызывающего.
+    """
 
     key: str
     label: str
@@ -56,96 +66,33 @@ class CategorySpec(NamedTuple):
     comparison_kernel_list: tuple[str, ...] | None = None
 
 
-# Транскрипция легаси один в один: маршруты и `title_statistics` — из
-# `allta_app/allta_front.py:729-880` (девять Flask-роутов, которые и были теми
-# самыми девятью кнопками), наборы типов тестов и списки сравнений — из
-# `allta_app/statistics_conf.py`. Порядок — как в легаси-меню.
-#
-# Заметно, что три семейства (Apache/UnixBench/Системные службы) ходят в общий
-# `/base-statistics` и различаются только `title_statistics` — внешний сервис
-# выбирает парсер по нему (`statistics/main_api.py:46-60`), так что копировать
-# это разделение обязательно.
-#
-# `Docker`/`Network` есть в `statistics_conf.py` и у внешнего сервиса
-# (`/docker-statistics`, `/network-statistics`), но собственной кнопки в легаси
-# у них не было — не добавляем и здесь, чтобы «девять кнопок» осталось девятью.
-_CATEGORY_SPECS: tuple[CategorySpec, ...] = (
-    CategorySpec(
-        key="apache", label="Apache", path="/base-statistics",
-        title_statistics="Apache",
-        set_of_test_types=("apache-rp",),
-    ),
-    CategorySpec(
-        key="freeipa", label="FreeIPA", path="/freeipa-statistics",
-        title_statistics="FreeIPA",
-        set_of_test_types=("FreeIPA auth", "FreeIPA c-users", "FreeIPA plugin"),
-    ),
-    CategorySpec(
-        key="parsec", label="Parsec", path="/parsec-statistics",
-        title_statistics="Parsec",
-        set_of_test_types=(
-            "parsec impact-fs", "parsec impact-fs aud-off", "raw-spin-lock", "digsig-cdt",
-        ),
-        comparison_list=(("parsec impact-fs", "parsec impact-fs aud-off"),),
-    ),
-    CategorySpec(
-        key="postgresql", label="PostgreSQL", path="/postgresql-statistics",
-        title_statistics="PostgreSQL",
-        set_of_test_types=(
-            "postgresql", "postgresql-sm", "postgresql-aud-off", "psql parsec",
-            "psql vanilla", "tantor vanilla", "psql balance", "PSQL OLAP-hq",
-            "psql info-sys", "psql info-sys-orel",
-        ),
+def spec_from_row(row: StatisticsCategory) -> CategorySpec:
+    """Строка справочника → неизменяемый `CategorySpec`."""
+    return CategorySpec(
+        key=row.key,
+        label=row.label,
+        path=row.path,
+        title_statistics=row.title_statistics,
+        set_of_test_types=tuple(row.set_of_test_types or ()),
         comparison_list=(
-            ("postgresql", "postgresql-sm"),
-            ("postgresql", "postgresql-aud-off"),
-            ("postgresql", "psql parsec"),
-            ("postgresql", "psql vanilla"),
-            ("psql vanilla", "postgresql-aud-off"),
-            ("psql info-sys", "psql info-sys-orel"),
+            tuple(tuple(group) for group in row.comparison_list)
+            if row.comparison_list is not None else None
         ),
-        comparison_kernel_list=("postgresql",),
-    ),
-    CategorySpec(
-        key="virt", label="Qemu/KVM/Libvirt", path="/virt-statistics",
-        title_statistics="Qemu/KVM/Libvirt",
-        set_of_test_types=(
-            "FIO", "vPingPong", "vUnixBench", "steal time", "steal time-sm", "FIO large",
+        comparison_kernel_list=(
+            tuple(row.comparison_kernel_list) if row.comparison_kernel_list is not None else None
         ),
-        comparison_list=(("steal time", "steal time-sm"),),
-    ),
-    CategorySpec(
-        key="unixbench", label="UnixBench", path="/base-statistics",
-        title_statistics="UnixBench",
-        set_of_test_types=("unix", "unix parsec"),
-        comparison_list=(("unix", "unix parsec"),),
-    ),
-    CategorySpec(
-        key="system_services", label="Системные службы", path="/base-statistics",
-        title_statistics="Системные службы",
-        set_of_test_types=(
-            "auditd-p", "auditd-f", "auditd-u", "syslog-ng", "AOpenVPNcc",
-            "Dovecot-IMAP", "Exim4-SMTP", "astraevents", "astraevents-sm",
-        ),
-        comparison_list=(("astraevents", "astraevents-sm"),),
-    ),
-    CategorySpec(
-        key="filesystems", label="Файловые системы", path="/filesystems-statistics",
-        title_statistics="Файловые системы",
-        set_of_test_types=(
-            "EXFAT", "EXT2", "EXT4", "EXT4 parsec", "FAT", "NTFS", "XFS",
-            "XFS parsec", "OCFS2", "CEPH", "CEPH fio",
-        ),
-        comparison_list=(("EXT4", "XFS"), ("EXT4", "EXT4 parsec")),
-    ),
-)
-
-CATEGORIES: dict[str, CategorySpec] = {spec.key: spec for spec in _CATEGORY_SPECS}
+    )
 
 
-def category_choices() -> list[dict[str, str]]:
-    """`[{key, label}]` в легаси-порядке — для выпадающего списка/кнопок в UI."""
-    return [{"key": spec.key, "label": spec.label} for spec in _CATEGORY_SPECS]
+async def load_categories(db: AsyncSession, *, enabled_only: bool = True) -> list[CategorySpec]:
+    """Семейства из справочника `statistics_categories` в порядке `sort_order`."""
+    rows = await category_repo.list_all(db, enabled_only=enabled_only)
+    return [spec_from_row(row) for row in rows]
+
+
+async def category_choices(db: AsyncSession) -> list[dict[str, str]]:
+    """`[{key, label}]` включённых семейств в порядке справочника."""
+    return [{"key": spec.key, "label": spec.label} for spec in await load_categories(db)]
 
 
 def build_client(timeout: float) -> httpx.AsyncClient:
@@ -196,21 +143,15 @@ async def trigger_all_statistics(
 
 
 async def trigger_category_statistics(
-    *, base_url: str, username: str, token: str, timeout: float, category: str,
+    *, base_url: str, username: str, token: str, timeout: float, spec: CategorySpec,
 ) -> None:
     """Пересчёт одного семейства тестов — легаси-кнопки «Apache», «Parsec» и т.д.
 
-    Тело запроса собирается из `_CATEGORY_SPECS`; необязательные
+    Тело запроса собирается из строки справочника (`spec`); необязательные
     `comparison_list`/`comparison_kernel_list` не отправляются вовсе, если у
     семейства их нет (у внешнего сервиса они `Optional[List] = None`), — так же,
     как легаси не клало в payload ключи, которых нет в `statistics_conf`.
     """
-    spec = CATEGORIES.get(category)
-    if spec is None:
-        raise ServiceUnavailableError(
-            error_code="STATISTICS_CATEGORY_UNKNOWN",
-            message=f"unknown statistics category: {category}",
-        )
     payload: dict = {
         "title_statistics": spec.title_statistics,
         "username": username,
@@ -219,7 +160,7 @@ async def trigger_category_statistics(
         "latest_stable_versions_bool": True,
     }
     if spec.comparison_list is not None:
-        payload["comparison_list"] = [list(pair) for pair in spec.comparison_list]
+        payload["comparison_list"] = [list(group) for group in spec.comparison_list]
     if spec.comparison_kernel_list is not None:
         payload["comparison_kernel_list"] = list(spec.comparison_kernel_list)
     await _post(base_url=base_url, path=spec.path, payload=payload, timeout=timeout)

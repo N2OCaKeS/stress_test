@@ -5,7 +5,7 @@
 занятости:
 
 * `status` — бронь под тест: `free` / `run test` / `debug test` / `<login>`
-  забронировавшего. Гейтит управляющие операции (§2 дизайна).
+  забронировавшего. Гейтит управляющие операции.
 * `busy_state` — lifecycle-lock на время долгой операции (creating/deleting/
   updating/powering); NULL, когда операция не идёт. Снимает callback воркера.
 
@@ -113,6 +113,21 @@ class Vm(Base):
     busy_since: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # ── Сервисная бронь ────────────────────────────────
+    # Зеркало `servers.busy_*` для s2s-канала `/internal/vms/{id}/acquire-for-
+    # service` (testing_service). Не в `busy_state`: тот — lifecycle-lock,
+    # его снимают callback'и воркера по концу операции, и бронь цикла теста
+    # (часы) исчезла бы на первом же откате снимка. Стадии — значения
+    # `BusyState` серверов (`acs`/`testing`/`busy`/`testing_done`); NULL —
+    # сервисной брони нет. Пока бронь держится, `status` = `run test`
+    # (легаси-статус «идёт тест»), человеческие операции гейтит
+    # `services/vm.py::_ensure_bookable`.
+    service_busy_state: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    busy_service_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    busy_note: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    service_busy_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Сигналы доступности гостя (как у серверов, опционально). Пишет callback
     # воркера по результату пробы; NULL до первой пробы.
     ping_reachable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
@@ -125,7 +140,7 @@ class Vm(Base):
     )
     # Последняя ошибка от воркера (create/power/delete) — для UI-диагностики.
     last_error: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    # ── per-VM управляющие креды (зеркало серверных, §9 дизайна) ──────────────
+    # ── per-VM управляющие креды (зеркало серверных) ──────────────────────────
     # После vm.prepare гость несёт свою управляющую SSH-пару + пароль (базовая
     # учётка образа `u:1` снесена). is_managed фиксирует факт онбординга,
     # mgmt_user — имя управляющего пользователя. Public-ключ — открытым текстом

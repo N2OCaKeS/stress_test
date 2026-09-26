@@ -5,8 +5,8 @@
  * Источник истины — `testing_service/src/api/v1/endpoints/queue_items.py`
  * и `test_stands.py`.
  */
-import { apiGet, apiPost } from "@/api/client";
-import type { ActiveQueueMode, TestingPaginatedResponse } from "./types";
+import { apiGet, apiPatch, apiPost } from "@/api/client";
+import type { ActiveQueueMode, QueueVerdict, TestingPaginatedResponse, VerdictSource } from "./types";
 export { getCurrentQueueItem, findActiveQueueItemForServer } from "@/api/testing/testStands";
 
 /**
@@ -24,6 +24,22 @@ export interface PublicQueueItem {
   interrupt_action?: QueueInterruptAction | null;
   rc: string | null; kernel: string | null; mode: string | null;
   created_at: string; started_at: string | null; finished_at: string | null; error: string | null;
+  /** Место в очереди стенда (меньше — раньше); значимо между не терминальными элементами. */
+  position?: number;
+  /**
+   * Вердикт: `passed`/`failed`/`unknown`. `unknown` — «результат не
+   * определён»: у запуска нет прогона в Zephyr (debug), исход смотреть в
+   * логе/Confluence. `null` — ещё не вынесен.
+   */
+  verdict?: QueueVerdict | null;
+  /** Откуда взят исход: статус в Zephyr или код выхода `starter.sh`. */
+  verdict_source?: VerdictSource | null;
+  /** Статус тест-кейса в Zephyr как есть (последний прочитанный). */
+  zephyr_status_raw?: string | null;
+  verdict_resolved_at?: string | null;
+  /** Многоступенчатый тест: индекс текущего шага с 0 и число шагов. */
+  current_step_index?: number;
+  step_count?: number | null;
 }
 export interface QueueLaunchRequest {
   request_id: string; test_id: string; stand_id: string; os_version_id: string;
@@ -100,4 +116,19 @@ export function pauseQueueItem(id: string) {
  */
 export function resumeStandQueue(standId: string) {
   return apiPost<PublicQueueItem>(`/testing/v1/test-stands/${encodeURIComponent(standId)}/resume-queue`, {});
+}
+
+/**
+ * `PATCH /test-stands/{id}/queue/order` — новый порядок ещё не начатых
+ * (`queued`) элементов стенда (D15). `queueItemIds` — все текущие `queued`
+ * стенда в желаемом порядке; активный/остановленный элемент не передаётся и
+ * не переставляется (409 `QUEUE_ITEM_NOT_QUEUED`). Если очередь успела
+ * измениться (головной стартовал, в хвост встал новый) — 409
+ * `QUEUE_ORDER_STALE`, очередь нужно перечитать.
+ */
+export function reorderStandQueue(standId: string, queueItemIds: string[]) {
+  return apiPatch<{ items: PublicQueueItem[] }>(
+    `/testing/v1/test-stands/${encodeURIComponent(standId)}/queue/order`,
+    { queue_item_ids: queueItemIds },
+  );
 }

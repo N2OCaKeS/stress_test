@@ -4,7 +4,7 @@ Revision ID: 784536fa92db
 Revises: bc059aaa2aa1
 Create Date: 2026-09-09 21:00:00.000000
 
-Пятый домен testing_service (§2.6, §8 плана миграции, волна 6 часть 1):
+Пятый домен testing_service (§2.6, §8 плана миграции):
 хранение логов прогонов — модель данных + приёмный internal-контракт для
 `testing_worker`.
 

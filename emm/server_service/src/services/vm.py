@@ -70,6 +70,7 @@ from src.schemas.vm import (
 from src.services import account_nopasswd_sudo_settings as nopasswd_sudo_svc
 from src.services import audit_service, console_token, permissions, reservation, secrets_service, worker_client
 from src.services import box_service
+from src.services import vm_reservation
 from src.services import management_user_config
 from src.services import vm_ip_pool as ip_pool_svc
 from src.services.management_creds import generate_management_material
@@ -126,7 +127,14 @@ def _is_vm_admin(identity: IdentityContext, vm: Vm) -> bool:
 def _ensure_bookable(identity: IdentityContext, vm: Vm, *, action: str) -> None:
     """Гейт брони: управлять ВМ можно, если она свободна / забронирована под себя
     / caller — админ. Иначе 409 VM_RESERVED. Симметрия с серверной бронью, но по
-    полю `status` (§2 дизайна)."""
+    полю `status`.
+
+    Сервисная бронь `acs`/`testing` не пропускает никого, включая
+    админа — `vm_reservation.ensure_not_service_locked`. Кроме консоли: она
+    не меняет ВМ, а смотреть идущий тест админу нужно (как console-read у
+    серверов вне гейта брони)."""
+    if action != "vm.console":
+        vm_reservation.ensure_not_service_locked(vm, action=action)
     if vm.status == VM_STATUS_FREE:
         return
     if vm.status == identity.username:
@@ -963,7 +971,7 @@ async def update_vm(
 
 
 def _disk_serial(vm: Vm, disk_name: str) -> str:
-    """Serial устройства для attach'а: `<vm>_<disk>` (§7 дизайна)."""
+    """Serial устройства для attach'а: `<vm>_<disk>`."""
     return f"{vm.name}_{disk_name}"
 
 
@@ -1619,7 +1627,7 @@ async def _rotate_guest(
 ) -> tuple[Vm, str]:
     """Общий флоу allta-update / passwd: обновить гостевую allta + опц. пароль `u`.
 
-    Идентичный op (§2.5 референса). В reroll воркер проходит по всем не-`_build`
+    Идентичный op. В reroll воркер проходит по всем не-`_build`
     снимкам (revert→update→resnapshot), в per_snapshot трогает только текущий.
     server_service передаёт список не-системных снимков и стратегию.
     """
@@ -2191,6 +2199,7 @@ async def reserve_vm(
             db, identity, EntityType.VM, vm_id, Action.VM_RESERVE
         )
     vm = await _load_visible(db, identity, vm_id, audit_action="vm.reserved")
+    vm_reservation.ensure_not_service_locked(vm, action="vm.reserved")
     # Уже занята кем-то другим (и caller не админ) → 409.
     if vm.status != VM_STATUS_FREE and vm.status != identity.username and not _is_vm_admin(identity, vm):
         audit_service.emit(
@@ -2205,6 +2214,8 @@ async def reserve_vm(
         )
     new_status = status if status is not None else identity.username
     vm.status = new_status
+    # `testing_done` сервисной брони перебивается человеческой бронью.
+    vm_reservation.clear_service_reservation(vm)
     await db.commit()
     await db.refresh(vm)
     audit_service.emit(
@@ -2229,7 +2240,14 @@ async def release_vm(
             db, identity, EntityType.VM, vm_id, Action.VM_RELEASE
         )
     vm = await _load_visible(db, identity, vm_id, audit_action="vm.released")
-    if vm.status != VM_STATUS_FREE and vm.status != identity.username and not _is_vm_admin(identity, vm):
+    vm_reservation.ensure_not_service_locked(vm, action="vm.released")
+    # `testing_done` сервисной брони снимает любой с правом release —
+    # как `acknowledge-testing-done` у серверов.
+    acknowledge = vm.service_busy_state is not None
+    if (
+        not acknowledge
+        and vm.status != VM_STATUS_FREE and vm.status != identity.username and not _is_vm_admin(identity, vm)
+    ):
         audit_service.emit(
             "vm.released", target_id=vm_id, target_type="vm",
             status="failure", allowed=True,
@@ -2241,6 +2259,7 @@ async def release_vm(
             details={"status": vm.status},
         )
     vm.status = VM_STATUS_FREE
+    vm_reservation.clear_service_reservation(vm)
     await db.commit()
     await db.refresh(vm)
     audit_service.emit(
@@ -2269,6 +2288,7 @@ async def set_status(
             db, identity, EntityType.VM, vm_id, Action.VM_RESERVE
         )
     vm = await _load_visible(db, identity, vm_id, audit_action="vm.status_updated")
+    vm_reservation.ensure_not_service_locked(vm, action="vm.status_updated")
     if (
         status != VM_STATUS_FREE
         and vm.status != VM_STATUS_FREE
@@ -2286,6 +2306,7 @@ async def set_status(
             details={"status": vm.status},
         )
     vm.status = status
+    vm_reservation.clear_service_reservation(vm)
     await db.commit()
     await db.refresh(vm)
     audit_service.emit(
@@ -2748,7 +2769,7 @@ async def set_autostart(
 ) -> tuple[Vm, str]:
     """Dispatch VM_SET_AUTOSTART (`virsh autostart [--disable]`). Право `(vm, vm_power)`.
 
-    Автозапуск — свойство из семейства питания (§7 дизайна), поэтому гейтится
+    Автозапуск — свойство из семейства питания, поэтому гейтится
     тем же правом `vm_power`, что и старт/стоп. Флаг `autostart` выставляется
     оптимистично; воркер применяет его в libvirt.
     """
@@ -3019,7 +3040,7 @@ async def console_access(
     vm_id: str,
     kind: str,
 ) -> dict:
-    """Выдать доступ к консоли ВМ. Право `(vm, view)` + бронь (§Консоль дизайна).
+    """Выдать доступ к консоли ВМ. Право `(vm, view)` + бронь.
 
     Возвращает контракт подключения UI к websockify/PTY-прокси: короткоживущий
     токен + hub-хост + порт/serial-путь/пользователь по типу консоли. Реальный

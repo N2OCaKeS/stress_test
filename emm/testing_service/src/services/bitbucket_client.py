@@ -14,7 +14,7 @@ bitbucket_credential_id`, резолв — зона ответственност
 
 `bitbucket_credential_id` — именно basic-auth пара, а не заголовок. Секрет для
 клонирования на стенде лежит отдельно (`git_credential_id`, см.
-`services/queue.py::_resolve_git_token`): там значение уходит в
+`services/queue.py::resolve_git_token`): там значение уходит в
 `Authorization` целиком и обязано нести схему, здесь схема в пароле сломает
 запрос. Разделять их приходится потому, что легаси тоже держало эти значения
 врозь.

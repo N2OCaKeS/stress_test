@@ -10,6 +10,7 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
@@ -27,10 +28,15 @@ class StatisticsRecalcState(Base):
     # "test_run" (автоматически на терминальном статусе кампании) или "manual"
     # (кнопка/переключатель в UI для одиночных тестов).
     triggered_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # Какое семейство тестов пересчитывалось (`services/statistics_client.
-    # CATEGORIES`). NULL — полный пересчёт `/all-statistics`; автотриггер по
+    # Какое семейство тестов пересчитывалось (`statistics_categories.key`).
+    # NULL — полный пересчёт `/all-statistics`; автотриггер по
     # кампании всегда такой, категорию задаёт только ручная кнопка.
     category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Весь запрошенный набор семейств (: модалка позволяет выбрать
+    # несколько) — ключи `statistics_categories.key` в порядке пересчёта.
+    # NULL — полный пересчёт. При нескольких семействах `category` выше —
+    # то, которое считается сейчас (или считалось последним).
+    categories: Mapped[list | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     # Заполнено только для triggered_by="test_run" — какая кампания вызвала
     # этот конкретный пересчёт. Без FK — чисто информационная ссылка.
     test_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)

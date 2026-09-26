@@ -4,7 +4,7 @@ Revision ID: f3a1d8c6b4e2
 Revises: e7c2a49f18b6
 Create Date: 2026-09-10 16:00:00.000000
 
-Восьмой домен testing_service (§2.7, §7 плана миграции, волна 9): кэш ответа
+Восьмой домен testing_service (§2.7, §7 плана миграции): кэш ответа
 внешнего `changelog.service` по `build_version`, чтобы changelog-фильтр
 генерации СТП (`services/changelog_service.py`) не бил по сети на каждый
 вызов `/stp/generate`. TTL практически бессрочный (RC не переиздаётся задним

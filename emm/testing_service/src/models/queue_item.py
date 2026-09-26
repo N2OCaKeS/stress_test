@@ -84,6 +84,35 @@ class QueueItem(Base):
     # читается воркером через `/internal/queue/{id}/interrupt-check` и
     # сбрасывается, когда он отчитался о прерывании.
     interrupt_action: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Вердикт. `verdict_source` — откуда взят исход этого
+    # запуска (`zephyr`/`exit_code`, `core.constants.VerdictSource`);
+    # `verdict` — итог (`passed`/`failed`/`unknown`, `QueueVerdict`);
+    # `zephyr_status_raw` — статус тест-кейса в Zephyr как есть, последний
+    # прочитанный. Пока ждём Zephyr (`awaiting_verdict`),
+    # `verdict_wait_started_at` — конец SSH-сессии (от него считается
+    # таймаут), `zephyr_polled_at` — последний опрос.
+    verdict_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    zephyr_status_raw: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    verdict_wait_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    zephyr_polled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verdict_resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Версия профиля запуска, которой запущен item; заполняется на claim.
+    launch_profile_version_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Многоступенчатый тест: индекс исполняемого шага
+    # (с 0; каждый новый цикл подготовки начинает с 0 — после restore стенд
+    # чистый), число шагов на момент последнего перехода (прогресс в UI) и
+    # `correlation_id` операции «настройка без restore» перед шагом: пишется
+    # до вызова server_service, callback сшивается по нему
+    # (`services/queue_steps.py`).
+    current_step_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    step_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stand_setup_correlation_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # Действие многостендового сценария: item принадлежит запуску
+    # сценария, ретраев и продвижения очереди стенда у него нет — дальше
+    # ведёт `services/scenario_queue.py`.
+    scenario_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    scenario_action_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     failed_step: Mapped[str | None] = mapped_column(String(32), nullable=True)
     error: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     # Soft-FK на auth_service identity (`usr_<hex>`/`bot_<hex>`).

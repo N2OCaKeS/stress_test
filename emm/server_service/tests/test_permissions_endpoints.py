@@ -175,7 +175,7 @@ class TestRevoke:
         """`admin_token` department_admin → revoke в свой scope.
 
         Сначала PUT (создаём dep_a-row), потом DELETE (удаляем его). Раньше
-        тут был revoke сидированного system-wide grant'а — после §7-8 фикса
+        тут был revoke сидированного system-wide grant'а — после фикса
         non-account_admin'ы не пишут system-wide, поэтому тест проверяет
         per-dept lifecycle, что и есть нормальный use-case department_admin'а.
         """
@@ -219,7 +219,7 @@ class TestDepartmentAdminFullCycle:
     """`admin_token` (department_admin + service-role `admin` в dep_a) может
     делать full grant/revoke цикл внутри своего департамента.
 
-    Раньше тут был ``TestAccountAdminBypass`` — после §7-8 фикса account_admin
+    Раньше тут был ``TestAccountAdminBypass`` — после фикса account_admin
     блокируется guard middleware'ом ДО endpoint'а, см.
     ``tests/integration/test_platform_admin_block.py``.
     """

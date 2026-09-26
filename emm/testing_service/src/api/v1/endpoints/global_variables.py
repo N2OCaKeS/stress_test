@@ -19,6 +19,7 @@ from src.schemas.global_variable import (
     ChoicesResponse,
     GlobalVariableCreate,
     GlobalVariableResponse,
+    GlobalVariableSourceOptions,
     GlobalVariableUpdate,
 )
 from src.services import global_variable as svc
@@ -75,6 +76,23 @@ async def get_global_variable_by_code(
     """Get переменной по коду. Любой аутентифицированный актор."""
     obj = await svc.get_global_variable_by_code(db, code)
     return GlobalVariableResponse.model_validate(obj)
+
+
+@router.get(
+    "/source-options",
+    response_model=GlobalVariableSourceOptions,
+    summary="Допустимые значения source_ref",
+    description=(
+        "Для формы переменной: все `source` и множества полей, на которые может "
+        "сослаться `source_ref` каждого источника (поля теста, стенда, колонки "
+        "интеграций отдела с признаком credential, поля версии ОС, учётки, папки "
+        "Zephyr, условия шаблона). Те же множества проверяются при сохранении."
+    ),
+    responses={401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."}},
+)
+async def get_source_options(identity: AuthenticatedIdentity) -> GlobalVariableSourceOptions:
+    """Справочник форм `source_ref`. Любой аутентифицированный актор."""
+    return GlobalVariableSourceOptions.model_validate(svc.source_options())
 
 
 @router.post(

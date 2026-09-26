@@ -4,7 +4,7 @@ Revision ID: e7c2a49f18b6
 Revises: a3f6c8e91d47
 Create Date: 2026-09-10 15:00:00.000000
 
-Седьмой домен testing_service (§2.5, §6, §7 плана миграции, волна 8): СТП
+Седьмой домен testing_service (§2.5, §6, §7 плана миграции): СТП
 (состав тестового прогона) + интеграция с Jira Zephyr Scale ATM + Confluence
 + changelog-фильтрация.
 

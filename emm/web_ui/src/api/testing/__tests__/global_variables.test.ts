@@ -22,6 +22,7 @@ import {
   getGlobalVariable,
   getGlobalVariableByCode,
   getGlobalVariableChoices,
+  getGlobalVariableSourceOptions,
   listGlobalVariables,
   updateGlobalVariable,
 } from "@/api/testing/global_variables";
@@ -81,5 +82,10 @@ describe("global_variables wrappers", () => {
   it("delete — DELETE по id", async () => {
     await deleteGlobalVariable("gvar_1");
     expect(apiDeleteMock).toHaveBeenCalledWith("/testing/v1/global-variables/gvar_1");
+  });
+
+  it("source-options — GET справочника форм source_ref", async () => {
+    await getGlobalVariableSourceOptions();
+    expect(apiGetMock).toHaveBeenCalledWith("/testing/v1/global-variables/source-options");
   });
 });

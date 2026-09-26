@@ -31,6 +31,15 @@ async def list_all(
     return list((await db.execute(stmt)).scalars())
 
 
+async def list_every(db: AsyncSession) -> list[GlobalVariable]:
+    """Весь каталог без пагинации — для резолва шаблонов и проверки их графа.
+
+    Каталог — десятки строк; резолвер грузит его один раз на claim.
+    """
+    stmt = select(GlobalVariable).order_by(GlobalVariable.code.asc())
+    return list((await db.execute(stmt)).scalars())
+
+
 async def count_all(db: AsyncSession) -> int:
     """COUNT всего каталога — для total в pagination."""
     stmt = select(func.count(GlobalVariable.id))

@@ -122,7 +122,7 @@ class Settings(BaseSettings):
     )
 
     # ── Server service (internal-вызовы: prepare-for-test, acquire/release, ─────
-    # test-credentials — волна 5 плана миграции; поле заводится сразу).
+    # test-credentials; поле заводится сразу).
 
     server_service_url: str = Field(
         default="",
@@ -449,6 +449,34 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── Публичный compat `/rest/api/*` ──────────────────────────
+
+    # Прокси, которым доверяем `X-Forwarded-For` при определении IP источника
+    # compat-запроса (ingress/traefik pod-CIDR в k8s). Пусто — IP берётся из
+    # `request.client.host` как есть (docker-compose: uvicorn уже разобрал
+    # заголовок, nginx перезаписывает его адресом клиента). Тот же env, что у
+    # auth/server_service (`k8s/*.yaml`, `TRUSTED_PROXY_IPS`).
+    trusted_proxy_ips: Annotated[list[str], NoDecode] = Field(
+        default_factory=list,
+        alias="TRUSTED_PROXY_IPS",
+        description="Доверенные прокси для X-Forwarded-For: JSON-список или через запятую, IP или CIDR.",
+    )
+    legacy_compat_rate_limit: str = Field(
+        default="120/minute",
+        alias="LEGACY_COMPAT_RATE_LIMIT",
+        description="Лимит запросов к `/rest/api/*` на один IP источника (slowapi syntax).",
+    )
+    legacy_compat_stand_ip_cache_seconds: float = Field(
+        default=60.0,
+        ge=0.0,
+        alias="LEGACY_COMPAT_STAND_IP_CACHE_SECONDS",
+        description=(
+            "Сколько секунд держать карту «IP → стенд» для выбора отдела в "
+            "`/rest/api/get-*-url`. IP стендов живут в server_service, карта "
+            "собирается запросами connection-info по всем стендам."
+        ),
+    )
+
     worker_log_level: str = Field(default="INFO", alias="WORKER_LOG_LEVEL")
 
     # ── Логи прогонов: ротация (§8.5 плана миграции) ─────────────────────────
@@ -474,6 +502,21 @@ class Settings(BaseSettings):
             "своего брокера/scheduler'а, поэтому это обычный "
             "`asyncio.create_task`, не taskiq-задача; суточной точности "
             "достаточно (план §8.5 явно не требует ежеминутной)."
+        ),
+    )
+
+    # ── Вердикт из Zephyr ─────────────────────────────────────────────
+
+    verdict_poll_loop_interval_seconds: float = Field(
+        default=15.0,
+        ge=1.0,
+        alias="VERDICT_POLL_LOOP_INTERVAL_SECONDS",
+        description=(
+            "Период фонового цикла, который проверяет item'ы в "
+            "`awaiting_verdict` (см. `main.py::_verdict_poll_loop`). Сам "
+            "Zephyr опрашивается реже — раз в "
+            "`department_test_settings.zephyr_verdict_poll_seconds` на item; "
+            "этот период лишь ограничивает точность того расписания."
         ),
     )
 
@@ -540,6 +583,27 @@ class Settings(BaseSettings):
     )
 
     # ── Validators ────────────────────────────────────────────────────────────
+
+    @field_validator("trusted_proxy_ips", mode="before")
+    @classmethod
+    def _parse_trusted_proxy_ips(cls, v):
+        """JSON-список (`'["10.42.0.0/16"]'`, как в k8s ConfigMap) или через запятую."""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            text = v.strip()
+            if not text:
+                return []
+            if text.startswith("["):
+                try:
+                    parsed = json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"TRUSTED_PROXY_IPS: invalid JSON ({exc})") from exc
+                if not isinstance(parsed, list):
+                    raise ValueError("TRUSTED_PROXY_IPS: JSON must be a list")
+                return [str(item).strip() for item in parsed if str(item).strip()]
+            return [item.strip() for item in text.split(",") if item.strip()]
+        return v
 
     @field_validator("service_api_keys", mode="before")
     @classmethod

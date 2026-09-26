@@ -202,3 +202,8 @@ def prepare_for_test_request_id() -> str:
 def server_test_credentials_id() -> str:
     """`stc_<uuid>` — для строк server_test_credentials (учётка исполнения теста)."""
     return _new_id("stc_")
+
+
+def stand_setup_request_id() -> str:
+    """`ssr_<uuid>` — id запроса «настройка стенда без restore»."""
+    return _new_id("ssr_")

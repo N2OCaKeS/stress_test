@@ -48,6 +48,8 @@ from tests.test_queue import (
     # именам в namespace ЭТОГО модуля, импорт обязателен, даже без прямого use.
 )
 
+from tests.test_zephyr_folder import rc_release_variable, zephyr_folder_api  # noqa: F401,E402
+
 STP_BASE = "/api/testing/v1/stp"
 DIS_BASE = "/api/testing/v1/department-integration-settings"
 
@@ -249,52 +251,8 @@ class TestChangelogFilter:
         assert changelog_service.is_configured() is False
 
 
-# ── Папка Zephyr: глубина release ───────────────────────────────────────────
-
-
-class TestDeriveRelease:
-    """Папка рана — `/stress_test/{release}/{rc}`; глубина `release` должна
-    совпадать с легаси (`liballta.py::TestrunManager.create_test_run`), иначе
-    новые раны садятся в другую ветку дерева папок Jira, чем легаси-раны того
-    же РЦ."""
-
-    def test_ordinary_four_segment_release_keeps_three(self):
-        assert stp_svc._derive_release("1.8.5.46") == "1.8.5"
-
-    def test_folder_matches_legacy_example(self):
-        rc = "1.8.5.46"
-        assert f"/stress_test/{stp_svc._derive_release(rc)}/{rc}" == "/stress_test/1.8.5/1.8.5.46"
-
-    def test_uu_hotfix_keeps_five_segments(self):
-        assert stp_svc._derive_release("1.7.3.UU.1.2", is_urgent_update=True) == "1.7.3.UU.1"
-
-    def test_uu_marker_case_insensitive(self):
-        """Владелец может ввести версию как `uu` — сравнение не должно от этого ломаться."""
-        assert stp_svc._derive_release("1.7.3.uu.1.2", is_urgent_update=True) == "1.7.3.uu.1"
-
-    def test_uu_shape_without_flag_is_not_hotfix(self):
-        """`is_urgent_update=False` — структурные ворота: 6-сегментная строка,
-        случайно похожая на хотфикс, не должна сворачиваться в укороченный
-        формат, если сама OS-версия хотфиксом не помечена."""
-        assert stp_svc._derive_release("1.7.3.UU.1.2", is_urgent_update=False) == "1.7.3"
-
-    def test_six_segments_without_uu_marker_is_ordinary(self):
-        assert stp_svc._derive_release("1.8.5.46.7.8", is_urgent_update=True) == "1.8.5"
-
-    def test_short_format_falls_back_without_raising(self):
-        assert stp_svc._derive_release("1.8") == "1.8"
-
-    def test_pull_from_life_copy_agrees(self):
-        """Дубль в `stp_pull_from_life` обязан давать то же самое — иначе
-        поиск ходит не в ту папку, в которую пишет генерация."""
-        from src.services import stp_pull_from_life as pull_svc
-
-        for rc in ("1.8.5.46", "1.7.3.UU.1.2", "1.8.5.46.7.8", "1.8", "1.8.5"):
-            for urgent in (False, True):
-                assert (
-                    stp_svc._derive_release(rc, is_urgent_update=urgent)
-                    == pull_svc._derive_release(rc, is_urgent_update=urgent)
-                ), (rc, urgent)
+# Папка Zephyr (шаблон пути, поиск/создание, ручная правка) — `test_zephyr_folder.py`
+#. Глубина `release` (3 сегмента, UU — 5) — переменная `RC_RELEASE`.
 
 
 # ── Zephyr client — retry без environment на 400 ────────────────────────────
@@ -592,9 +550,16 @@ def mock_os_version_catalog(monkeypatch):
     return names
 
 
+@pytest.fixture(autouse=True)
+def _tp06_zephyr_folder_env(rc_release_variable, zephyr_folder_api):  # noqa: F811
+    """Папка по шаблону по умолчанию (`RC_RELEASE`) и замоканное дерево папок
+    Zephyr — генерация СТП ищет/создаёт папку до заведения прогонов."""
+    return zephyr_folder_api
+
+
 @pytest.fixture
 def mock_zephyr(monkeypatch):
-    calls = {"create": [], "resolve_user": [], "add": []}
+    calls = {"create": [], "resolve_user": [], "add": [], "find_folder": [], "create_folder": []}
 
     async def fake_create_test_run(*, base_url, bearer_token, folder, name, items, project_key="BT"):
         calls["create"].append({
@@ -617,7 +582,19 @@ def mock_zephyr(monkeypatch):
 
     monkeypatch.setattr(zc, "create_test_run", fake_create_test_run)
     monkeypatch.setattr(zc, "resolve_user_key", fake_resolve_user_key)
+    # Папка прогонов: не найдена по пути → создаётся с id `FT-<n>`.
+    # Без этого генерация СТП ходила бы в сеть за деревом папок.
+    async def fake_find_test_run_folder_id(*, base_url, bearer_token, folder, project_key="BT"):
+        calls["find_folder"].append(folder)
+        return None
+
+    async def fake_create_test_run_folder(*, base_url, bearer_token, folder, project_key="BT"):
+        calls["create_folder"].append(folder)
+        return f"FT-{len(calls['create_folder'])}"
+
     monkeypatch.setattr(zc, "add_test_cases_to_run", fake_add_test_cases_to_run)
+    monkeypatch.setattr(zc, "find_test_run_folder_id", fake_find_test_run_folder_id)
+    monkeypatch.setattr(zc, "create_test_run_folder", fake_create_test_run_folder)
     return calls
 
 
@@ -873,6 +850,12 @@ class TestStpEventDrivenStatus:
         mock_server_service()
         stand_id, _ = await _create_stand(client, admin_token, department_id=dept_a)
         test_id, code = await _create_test_def_for_dept(client, admin_token, stand_id, dept_a)
+        # Сервис сам пишет статус в Zephyr только для `verdict_source=exit_code`;
+        # при `zephyr` статус там выставляет скрипт.
+        patched = await client.patch(
+            f"{TESTS_BASE}/{test_id}", headers=_hdr(admin_token), json={"verdict_source": "exit_code"},
+        )
+        assert patched.status_code == 200, patched.text
         case_id = await _seed_stp_test_case(code, zephyr_id="BT-T1")
         async with AsyncSessionLocal() as db:
             run = await stp_test_run_repo.create(db, {

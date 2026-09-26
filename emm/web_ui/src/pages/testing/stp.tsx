@@ -19,8 +19,8 @@
  * Zephyr/Confluence — независимые системы (§6.3): emm обновляет статус
  * событийно и создаёт новый тест-кейс сразу в Zephyr одним потоком, но
  * ссылку на страницу конкретного РЦ на Confluence отсюда не строим — base
- * URL живёт per-department в `department_integration_settings`, вне
- * зоны этой волны (см. отчёт).
+ * URL живёт per-department в `department_integration_settings`, построение
+ * прямой ссылки пока не реализовано.
  */
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -53,6 +53,8 @@ import { listNamedTestStands, standName } from "@/api/testing/standCatalogue";
 import type { TestStand } from "@/api/testing/types";
 import { listTestDefinitions } from "@/api/testing/testDefinitions";
 import type { TestDefinition } from "@/api/testing/types";
+import { StatisticsRecalcButton } from "./StatisticsRecalcModal";
+import { ZephyrFolderLine } from "./ZephyrFolderLine";
 import {
   addTestToStp,
   createStpTestCase,
@@ -306,6 +308,7 @@ export function StpMiddlePanel({ state }: { state: StpVersionState }) {
           <RefreshCcw className="w-3.5 h-3.5" />
           Обновить список версий
         </Button>
+        <StatisticsRecalcButton className="mt-2" />
       </div>
     </aside>
   );
@@ -512,6 +515,13 @@ export function StpWorkzone({ state }: { state: StpVersionState }) {
                 <span className="text-dim italic">ещё не сгенерирован</span>
               )}
             </div>
+          )}
+          {version && !mockMode && (
+            <ZephyrFolderLine
+              osVersionId={version.id}
+              departmentId={deptFilter || undefined}
+              reloadKey={composition?.revision}
+            />
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -1110,6 +1120,10 @@ function StpGenerateModal({
         toast.success(`${SCOPE_META[scope].label}: прогонов в составе — ${res.test_runs.length}`);
       } else {
         toast.warn(`${SCOPE_META[scope].label}: ${res.test_runs.length} прогонов, ${res.errors.length} стендов с ошибкой`);
+      }
+      // Без id папки у тестов не резолвится `-fti` — предупредить сразу.
+      if (res.zephyr_folder?.error && !res.zephyr_folder.folder_tree_id) {
+        toast.warn(`Папка Zephyr не найдена: ${res.zephyr_folder.error.message}`);
       }
       onDone();
     } catch (e) {

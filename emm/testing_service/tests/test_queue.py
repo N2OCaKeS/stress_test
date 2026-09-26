@@ -1,7 +1,7 @@
 """Тесты очереди (§2.4, §5, §5.5 плана миграции).
 
-`enqueue()` вызывается напрямую из сервисного слоя (нет публичного HTTP-входа
-в этой волне — см. отчёт волны), остальное — через internal-эндпоинты
+`enqueue()` вызывается напрямую из сервисного слоя (нет публичного HTTP-входа),
+остальное — через internal-эндпоинты
 (callback prepare-for-test, claim/completed для testing_worker).
 
 `server_client`-вызовы в server_service мокаются тем же MockTransport-приёмом,
@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import uuid
 from types import SimpleNamespace
 
@@ -19,7 +20,7 @@ import httpx
 import pytest
 
 from src.core.constants import QueueItemState
-from src.core.exceptions import AuthorizationError, ConflictError
+from src.core.exceptions import AuthorizationError, ConflictError, NotFoundError
 from src.dependencies.auth import Identity
 from src.db.session import AsyncSessionLocal
 from src.repositories import department_integration_settings as dis_repo
@@ -39,6 +40,20 @@ QUEUE_BASE = "/internal/queue"
 
 SERVER_SECRET = "test-server-service-callback-secret"
 WORKER_SECRET = "test-testing-worker-secret"
+
+
+# `launch_context["RC"]` — id карточки версии ОС, как его кладут `test_run.py`/
+# `public_queue.py`, а НЕ имя версии: иначе расхождение «id вместо имени» в
+# команде (`-tcv`, `$4` у `starter.sh`) тестам не видно. Имя приходит
+# из `server_client.resolve_os_version_info`, который `mock_server_service`
+# подменяет этим каталогом.
+OS_VERSION_ID = "osv_1f85a0c3"
+OS_VERSION_NAME = "1.8.5"
+OS_VERSIONS: dict[str, server_client.OsVersionInfo] = {
+    OS_VERSION_ID: server_client.OsVersionInfo(name=OS_VERSION_NAME, is_urgent_update=False, rc_number="RC3"),
+    "osv_5e46b2d1": server_client.OsVersionInfo(name="1.8.5.46", is_urgent_update=False, rc_number="RC5"),
+    "osv_8a16c9e0": server_client.OsVersionInfo(name="1.8.1.6", is_urgent_update=False, rc_number="RC6"),
+}
 
 
 class _StubSettings:
@@ -100,20 +115,48 @@ def mock_server_service(monkeypatch, recorded_calls):
         # его с ответом `/acs-snapshots` через транспорт нечем). Патчим сам
         # `list_acs_snapshot_versions`, а не HTTP-ручку: `overrides["acs_
         # snapshots"]` (список снимков как их отдаёт server_service)
-        # переопределяет дефолт для тестов самой ACS-проверки.
+        # переопределяет дефолт для тестов самой ACS-проверки — тогда вызов
+        # идёт в настоящий `list_acs_snapshot_versions` поверх транспорта ниже
+        # (ручка `/acs-snapshots`, `overrides["acs_hostname"]` — hostname
+        # стенда в ответе, по умолчанию `host`).
         class _AnyVersion(set):
             """`x in this` всегда `True` — «снимок для любой РЦ есть»."""
 
             def __contains__(self, item: object) -> bool:
                 return True
 
+        real_list_acs_snapshot_versions = server_client.list_acs_snapshot_versions
+
         async def _fake_list_acs_snapshot_versions(server_id: str, *, refresh: bool = False):
-            acs_override = overrides.get("acs_snapshots")
-            if acs_override is not None:
-                return {item["version_name"] for item in acs_override if item.get("version_name")}
-            return _AnyVersion()
+            if overrides.get("acs_snapshots") is not None:
+                return await real_list_acs_snapshot_versions(server_id, refresh=True)
+            return server_client.AcsSnapshotVersions(hostname=None, versions=_AnyVersion())
 
         monkeypatch.setattr(server_client, "list_acs_snapshot_versions", _fake_list_acs_snapshot_versions)
+
+        # Карточка версии ОС: `overrides["os_version_name"]` подменяет имя
+        # (`None` — версии нет в каталоге), иначе — каталог `OS_VERSIONS`.
+        # Id не из каталога — настоящий `resolve_os_version_info` поверх
+        # HTTP-ручки ниже (имя = id) или поверх `get_os_version`, если тест
+        # подменил его сам (`mock_os_version_catalog` в `test_run_summary.py`):
+        # тесты, которые кладут в `RC` готовое имя (`1.8.5.46`), работают как раньше.
+        real_resolve_os_version_info = server_client.resolve_os_version_info
+
+        async def _fake_resolve_os_version_info(os_version_id: str) -> server_client.OsVersionInfo:
+            if "os_version_name" in overrides:
+                name = overrides["os_version_name"]
+                info = None if name is None else server_client.OsVersionInfo(
+                    name=name, is_urgent_update=False, rc_number=None,
+                )
+            else:
+                info = OS_VERSIONS.get(os_version_id)
+                if info is None:
+                    return await real_resolve_os_version_info(os_version_id)
+            if info is None:
+                raise NotFoundError(error_code="OS_VERSION_NOT_FOUND", message=f"no os_version {os_version_id}")
+            return info
+
+        monkeypatch.setattr(server_client, "resolve_os_version_info", _fake_resolve_os_version_info)
 
         def _preflight_busy_state() -> str | None:
             """Заявленное `batch_status` в его общей (не per-id) форме, если задано."""
@@ -185,6 +228,11 @@ def mock_server_service(monkeypatch, recorded_calls):
                 return httpx.Response(status, json={
                     "prepare_request_id": f"prep_{uuid.uuid4().hex[:10]}", "status": "in_progress",
                 })
+            if request.method == "GET" and path.endswith("/acs-snapshots"):
+                return httpx.Response(200, json={
+                    "hostname": overrides.get("acs_hostname", "host"),
+                    "snapshots": overrides.get("acs_snapshots") or [],
+                })
             if request.method == "GET" and path.endswith("/connection-info"):
                 status = overrides.get("connection", 200)
                 return httpx.Response(status, json={"server_id": "srv_x", "host": host})
@@ -230,6 +278,16 @@ def configure_internal_keys(monkeypatch):
     _get_settings.cache_clear()  # type: ignore[attr-defined]
     yield
     _get_settings.cache_clear()  # type: ignore[attr-defined]
+
+
+def claim_file(payload: dict, name_prefix: str) -> dict:
+    """Файл задания воркеру (C3) по началу имени файла."""
+    return next(f for f in payload["files"] if f["path"].rsplit("/", 1)[1].startswith(name_prefix))
+
+
+def claim_command(payload: dict) -> list[str]:
+    """Команда запуска задания как argv."""
+    return shlex.split(payload["launch_command"])
 
 
 def _server_hdr(identity: str, secret: str) -> dict[str, str]:
@@ -298,7 +356,22 @@ def _identity(department_id="dep_a", user_id="usr_queue_test") -> Identity:
     )
 
 
-LAUNCH_CTX = {"RC": "1.8.5", "KERNEL": "6.1.0", "MODE": "orel"}
+LAUNCH_CTX = {"RC": OS_VERSION_ID, "KERNEL": "6.1.0", "MODE": "orel"}
+
+
+async def _seed_zephyr_folder(department_id: str, os_version_id: str, folder_tree_id: str) -> None:
+    """Запись `zephyr_folders` — источник `FOLDER_TREE_ID` (`-fti`)."""
+    from src.repositories import zephyr_folder as zephyr_folder_repo
+
+    async with AsyncSessionLocal() as db:
+        if await zephyr_folder_repo.get_by_department_and_os_version(db, department_id, os_version_id):
+            return
+        await zephyr_folder_repo.create(db, {
+            "id": f"zfold_{uuid.uuid4().hex[:8]}", "department_id": department_id,
+            "os_version_id": os_version_id, "folder_path": "/stress_test/test",
+            "folder_tree_id": folder_tree_id,
+        })
+        await db.commit()
 
 
 async def _get_item(item_id: str):
@@ -313,7 +386,7 @@ def mock_git_token(monkeypatch):
     `claim_next` собирает значение заголовка `Authorization` для `starter.sh` из
     `department_integration_settings.git_credential_id` (фолбэк —
     `bitbucket_credential_id`); без него item проваливается ещё до того, как
-    воркер увидит команду (см. `services/queue.py::_resolve_git_token`).
+    воркер увидит команду (см. `services/queue.py::resolve_git_token`).
     """
     async def fake_reveal(cred_id: str):
         return ("git-bot", "git-token-value")
@@ -407,7 +480,7 @@ class TestEnqueue:
 
         async with AsyncSessionLocal() as db:
             with pytest.raises(DomainValidationError):
-                await queue_svc.enqueue(db, _identity(), test_id, launch_context={"RC": "1.8.5"})
+                await queue_svc.enqueue(db, _identity(), test_id, launch_context={"RC": OS_VERSION_ID})
 
     async def test_debug_mode_requires_stand_id(self, client, admin_token, mock_server_service):
         mock_server_service()
@@ -595,7 +668,10 @@ class TestAcsSnapshotPreflight:
                 await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
 
         assert excinfo.value.error_code == "ACS_SNAPSHOT_NOT_FOUND"
-        assert excinfo.value.details["version_name"] == LAUNCH_CTX["RC"]
+        assert excinfo.value.details["version_name"] == OS_VERSION_NAME
+        # в ошибке — полное искомое имя снимка `{hostname}-{version}`.
+        assert excinfo.value.details["snapshot_name"] == f"host-{OS_VERSION_NAME}"
+        assert f"host-{OS_VERSION_NAME}" in excinfo.value.message
         # Отказ синхронный — до всякого похода в prepare-пайплайн.
         assert not any(p.endswith("/acquire-for-service") for _, p in recorded_calls)
         assert not any(p.endswith("/prepare-for-test") for _, p in recorded_calls)
@@ -623,7 +699,7 @@ class TestAcsSnapshotPreflight:
         self, client, admin_token, mock_server_service,
     ):
         mock_server_service(overrides={
-            "acs_snapshots": [{"name": f"host-{LAUNCH_CTX['RC']}", "version_name": LAUNCH_CTX["RC"]}],
+            "acs_snapshots": [{"name": f"host-{OS_VERSION_NAME}", "version_name": OS_VERSION_NAME}],
         })
         stand_id, _ = await _create_stand(client, admin_token)
         test_id = await _create_test_def(client, admin_token, stand_id)
@@ -632,6 +708,52 @@ class TestAcsSnapshotPreflight:
             item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
 
         assert item.state == QueueItemState.PREPARING
+
+    async def test_compact_snapshot_name_matches_normalized_version(
+        self, client, admin_token, mock_server_service,
+    ):
+        """снимок `LowServer-1710rc52` — это версия каталога `1.7.10.52`
+        (server_service отдаёт `normalized_version`), постановка проходит."""
+        mock_server_service(overrides={
+            "os_version_name": "1.7.10.52",
+            "acs_hostname": "LowServer",
+            "acs_snapshots": [{
+                "name": "LowServer-1710rc52", "version_name": "1710rc52",
+                "normalized_version": "1.7.10.52",
+            }],
+        })
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert item.state == QueueItemState.PREPARING
+
+    async def test_other_version_snapshot_rejects_with_full_name(
+        self, client, admin_token, mock_server_service,
+    ):
+        """Снимок есть, но другой РЦ — 422 с полным искомым именем снимка."""
+        from src.core.exceptions import DomainValidationError
+
+        mock_server_service(overrides={
+            "os_version_name": "1.7.10.52",
+            "acs_hostname": "LowServer",
+            "acs_snapshots": [{
+                "name": "LowServer-1710rc64", "version_name": "1710rc64",
+                "normalized_version": "1.7.10.64",
+            }],
+        })
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        with pytest.raises(DomainValidationError) as excinfo:
+            async with AsyncSessionLocal() as db:
+                await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+
+        assert excinfo.value.error_code == "ACS_SNAPSHOT_NOT_FOUND"
+        assert excinfo.value.details["snapshot_name"] == "LowServer-1.7.10.52"
+        assert "LowServer-1.7.10.52" in excinfo.value.message
 
     async def test_channel_unavailable_fails_open(
         self, client, admin_token, mock_server_service,
@@ -1401,17 +1523,34 @@ class TestClaim:
         assert payload["test_username"] == "u"
         assert "test_password" not in payload
         git_token_filename = f"git_token_{item.id}.conf"
-        assert payload["command"] == [
+        # `$4` — имя версии ОС (`RC_NAME`), а не id карточки из `launch_context["RC"]`.
+        assert claim_command(payload) == [
             "sudo", "bash", "/home/u/starter.sh", "", git_token_filename,
-            f"dates_{item.id}.conf", "1.8.5", "",
+            f"dates_{item.id}.conf", OS_VERSION_NAME, "",
         ]
-        # Секрета в argv больше нет — command_masked с ним совпадает.
-        assert payload["command_masked"] == payload["command"]
-        assert payload["git_token_content"] == "git-token-value"
-        assert payload["git_token_filename"] == git_token_filename
-        assert payload["dates_content"] == "--run s3cr3t"
-        assert payload["dates_content_masked"] == "--run ***"
-        assert payload["dates_filename"] == f"dates_{item.id}.conf"
+        assert OS_VERSION_ID not in payload["launch_command"]
+        # Секрета в argv больше нет — маскированная команда с ней совпадает.
+        assert payload["launch_command_masked"] == payload["launch_command"]
+        token_file = claim_file(payload, "git_token_")
+        assert token_file["path"] == f"/home/u/{git_token_filename}"
+        assert token_file["content"] == "git-token-value"
+        assert token_file["sensitive"] is True and token_file["mode"] == "0600"
+        dates_file = claim_file(payload, "dates_")
+        assert dates_file["path"] == f"/home/u/dates_{item.id}.conf"
+        assert dates_file["content"] == "--run s3cr3t"
+        assert dates_file["sensitive"] is True
+        # Секреты вырезаются воркером из error и живого лога.
+        assert "s3cr3t" in payload["redact_values"]
+        assert "git-token-value" in payload["redact_values"]
+        # Файлы уходят в порядке: скрипт, токен, dates, testenv-маркер `off`.
+        assert [f["path"].rsplit("/", 1)[1] for f in payload["files"]] == [
+            "starter.sh", git_token_filename, f"dates_{item.id}.conf", "testenv_marker.conf",
+        ]
+        assert claim_file(payload, "testenv_")["content"] == "off"
+        assert payload["use_pty"] is True
+        assert "[/]home/u/starter\\.sh" in payload["stop_command"]
+        assert payload["launch_profile_version_id"] == "lpv_default_2"
+        assert (await _get_item(item.id)).launch_profile_version_id == "lpv_default_2"
         assert payload["command_timeout_seconds"] is None
         assert payload["debug_mode"] is False
         assert payload["is_retry"] is False
@@ -1487,7 +1626,9 @@ class TestClaim:
         resp = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
         assert resp.status_code == 200, resp.text
         payload = resp.json()["item"]
-        assert payload["dates_content"] == f"--run Тест очереди_1.8.5_orel_6.1.0_{stand_id}"
+        # Значение с пробелом приходит экранированным: `run.py` подставляет
+        # dates.conf через shell=True (D4, dates_quoting=shell по умолчанию).
+        assert claim_file(payload, "dates_")["content"] == f"--run 'Тест очереди_1.8.5_orel_6.1.0_{stand_id}'"
 
     async def test_claim_passes_through_prepare_only_and_starter_suffix(
         self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
@@ -1515,7 +1656,10 @@ class TestClaim:
         assert resp.status_code == 200, resp.text
         payload = resp.json()["item"]
         assert payload["prepare_only"] is True
-        assert payload["starter_suffix"] == "kernel"
+        assert claim_command(payload)[-1] == "kernel"
+        # T2: одиночный запуск с testenv — маркер `on` и файл с командой.
+        assert claim_file(payload, "testenv_")["content"] == "on"
+        assert claim_file(payload, "command.txt")["content"] == payload["launch_command_masked"] + "\n"
 
     async def test_claim_defaults_starter_suffix_to_empty_string(
         self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
@@ -1541,7 +1685,72 @@ class TestClaim:
         assert resp.status_code == 200, resp.text
         payload = resp.json()["item"]
         assert payload["prepare_only"] is False
-        assert payload["starter_suffix"] == ""
+        assert claim_command(payload)[-1] == ""
+        assert claim_file(payload, "testenv_")["content"] == "off"
+        assert not any(f["path"].endswith("command.txt") for f in payload["files"])
+
+    async def _enqueue_ready(self, client, admin_token, test_id):
+        async with AsyncSessionLocal() as db:
+            item = await queue_svc.enqueue(db, _identity(), test_id, launch_context=LAUNCH_CTX)
+        await client.post(
+            f"{CALLBACK_BASE}/{item.prepare_request_id}/completed",
+            headers=_server_hdr("server_service", SERVER_SECRET),
+            json={
+                "correlation_id": item.id, "succeeded": True,
+                "test_username": "u", "test_password": "s3cr3t",
+                "test_ssh_private_key": "-----KEY-----",
+            },
+        )
+        return item
+
+    async def test_claim_carries_department_preflight_and_picks_up_changes(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+    ):
+        """preflight из настроек отдела стенда, правка действует на следующий claim."""
+        mock_server_service(host="10.9.9.9")
+        await mock_git_token()
+        stand_id, _ = await _create_stand(client, admin_token)
+        test_id = await _create_test_def(client, admin_token, stand_id)
+
+        await self._enqueue_ready(client, admin_token, test_id)
+        resp = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+        assert resp.status_code == 200, resp.text
+        first = resp.json()["item"]["preflight"]
+        # Строки настроек нет — легаси-дефолты: строго 200, 180 с, 120 минут.
+        assert first["enabled"] is True
+        assert [probe["url"] for probe in first["http"]] == [
+            "https://jira.astralinux.ru", "https://life.astralinux.ru",
+            "https://git.astralinux.ru", "https://releases.devos.astralinux.ru",
+        ]
+        assert {probe["ok_status"] for probe in first["http"]} == {"200"}
+        assert first["poll_interval_seconds"] == 180
+        assert first["timeout_seconds"] == 7200
+
+        # Первый item ещё идёт — завершаем его, чтобы стенд выдал следующий.
+        done = await client.post(
+            f"{QUEUE_BASE}/{resp.json()['item']['queue_item_id']}/completed",
+            headers=_server_hdr("testing_worker", WORKER_SECRET),
+            json={"succeeded": True, "exit_code": 0},
+        )
+        assert done.status_code == 200, done.text
+
+        changed = {
+            "enabled": True,
+            "http": [{"url": "https://mirror.example.test", "ok_status": "lt500"}],
+            "dns_hosts": [], "dns_port": 53,
+            "poll_interval_seconds": 15, "timeout_seconds": 60,
+        }
+        put = await client.put(
+            f"/api/testing/v1/department-test-settings/dep_a", headers=_hdr(admin_token),
+            json={"preflight": changed},
+        )
+        assert put.status_code == 200, put.text
+
+        await self._enqueue_ready(client, admin_token, test_id)
+        resp2 = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+        assert resp2.status_code == 200, resp2.text
+        assert resp2.json()["item"] is not None
+        assert resp2.json()["item"]["preflight"] == {**changed, "probe_timeout_seconds": 15}
 
 
 class TestGitCredentialResolution:
@@ -1592,9 +1801,10 @@ class TestGitCredentialResolution:
         # Заголовок берётся из своей записи, а не из bitbucket-пары.
         assert seen == ["cred_git_header"]
         # В argv токена больше нет — только имя файла, куда его положат по SFTP.
-        assert payload["command"][4] == payload["git_token_filename"]
-        assert payload["command_masked"][4] == payload["git_token_filename"]
-        assert payload["git_token_content"] == "Bearer PAT123"
+        token_file = claim_file(payload, "git_token_")
+        assert claim_command(payload)[4] == token_file["path"].rsplit("/", 1)[1]
+        assert token_file["content"] == "Bearer PAT123"
+        assert "Bearer PAT123" not in payload["launch_command_masked"]
 
     async def test_falls_back_to_bitbucket_credential(
         self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token, monkeypatch,
@@ -1613,8 +1823,9 @@ class TestGitCredentialResolution:
             git_credential_id=None, bitbucket_credential_id="cred_bitbucket_basic",
         )
         assert seen == ["cred_bitbucket_basic"]
-        assert payload["command"][4] == payload["git_token_filename"]
-        assert payload["git_token_content"] == "legacy-token"
+        token_file = claim_file(payload, "git_token_")
+        assert claim_command(payload)[4] == token_file["path"].rsplit("/", 1)[1]
+        assert token_file["content"] == "legacy-token"
 
     async def test_neither_configured_fails_item(
         self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
@@ -1655,6 +1866,7 @@ class TestImportedCatalogNormalLaunch:
 
     async def test_reaches_worker_with_legacy_shaped_command(
         self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+        monkeypatch,
     ):
         from pathlib import Path
 
@@ -1665,7 +1877,21 @@ class TestImportedCatalogNormalLaunch:
         catalog = Path(__file__).resolve().parents[1] / "scripts" / "import_catalog.allta.yaml"
 
         mock_server_service(host="10.9.9.9")
-        await mock_git_token()
+        # Учётные данные конечного скрипта — из интеграций отдела стенда (D2).
+        await mock_git_token(
+            git_credential_id="cred_git_header", credential_id="cred_jira",
+            confluence_credential_id="cred_conf", stp_matrix_confluence_space="DEVQA",
+        )
+        creds = {
+            "cred_git_header": ("git-bot", "git-token-value"),
+            "cred_jira": ("jira-bot", "jira basic auth"),
+            "cred_conf": ("conf-bot", "conf-token"),
+        }
+
+        async def fake_reveal(cred_id: str):
+            return creds[cred_id]
+
+        monkeypatch.setattr(secret_client, "reveal_credential", fake_reveal)
         server_id = f"srv_{uuid.uuid4().hex[:10]}"
         exit_code = await import_run(
             catalog, bearer_token="dbos_pat_fake_admin_token", dry_run=False,
@@ -1673,7 +1899,9 @@ class TestImportedCatalogNormalLaunch:
         )
         assert exit_code == 0
 
-        ctx = {"RC": "1.8.5.46", "KERNEL": "6.1.0", "MODE": "orel"}
+        # `-fti` — из папки Zephyr отдела стенда и версии ОС.
+        await _seed_zephyr_folder("dep_a", "osv_5e46b2d1", "4242")
+        ctx = {"RC": "osv_5e46b2d1", "KERNEL": "6.1.0", "MODE": "orel"}
         async with AsyncSessionLocal() as db:
             stand = await stand_repo.get_by_server_id(db, server_id)
             test = await test_definition_repo.get_by_code(db, "file_systems.xfs")
@@ -1693,13 +1921,98 @@ class TestImportedCatalogNormalLaunch:
 
         resp = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
         assert resp.status_code == 200, resp.text
-        dates = resp.json()["item"]["dates_content"]
+        dates = claim_file(resp.json()["item"], "dates_")["content"]
         assert "-sn 3" in dates
         assert "-tcyc 1.8.5.46_orel_6.1.0_stand3" in dates
-        assert '-tcas "file system benchmark. XFS"' not in dates  # кавычек резолвер не ставит
-        assert "file system benchmark. XFS" in dates
-        assert "STRESS_report 1.8.5.46 ⬝ Файловые системы" in dates
-        assert "-fti none" in dates
+        # Значения с пробелами экранированы (D4): run.py читает dates через shell.
+        assert "-tcas 'file system benchmark. XFS'" in dates
+        assert "--confluence-parent-page 'STRESS_report 1.8.5.46 ⬝ Файловые системы'" in dates
+        # Короткое имя из легаси-словаря tests (D6), а не полное.
+        assert "--confluence-new-page XFS_1.8.5.46_orel_6.1.0_stand3" in dates
+        assert "-fti 4242" in dates
+        # Учётные данные отдела вместо плейсхолдеров `none` (D2).
+        assert "none" not in dates.split()
+        assert "--username conf-bot --token conf-token --confluence-space DEVQA" in dates
+        assert "-ba 'jira basic auth'" in dates
+        # Секреты dates уходят воркеру в redact_values (живой лог, error).
+        redact = resp.json()["item"]["redact_values"]
+        assert "conf-token" in redact and "jira basic auth" in redact
+        assert claim_file(resp.json()["item"], "dates_")["sensitive"] is True
+        assert "-tcv 1.8.5.46" in dates
+        assert "osv_5e46b2d1" not in dates
+
+    async def test_rc_name_reaches_tcv_vbox_and_starter_arg(
+        self, client, admin_token, mock_server_service, configure_internal_keys, mock_git_token,
+        monkeypatch,
+    ):
+        """`-tcv`/`-vbox` и `$4` у `starter.sh` — имя версии ОС, а не её id.
+
+        `launch_context["RC"]` = `osv_<hex>` (так его кладут `test_run.py`/
+        `public_queue.py`); `prepare.sh $2` ищет РЦ в `releases.json` по имени
+        (`1.8.1.6`), а `kernel/test_run.py` выбирает бокс ВМ по `-vbox`.
+        """
+        from pathlib import Path
+
+        from scripts.import_catalog import run as import_run
+        from src.repositories import test_definition as test_definition_repo
+        from src.repositories import test_stand as stand_repo
+
+        catalog = Path(__file__).resolve().parents[1] / "scripts" / "import_catalog.allta.yaml"
+
+        mock_server_service(host="10.9.9.9")
+        await mock_git_token(
+            git_credential_id="cred_git_header", credential_id="cred_jira",
+            confluence_credential_id="cred_conf", stp_matrix_confluence_space="DEVQA",
+        )
+        creds = {
+            "cred_git_header": ("git-bot", "git-token-value"),
+            "cred_jira": ("jira-bot", "jira basic auth"),
+            "cred_conf": ("conf-bot", "conf-token"),
+        }
+
+        async def fake_reveal(cred_id: str):
+            return creds[cred_id]
+
+        monkeypatch.setattr(secret_client, "reveal_credential", fake_reveal)
+        server_id = f"srv_{uuid.uuid4().hex[:10]}"
+        exit_code = await import_run(
+            catalog, bearer_token="dbos_pat_fake_admin_token", dry_run=False,
+            override_stand_server_id=server_id, stand_legacy_token="stand3",
+        )
+        assert exit_code == 0
+
+        await _seed_zephyr_folder("dep_a", "osv_8a16c9e0", "4242")
+        ctx = {"RC": "osv_8a16c9e0", "KERNEL": "6.1.0", "MODE": "orel"}
+        async with AsyncSessionLocal() as db:
+            stand = await stand_repo.get_by_server_id(db, server_id)
+            test = await test_definition_repo.get_by_code(db, "kernel.segfault")
+            # draft-тест с легаси-привязкой к stand12 — запускаем debug'ом на stand3.
+            item = await queue_svc.enqueue(
+                db, _identity(), test.id, launch_context=ctx, debug_mode=True, stand_id=stand.id,
+            )
+
+        await client.post(
+            f"{CALLBACK_BASE}/{item.prepare_request_id}/completed",
+            headers=_server_hdr("server_service", SERVER_SECRET),
+            json={
+                "correlation_id": item.id, "succeeded": True,
+                "test_username": "u", "test_password": "s3cr3t",
+                "test_ssh_private_key": "-----KEY-----",
+            },
+        )
+
+        resp = await client.post(f"{QUEUE_BASE}/claim", headers=_server_hdr("testing_worker", WORKER_SECRET))
+        assert resp.status_code == 200, resp.text
+        payload = resp.json()["item"]
+        assert payload is not None, (await _get_item(item.id)).error
+        dates = claim_file(payload, "dates_")["content"]
+        assert "-tcv 1.8.1.6 -vbox 1.8.1.6 -testname segfault" in dates
+        assert "-tcyc 1.8.1.6_orel_6.1.0_stand3" in dates
+        assert "osv_8a16c9e0" not in dates
+        assert claim_command(payload) == [
+            "sudo", "bash", "/home/u/starter.sh", "kernel", f"git_token_{item.id}.conf",
+            f"dates_{item.id}.conf", "1.8.1.6", "",
+        ]
 
 
 class TestCompleted:

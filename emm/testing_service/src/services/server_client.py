@@ -14,6 +14,13 @@
   чистый shared-secret под explicit-whitelist internal-эндпоинты, без
   пользовательской identity.
 
+стенд — сервер или ВМ. Функции канала брони/подготовки
+принимают `target: StandTarget` (`acquire_stand`, `release_stand`,
+`release_stand_as_done`, `set_stand_service_status`,
+`start_stand_prepare_for_test`, `start_stand_setup_for`, `get_stand_connection_info`,
+`get_stands_status_batch`) и сами выбирают путь `/internal/servers/{id}/…` или
+`/internal/vms/{id}/…`; прежние функции по `server_id` остались обёртками.
+
 Аутентификация каталогов — тот же shared-secret паттерн, что у audit-emit и у
 callback'ов server_service: `Authorization: Bearer <SERVER_SERVICE_API_KEY>`
 плюс `X-Service-Identity: testing_service`.
@@ -59,12 +66,27 @@ from src.core.exceptions import (
     ServiceUnavailableError,
 )
 from src.core.http import bearer_header
+from src.services.stand_target import StandTarget
 
 logger = logging.getLogger("testing_service.server_client")
 
 _OS_VERSIONS_PATH = "/api/server/v1/os-versions"
 _SERVERS_PATH = "/api/server/v1/servers"
 _INTERNAL_SERVERS_PATH = "/api/server/v1/internal/servers"
+_INTERNAL_VMS_PATH = "/api/server/v1/internal/vms"
+_VMS_PATH = "/api/server/v1/vms"
+
+# «Бронь не держится» — сервер и ВМ отвечают своим кодом.
+NOT_BUSY_ERROR_CODES = ("SERVER_NOT_BUSY", "VM_NOT_BUSY")
+
+
+def _target_path(target: StandTarget) -> str:
+    base = _INTERNAL_VMS_PATH if target.is_vm else _INTERNAL_SERVERS_PATH
+    return f"{base}/{target.id}"
+
+
+def _not_found_code(path: str) -> str:
+    return "VM_NOT_FOUND" if "/internal/vms/" in path or path.startswith(_VMS_PATH) else "SERVER_NOT_FOUND"
 
 # Каталог версий — десятки записей; берём страницу с запасом, пагинацию в
 # UI-списке значений разводить незачем.
@@ -187,7 +209,7 @@ async def _get_passthrough(path: str, bearer_token: str) -> dict:
 
     if response.status_code == 404:
         raise NotFoundError(
-            error_code="SERVER_NOT_FOUND",
+            error_code=_not_found_code(path),
             message="Server not found or not visible to the caller",
             details={"path": path},
         )
@@ -310,7 +332,7 @@ async def _post_internal(path: str, body: dict) -> dict:
 
     if response.status_code == 404:
         raise NotFoundError(
-            error_code="SERVER_NOT_FOUND",
+            error_code=_not_found_code(path),
             message="server_service returned 404 for the requested server",
             details={"path": path},
         )
@@ -332,15 +354,15 @@ async def _post_internal(path: str, body: dict) -> dict:
     return _parse_json(response)
 
 
-async def acquire_for_service(
-    server_id: str,
+async def _acquire(
+    target: StandTarget,
     *,
     busy_state: str,
     busy_note: str | None = None,
     requested_by_department_id: str | None = None,
     takeover: bool = False,
 ) -> dict:
-    """POST /internal/servers/{id}/acquire-for-service — взять стенд под цикл.
+    """POST /internal/{servers|vms}/{id}/acquire-for-service — взять стенд под цикл.
 
     `takeover=True` переписывает бронь занятого (`busy`/`testing_done`) стенда
     на testing_service; в ответе приходит `previous_holder`. Поле уходит в тело
@@ -353,34 +375,120 @@ async def acquire_for_service(
         body["busy_note"] = busy_note
     if requested_by_department_id is not None:
         body["requested_by_department_id"] = requested_by_department_id
-    return await _post_internal(f"{_INTERNAL_SERVERS_PATH}/{server_id}/acquire-for-service", body)
+    return await _post_internal(f"{_target_path(target)}/acquire-for-service", body)
+
+
+async def acquire_for_service(
+    server_id: str,
+    *,
+    busy_state: str,
+    busy_note: str | None = None,
+    requested_by_department_id: str | None = None,
+    takeover: bool = False,
+) -> dict:
+    """POST /internal/servers/{id}/acquire-for-service (см. `acquire_stand`)."""
+    return await _acquire(
+        StandTarget.server(server_id), busy_state=busy_state, busy_note=busy_note,
+        requested_by_department_id=requested_by_department_id, takeover=takeover,
+    )
+
+
+async def _release(target: StandTarget) -> dict:
+    """POST …/release-for-service — отпустить стенд."""
+    return await _post_internal(f"{_target_path(target)}/release-for-service", {})
 
 
 async def release_for_service(server_id: str) -> dict:
     """POST /internal/servers/{id}/release-for-service — отпустить стенд, очередь опустела."""
-    return await _post_internal(f"{_INTERNAL_SERVERS_PATH}/{server_id}/release-for-service", {})
+    return await _release(StandTarget.server(server_id))
+
+
+async def _release_as_done(target: StandTarget) -> dict:
+    """POST …/release-for-service-as-done — очередь стенда опустела, но вместо
+    `free` стенд паркуется в `testing_done`: кто-то должен явно подтвердить
+    приёмку (сервер — `POST /servers/{id}/acknowledge-testing-done`, ВМ —
+    `POST /vms/{id}/release` на server_service).
+    """
+    return await _post_internal(f"{_target_path(target)}/release-for-service-as-done", {})
 
 
 async def release_for_service_as_done(server_id: str) -> dict:
-    """POST /internal/servers/{id}/release-for-service-as-done — очередь стенда
+    """POST /internal/servers/{id}/release-for-service-as-done (см. `release_stand_as_done`)."""
+    return await _release_as_done(StandTarget.server(server_id))
 
-    опустела, но вместо `free` сервер паркуется в `testing_done`: кто-то
-    должен явно подтвердить приёмку через человеческий
-    `POST /servers/{id}/acknowledge-testing-done` на server_service.
-    """
-    return await _post_internal(
-        f"{_INTERNAL_SERVERS_PATH}/{server_id}/release-for-service-as-done", {},
-    )
+
+async def _set_status(
+    target: StandTarget, *, busy_state: str, busy_note: str | None = None,
+) -> dict:
+    """POST …/service-status — сменить стадию уже держащейся брони."""
+    body: dict = {"busy_state": busy_state}
+    if busy_note is not None:
+        body["busy_note"] = busy_note
+    return await _post_internal(f"{_target_path(target)}/service-status", body)
 
 
 async def set_service_status(
     server_id: str, *, busy_state: str, busy_note: str | None = None,
 ) -> dict:
-    """POST /internal/servers/{id}/service-status — сменить стадию уже держащейся брони."""
-    body: dict = {"busy_state": busy_state}
-    if busy_note is not None:
-        body["busy_note"] = busy_note
-    return await _post_internal(f"{_INTERNAL_SERVERS_PATH}/{server_id}/service-status", body)
+    """POST /internal/servers/{id}/service-status (см. `set_stand_service_status`)."""
+    return await _set_status(StandTarget.server(server_id), busy_state=busy_state, busy_note=busy_note)
+
+
+async def _start_prepare(
+    target: StandTarget,
+    *,
+    os_version_id: str,
+    kernel: str,
+    mode: str,
+    test_username: str,
+    requested_by_department_id: str | None,
+    correlation_id: str,
+    test_account_credential_id: str | None = None,
+    stand_setup: dict | None = None,
+    provisioning: dict | None = None,
+    preparation: str = "full",
+    skip_pam_fix: bool = False,
+) -> dict:
+    """POST …/prepare-for-test — запустить асинхронный пайплайн подготовки.
+
+    Отвечает сразу `{prepare_request_id, status}` — реальный исход придёт
+    callback'ом на `/internal/prepare-for-test/{prepare_request_id}/completed`
+    (см. `api/v1/endpoints/internal_prepare_for_test.py`).
+
+    `test_account_credential_id` — ссылка на тестовую
+    учётку отдела в secret_service: server_service ставит на стенд её логин,
+    пароль и публичный ключ вместо случайных. Без неё поле не шлётся вовсе.
+
+    ВМ: путь `/internal/vms/{id}/prepare-for-test` и `target` в теле
+    (C2); вместо ACS restore server_service откатывает снимок ВМ.
+
+    `preparation="revert_only"` (стенд сценария) — без смены режима и без
+    шага настройки; `full` в теле не шлётся, это умолчание server_service.
+    `skip_pam_fix` — без PAM-правки; шлётся только `true`.
+    """
+    body = {
+        "os_version_id": os_version_id,
+        "kernel": kernel,
+        "mode": mode,
+        "test_username": test_username,
+        "requested_by_department_id": requested_by_department_id,
+        "correlation_id": correlation_id,
+    }
+    if test_account_credential_id:
+        body["test_account_credential_id"] = test_account_credential_id
+    if stand_setup:
+        # шаг настройки стенда теста, скрипт уже отрезолвлен.
+        body["stand_setup"] = stand_setup
+    if provisioning:
+        # значения профиля подготовки (server_service профилей не знает).
+        body["provisioning"] = provisioning
+    if preparation != "full":
+        body["preparation"] = preparation
+    if skip_pam_fix:
+        body["skip_pam_fix"] = True
+    if target.is_vm:
+        body["target"] = {"type": "vm", "vm_id": target.id}
+    return await _post_internal(f"{_target_path(target)}/prepare-for-test", body)
 
 
 async def start_prepare_for_test(
@@ -392,44 +500,89 @@ async def start_prepare_for_test(
     test_username: str,
     requested_by_department_id: str | None,
     correlation_id: str,
+    test_account_credential_id: str | None = None,
+    stand_setup: dict | None = None,
+    provisioning: dict | None = None,
+    preparation: str = "full",
+    skip_pam_fix: bool = False,
 ) -> dict:
-    """POST /internal/servers/{id}/prepare-for-test — запустить асинхронный пайплайн подготовки.
+    """POST /internal/servers/{id}/prepare-for-test (см. `start_stand_prepare_for_test`)."""
+    return await _start_prepare(
+        StandTarget.server(server_id), os_version_id=os_version_id, kernel=kernel, mode=mode,
+        test_username=test_username, requested_by_department_id=requested_by_department_id,
+        correlation_id=correlation_id, test_account_credential_id=test_account_credential_id,
+        stand_setup=stand_setup, provisioning=provisioning, preparation=preparation,
+        skip_pam_fix=skip_pam_fix,
+    )
 
-    Отвечает сразу `{prepare_request_id, status}` — реальный исход придёт
-    callback'ом на `/internal/prepare-for-test/{prepare_request_id}/completed`
-    (см. `api/v1/endpoints/internal_prepare_for_test.py`).
+
+async def _stand_setup(
+    target: StandTarget,
+    *,
+    correlation_id: str,
+    requested_by_department_id: str | None,
+    test_username: str,
+    stand_setup: dict,
+    provisioning: dict | None = None,
+) -> dict:
+    """POST …/stand-setup — настройка без restore (у ВМ — без отката снимка).
+
+    Отвечает `{stand_setup_request_id, status}`; исход — callback на
+    `/internal/stand-setup/{id}/completed`. Вызывает очередь перед шагом
+    многоступенчатого теста.
     """
     body = {
-        "os_version_id": os_version_id,
-        "kernel": kernel,
-        "mode": mode,
-        "test_username": test_username,
-        "requested_by_department_id": requested_by_department_id,
         "correlation_id": correlation_id,
+        "requested_by_department_id": requested_by_department_id,
+        "test_username": test_username,
+        "stand_setup": stand_setup,
     }
-    return await _post_internal(f"{_INTERNAL_SERVERS_PATH}/{server_id}/prepare-for-test", body)
+    if provisioning:
+        body["provisioning"] = provisioning
+    return await _post_internal(f"{_target_path(target)}/stand-setup", body)
 
 
-async def get_servers_status_batch(server_ids: list[str]) -> dict[str, dict]:
+async def start_stand_setup(server_id: str, **kwargs) -> dict:
+    """POST /internal/servers/{id}/stand-setup (см. `start_stand_setup_for`)."""
+    return await _stand_setup(StandTarget.server(server_id), **kwargs)
+
+
+async def _status_batch(targets: list[StandTarget]) -> dict[StandTarget, dict]:
     """POST /internal/servers/batch-status — ping/busy пачкой для обзора пула.
 
     Один вызов на весь пул стендов вместо N запросов на N стендов (§F плана
-    2026-09-11 — «Обзор пула»). Отсутствующий/удалённый на стороне
-    server_service сервер не роняет весь обзор: просто не попадает в
-    результат, `services/pool_overview.py` трактует пропуск как «нет данных».
+    2026-09-11 — «Обзор пула»); список смешанный: `server_ids` и
+    `vm_ids`, у ВМ бронь уже сведена server_service'ом к `busy_state`
+    серверов. Отсутствующий на стороне server_service стенд не роняет весь
+    обзор: просто не попадает в результат.
     """
-    if not server_ids:
+    server_ids = [t.id for t in targets if not t.is_vm]
+    vm_ids = [t.id for t in targets if t.is_vm]
+    if not server_ids and not vm_ids:
         return {}
-    body = await _post_internal(f"{_INTERNAL_SERVERS_PATH}/batch-status", {"server_ids": server_ids})
-    return {
-        row["server_id"]: row
+    request: dict = {"server_ids": server_ids}
+    if vm_ids:
+        request["vm_ids"] = vm_ids
+    body = await _post_internal(f"{_INTERNAL_SERVERS_PATH}/batch-status", request)
+    result: dict[StandTarget, dict] = {
+        StandTarget.server(row["server_id"]): row
         for row in body.get("servers") or []
         if row.get("found")
     }
+    for row in body.get("vms") or []:
+        if row.get("found"):
+            result[StandTarget.vm(row["vm_id"])] = row
+    return result
 
 
-async def get_connection_info(server_id: str) -> dict:
-    """GET /internal/servers/{id}/connection-info — IP стенда для SSH-исполнения теста.
+async def get_servers_status_batch(server_ids: list[str]) -> dict[str, dict]:
+    """Batch-status только по серверам (ключ — `server_id`), см. `get_stands_status_batch`."""
+    statuses = await _status_batch([StandTarget.server(sid) for sid in server_ids])
+    return {target.id: row for target, row in statuses.items()}
+
+
+async def _connection_info(target: StandTarget) -> dict:
+    """GET …/connection-info — IP стенда (сервера или гостя ВМ) для SSH-исполнения теста.
 
     Отдельный узкий эндпоинт, не полная карточка сервера: `testing_worker`
     аутентифицируется shared-secret'ом, у него нет bearer'а пользователя для
@@ -437,21 +590,99 @@ async def get_connection_info(server_id: str) -> dict:
     стали (§4 плана — "без дублирования"). См. отчёт волны за обоснованием.
     """
     headers = _internal_headers()
-    response = await _send_get(f"{_INTERNAL_SERVERS_PATH}/{server_id}/connection-info", None, headers)
+    path = f"{_target_path(target)}/connection-info"
+    response = await _send_get(path, None, headers)
     if response.status_code == 404:
         raise NotFoundError(
-            error_code="SERVER_NOT_FOUND",
+            error_code=_not_found_code(path),
             message="server_service returned 404 for the requested server",
         )
     if response.status_code >= 300:
+        payload = _parse_json_or_empty(response)
         logger.warning(
             "server_service (connection-info) ответил %s", response.status_code,
         )
         raise ServiceUnavailableError(
-            error_code="SERVER_SERVICE_ERROR",
-            message=f"server_service returned {response.status_code}",
+            error_code=payload.get("error_code") or "SERVER_SERVICE_ERROR",
+            message=payload.get("message") or f"server_service returned {response.status_code}",
         )
     return _parse_json(response)
+
+
+async def get_connection_info(server_id: str) -> dict:
+    """GET /internal/servers/{id}/connection-info (см. `get_stand_connection_info`)."""
+    return await _connection_info(StandTarget.server(server_id))
+
+
+# ── Публичный API по цели стенда ───────────────────────
+#
+# Для `server` — через именованные функции по `server_id` выше (их подменяют
+# тесты и параллельные задачи, поведение одно), для `vm` — тот же код по пути
+# `/internal/vms/{id}/…`.
+
+
+async def acquire_stand(
+    target: StandTarget,
+    *,
+    busy_state: str,
+    busy_note: str | None = None,
+    requested_by_department_id: str | None = None,
+    takeover: bool = False,
+) -> dict:
+    """Взять стенд (сервер или ВМ) под цикл — `…/acquire-for-service`."""
+    kwargs = {
+        "busy_state": busy_state, "busy_note": busy_note,
+        "requested_by_department_id": requested_by_department_id, "takeover": takeover,
+    }
+    if target.is_vm:
+        return await _acquire(target, **kwargs)
+    return await acquire_for_service(target.id, **kwargs)
+
+
+async def release_stand(target: StandTarget) -> dict:
+    """Отпустить стенд — `…/release-for-service`."""
+    return await (_release(target) if target.is_vm else release_for_service(target.id))
+
+
+async def release_stand_as_done(target: StandTarget) -> dict:
+    """Очередь опустела — `…/release-for-service-as-done` (стенд в `testing_done`)."""
+    return await (_release_as_done(target) if target.is_vm else release_for_service_as_done(target.id))
+
+
+async def set_stand_service_status(
+    target: StandTarget, *, busy_state: str, busy_note: str | None = None,
+) -> dict:
+    """Сменить стадию держащейся брони — `…/service-status`."""
+    if target.is_vm:
+        return await _set_status(target, busy_state=busy_state, busy_note=busy_note)
+    return await set_service_status(target.id, busy_state=busy_state, busy_note=busy_note)
+
+
+async def start_stand_prepare_for_test(target: StandTarget, **kwargs) -> dict:
+    """Запустить `prepare-for-test` стенда; аргументы — как у `start_prepare_for_test`."""
+    if target.is_vm:
+        return await _start_prepare(target, **kwargs)
+    return await start_prepare_for_test(target.id, **kwargs)
+
+
+async def start_stand_setup_for(target: StandTarget, **kwargs) -> dict:
+    """Настройка стенда без restore; аргументы — как у `start_stand_setup`."""
+    if target.is_vm:
+        return await _stand_setup(target, **kwargs)
+    return await start_stand_setup(target.id, **kwargs)
+
+
+async def get_stands_status_batch(targets: list[StandTarget]) -> dict[StandTarget, dict]:
+    """Ping/busy пула одним вызовом; ключ — `StandTarget`. Только серверы — `get_servers_status_batch`."""
+    if any(target.is_vm for target in targets):
+        return await _status_batch(targets)
+    statuses = await get_servers_status_batch([target.id for target in targets]) if targets else {}
+    return {StandTarget.server(server_id): row for server_id, row in statuses.items()}
+
+
+async def get_stand_connection_info(target: StandTarget) -> dict:
+    """IP стенда (сервера или гостя ВМ) — `…/connection-info`."""
+    return await (_connection_info(target) if target.is_vm else get_connection_info(target.id))
 
 
 async def get_test_credentials(bearer_token: str, server_id: str, *, reveal: bool) -> dict:
@@ -501,6 +732,18 @@ async def get_server(bearer_token: str, server_id: str) -> dict:
     return await _get_passthrough(f"{_SERVERS_PATH}/{server_id}", bearer_token)
 
 
+async def get_vm(bearer_token: str, vm_id: str) -> dict:
+    """Карточка ВМ (`GET /vms/{id}`), pass-through bearer'а — как `get_server`."""
+    return await _get_passthrough(f"{_VMS_PATH}/{vm_id}", bearer_token)
+
+
+async def get_stand_card(bearer_token: str, target: StandTarget) -> dict:
+    """Живая карточка стенда: сервера или ВМ."""
+    if target.is_vm:
+        return await get_vm(bearer_token, target.id)
+    return await get_server(bearer_token, target.id)
+
+
 async def resolve_os_kernels(os_version_id: str) -> list[str]:
     from urllib.parse import quote
     from src.core.exceptions import DomainValidationError
@@ -511,15 +754,40 @@ async def resolve_os_kernels(os_version_id: str) -> list[str]:
     return kernels
 
 
+@dataclass(frozen=True)
+class AcsSnapshotVersions:
+    """Версии РЦ, для которых у ACS есть снимок стенда.
+
+    `versions` — хвосты имён снимков после `{hostname}-` как есть **и** в
+    форме каталога (`normalized_version` от server_service: `1710rc52` →
+    `1.7.10.52`). Имя версии каталога (`os_version.name`) проверяется
+    `in` — совпадение с любой из форм. Нормализацию считает server_service
+    (`core/known_os.py::normalize_os_version_name`), здесь её копии нет.
+    `hostname` — префикс имён снимков стенда, для текста ошибки.
+    """
+
+    hostname: str | None
+    versions: frozenset[str]
+
+    def __contains__(self, version_name: object) -> bool:
+        return version_name in self.versions
+
+    def snapshot_name(self, version_name: str) -> str:
+        """Искомое имя снимка `{hostname}-{version}` (без hostname — только версия)."""
+        return f"{self.hostname}-{version_name}" if self.hostname else version_name
+
+
 # server_id → (monotonic-дедлайн, версии РЦ со снимком). Постановка в очередь
 # кампании штампует десятки item'ов подряд на один и тот же стенд — без кэша
 # каждый из них сходил бы в ACS по сети синхронно. TTL короткий: это гейт
 # перед восстановлением стенда, не витрина, устаревать он не должен надолго.
 _ACS_SNAPSHOT_CACHE_TTL_SECONDS = 20.0
-_acs_snapshot_cache: dict[str, tuple[float, set[str]]] = {}
+_acs_snapshot_cache: dict[str, tuple[float, AcsSnapshotVersions]] = {}
 
 
-async def list_acs_snapshot_versions(server_id: str, *, refresh: bool = False) -> set[str]:
+async def list_acs_snapshot_versions(
+    server_id: str, *, refresh: bool = False,
+) -> AcsSnapshotVersions:
     """Версии РЦ, для которых у ACS есть снимок диска этого стенда.
 
     `GET /internal/servers/{id}/acs-snapshots`, за коротким in-memory кэшем
@@ -529,6 +797,10 @@ async def list_acs_snapshot_versions(server_id: str, *, refresh: bool = False) -
     пришёл бы часы спустя асинхронно из `acs.snapshot_restore`. Ошибки ACS
     (disabled/timeout/unreachable/ошибочный статус) со стороны server_service
     пробрасываются как есть — `error_code` из тела ответа, не кэшируются.
+
+    Версии — и хвосты имён как есть, и `normalized_version`: снимки
+    на ACS бывают названы компактно (`LowServer-1710rc52`), а каталог хранит
+    `1.7.10.52`. Старый server_service без `normalized_version` — только хвосты.
     """
     now = time.monotonic()
     if not refresh:
@@ -554,10 +826,46 @@ async def list_acs_snapshot_versions(server_id: str, *, refresh: bool = False) -
             details=payload.get("details") or {},
         )
     body = _parse_json(response)
-    versions = {
-        str(item.get("version_name"))
-        for item in body.get("snapshots") or []
-        if item.get("version_name")
-    }
-    _acs_snapshot_cache[server_id] = (now + _ACS_SNAPSHOT_CACHE_TTL_SECONDS, versions)
-    return versions
+    versions: set[str] = set()
+    for item in body.get("snapshots") or []:
+        for key in ("version_name", "normalized_version"):
+            if item.get(key):
+                versions.add(str(item[key]))
+    result = AcsSnapshotVersions(hostname=body.get("hostname"), versions=frozenset(versions))
+    _acs_snapshot_cache[server_id] = (now + _ACS_SNAPSHOT_CACHE_TTL_SECONDS, result)
+    return result
+
+
+# vm_id → (monotonic-дедлайн, тело ответа). Тот же приём и TTL, что у
+# `_acs_snapshot_cache`: кампания штампует десятки item'ов на одну ВМ подряд.
+_vm_snapshot_cache: dict[str, tuple[float, dict]] = {}
+
+
+async def list_vm_test_snapshots(vm_id: str, *, refresh: bool = False) -> dict:
+    """Снимки ВМ для отката перед тестом — `GET /internal/vms/{id}/snapshots`.
+
+    Тело — как отдаёт server_service: `snapshots` (имя, `version_name`,
+    `normalized_version` — версия из имени по шаблонам, после нормализации;
+    `mode`) и `templates`. Ошибки — как у `list_acs_snapshot_versions`.
+    """
+    now = time.monotonic()
+    if not refresh:
+        cached = _vm_snapshot_cache.get(vm_id)
+        if cached is not None and cached[0] > now:
+            return cached[1]
+    headers = _internal_headers()
+    path = f"{_INTERNAL_VMS_PATH}/{vm_id}/snapshots"
+    response = await _send_get(path, None, headers)
+    if response.status_code == 404:
+        raise NotFoundError(error_code="VM_NOT_FOUND", message="server_service returned 404 for the requested VM")
+    if response.status_code >= 300:
+        payload = _parse_json_or_empty(response)
+        logger.warning("server_service (vm snapshots) ответил %s на vm_id=%s", response.status_code, vm_id)
+        raise ServiceUnavailableError(
+            error_code=payload.get("error_code") or "SERVER_SERVICE_ERROR",
+            message=payload.get("message") or f"server_service returned {response.status_code}",
+            details=payload.get("details") or {},
+        )
+    body = _parse_json(response)
+    _vm_snapshot_cache[vm_id] = (now + _ACS_SNAPSHOT_CACHE_TTL_SECONDS, body)
+    return body

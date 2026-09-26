@@ -15,7 +15,7 @@ import logging
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.constants import Action, EntityType
+from src.core.constants import Action, EntityType, GlobalVariableSource
 from src.core.exceptions import (
     AuthorizationError,
     ConflictError,
@@ -23,10 +23,10 @@ from src.core.exceptions import (
     NotFoundError,
 )
 from src.dependencies.auth import Identity
-from src.models import GlobalVariable
+from src.models import GlobalVariable, TestStand
 from src.repositories import global_variable as repo
 from src.schemas.global_variable import GlobalVariableCreate, GlobalVariableUpdate
-from src.services import audit_service, choices, permissions
+from src.services import audit_service, choices, permissions, variable_resolver
 from src.utils.ids import global_variable_id as new_id
 
 logger = logging.getLogger(__name__)
@@ -51,6 +51,33 @@ def _validate_choices_source(value: str | None) -> None:
         )
 
 
+async def _validate_definition(
+    db: AsyncSession,
+    *,
+    code: str,
+    source: str,
+    source_ref: dict | None,
+    is_sensitive: bool,
+    original_code: str | None = None,
+) -> dict | None:
+    """`source_ref` под `source` + целостность шаблонов каталога.
+
+    Возвращает нормализованный `source_ref` (`{}` → `None` у источников без
+    ссылки).
+    """
+    normalized = variable_resolver.validate_source_ref(source, source_ref, is_sensitive=is_sensitive)
+    if source == GlobalVariableSource.STAND_REF and await db.get(TestStand, normalized["stand_id"]) is None:
+        raise DomainValidationError(
+            error_code="VARIABLE_SOURCE_REF_INVALID",
+            message=f"Stand '{normalized['stand_id']}' does not exist",
+            details={"source": source, "stand_id": normalized["stand_id"]},
+        )
+    await variable_resolver.validate_catalog_change(
+        db, code=code, source=source, source_ref=normalized, original_code=original_code,
+    )
+    return normalized
+
+
 async def create_global_variable(
     db: AsyncSession,
     identity: Identity,
@@ -73,6 +100,19 @@ async def create_global_variable(
     _validate_choices_source(payload.choices_source)
 
     data = payload.model_dump(mode="json")
+    try:
+        data["source_ref"] = await _validate_definition(
+            db, code=payload.code, source=payload.source, source_ref=payload.source_ref,
+            is_sensitive=payload.is_sensitive,
+        )
+    except DomainValidationError as exc:
+        audit_service.emit(
+            "global_variable.create",
+            target_type="global_variable",
+            status="failure", allowed=True,
+            details={"reason": exc.error_code, "code": payload.code},
+        )
+        raise
     data["id"] = new_id()
     data["created_by"] = identity.user_id
     try:
@@ -172,6 +212,26 @@ async def update_global_variable(
         return obj
     if "choices_source" in changes:
         _validate_choices_source(changes["choices_source"])
+    if changes.keys() & {"code", "source", "source_ref", "is_sensitive"}:
+        try:
+            normalized = await _validate_definition(
+                db,
+                code=changes.get("code") or obj.code,
+                source=changes.get("source") or obj.source,
+                source_ref=changes["source_ref"] if "source_ref" in changes else obj.source_ref,
+                is_sensitive=changes["is_sensitive"] if changes.get("is_sensitive") is not None else obj.is_sensitive,
+                original_code=obj.code,
+            )
+        except (DomainValidationError, ConflictError) as exc:
+            audit_service.emit(
+                "global_variable.update",
+                target_id=variable_id, target_type="global_variable",
+                status="failure", allowed=True,
+                details={"reason": exc.error_code, "fields": list(changes.keys())},
+            )
+            raise
+        if "source_ref" in changes or "source" in changes:
+            changes["source_ref"] = normalized
     try:
         await repo.update(db, obj, changes)
         await db.commit()
@@ -233,6 +293,18 @@ async def delete_global_variable(
         )
     code = obj.code
     try:
+        # FK слотов ловит ссылку `variable_id`, но не упоминание `{CODE}` в
+        # шаблонах других переменных и в `override_value` — их проверяем сами.
+        await variable_resolver.ensure_not_referenced(db, code, action="delete")
+    except ConflictError:
+        audit_service.emit(
+            "global_variable.delete",
+            target_id=variable_id, target_type="global_variable",
+            status="failure", allowed=True,
+            details={"reason": "in_use", "code": code},
+        )
+        raise
+    try:
         await repo.delete(db, obj)
         await db.commit()
     except IntegrityError as exc:
@@ -281,3 +353,25 @@ async def resolve_choices(
         )
     items = await choices.resolve(source, params)
     return items, source
+
+
+def source_options() -> dict:
+    """Допустимые значения `source_ref` по источникам — для формы переменной в UI."""
+    from src.core.constants import GlobalVariableSource
+
+    vr = variable_resolver
+    return {
+        "sources": [s.value for s in GlobalVariableSource],
+        "test_fields": sorted(vr.TEST_FIELDS),
+        "stand_fields": sorted(vr.STAND_FIELDS),
+        "stand_ref_fields": sorted(vr.STAND_REF_FIELDS),
+        "department_integration_fields": [
+            {"field": name, "is_credential": vr.is_credential_field(name)}
+            for name in sorted(vr.DEPARTMENT_INTEGRATION_FIELDS)
+        ],
+        "credential_parts": sorted(vr.CREDENTIAL_PARTS),
+        "os_version_fields": sorted(vr.OS_VERSION_FIELDS),
+        "test_account_fields": sorted(vr.TEST_ACCOUNT_FIELDS),
+        "zephyr_folder_fields": sorted(vr.ZEPHYR_FOLDER_FIELDS),
+        "template_conditions": sorted(vr.TEMPLATE_CONDITIONS),
+    }

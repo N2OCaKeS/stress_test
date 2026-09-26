@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.schemas.zephyr_folder import ZephyrFolderResponse
+
 
 class StpTestCaseCreate(BaseModel):
     """Тело POST /stp/test-cases. `code` уникален (совпадает с test_definitions.code)."""
@@ -80,10 +82,15 @@ class StpTestRunResponse(BaseModel):
 
 
 class StpGenerateResponse(BaseModel):
-    """Ответ POST /stp/generate — заведённые прогоны + частичные ошибки по стендам."""
+    """Ответ POST /stp/generate — заведённые прогоны + частичные ошибки по стендам.
+
+    `zephyr_folder` — папка Zephyr этой РЦ: путь, id и `error`, если
+    id получить не удалось (прогоны при этом всё равно заводятся).
+    """
 
     test_runs: list[StpTestRunResponse] = Field(default_factory=list)
     errors: list[StpGeneratePartialError] = Field(default_factory=list)
+    zephyr_folder: ZephyrFolderResponse | None = None
 
 
 class StpCellResponse(BaseModel):

@@ -14,19 +14,39 @@
 -settings`).
 
 Логика — в `services/legacy_compat.py`.
+
+Те же справочники без авторизации по легаси-путям `/rest/api/*` отдаёт
+`api/legacy_public.py` — только из разрешённых подсетей.
+Подсети и отдел по умолчанию для URL интеграций настраиваются здесь же
+(`/legacy-compat/networks`, `/legacy-compat/settings`), право —
+`(legacy_compat, view|update)`, по матрице без bypass'а department_admin:
+настройка платформенная.
 """
 
 from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, Path, Response
+from fastapi import APIRouter, Depends, Path, Query, Response
 
+from src.core.exceptions import DomainValidationError
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.schemas.legacy_compat import AvailableKernelsResponse, LegacyUrlResponse
+from src.schemas.common import OkResponse
+from src.schemas.legacy_compat import (
+    AvailableKernelsResponse,
+    CompatNetworkCreate,
+    CompatNetworkResponse,
+    CompatNetworksResponse,
+    CompatNetworkUpdate,
+    CompatResolveResponse,
+    LegacyCompatSettingsResponse,
+    LegacyCompatSettingsUpdate,
+    LegacyUrlResponse,
+)
+from src.services import client_ip
 from src.services import legacy_compat as svc
 
 router = APIRouter(prefix="/legacy-compat")
@@ -86,11 +106,12 @@ async def get_astra_config(_: CurrentUserIdentity) -> dict:
     summary="[legacy] box-config.json",
     description=(
         "Легаси `GET /rest/api/get-box-config`. Статика без живого продюсера "
-        "ни в легаси, ни здесь — карта vagrant-боксов по версиям."
+        "ни в легаси, ни здесь — карта vagrant-боксов по версиям. Адрес FTP в "
+        "ссылках — из глобальной переменной `FTP_URL`."
     ),
 )
-async def get_box_config(_: CurrentUserIdentity) -> dict:
-    return svc.get_box_config()
+async def get_box_config(_: CurrentUserIdentity, db: AsyncSession = Depends(get_db)) -> dict:
+    return await svc.box_config(db)
 
 
 @router.get(
@@ -191,3 +212,140 @@ async def available_kernels_from_rc(
 ) -> AvailableKernelsResponse:
     kernels = await svc.available_kernels_from_rc(rc)
     return AvailableKernelsResponse(rc=rc, kernels=kernels)
+
+
+# ── Настройки публичного compat `/rest/api/*` ────────────────────────
+
+
+@router.get(
+    "/settings",
+    response_model=LegacyCompatSettingsResponse,
+    summary="Настройки публичного compat: отдел по умолчанию",
+    description="Право `(legacy_compat, view)`.",
+    responses={403: {"description": "PERMISSION_DENIED."}},
+)
+async def get_compat_settings(
+    identity: CurrentUserIdentity, db: AsyncSession = Depends(get_db),
+) -> LegacyCompatSettingsResponse:
+    return LegacyCompatSettingsResponse(**await svc.get_compat_settings(db, identity))
+
+
+@router.put(
+    "/settings",
+    response_model=LegacyCompatSettingsResponse,
+    summary="Изменить отдел по умолчанию для URL интеграций",
+    description=(
+        "Отдел, чьи URL Jira/Confluence отдаёт `/rest/api/get-*-url`, если IP "
+        "источника не принадлежит ни одному стенду. `null` — не выбран (такой "
+        "запрос получит 404 `LEGACY_COMPAT_DEPARTMENT_UNKNOWN`). Право "
+        "`(legacy_compat, update)`."
+    ),
+    responses={403: {"description": "PERMISSION_DENIED."}},
+)
+async def put_compat_settings(
+    payload: LegacyCompatSettingsUpdate,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> LegacyCompatSettingsResponse:
+    return LegacyCompatSettingsResponse(**await svc.update_compat_settings(db, identity, payload))
+
+
+@router.get(
+    "/networks",
+    response_model=CompatNetworksResponse,
+    summary="Подсети, из которых доступен публичный compat",
+    description="Включённые и выключенные. Право `(legacy_compat, view)`.",
+    responses={403: {"description": "PERMISSION_DENIED."}},
+)
+async def list_compat_networks(
+    identity: CurrentUserIdentity, db: AsyncSession = Depends(get_db),
+) -> CompatNetworksResponse:
+    rows = await svc.list_networks(db, identity)
+    return CompatNetworksResponse(items=[CompatNetworkResponse.model_validate(row) for row in rows])
+
+
+@router.post(
+    "/networks",
+    response_model=CompatNetworkResponse,
+    status_code=201,
+    summary="Добавить подсеть",
+    description=(
+        "`cidr` — подсеть (`10.177.103.0/24`) или адрес (станет `/32`); адрес с "
+        "ненулевыми битами хоста — 422. Право `(legacy_compat, update)`."
+    ),
+    responses={
+        403: {"description": "PERMISSION_DENIED."},
+        409: {"description": "COMPAT_NETWORK_DUPLICATE."},
+    },
+)
+async def create_compat_network(
+    payload: CompatNetworkCreate,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> CompatNetworkResponse:
+    return CompatNetworkResponse.model_validate(await svc.create_network(db, identity, payload))
+
+
+@router.patch(
+    "/networks/{network_id}",
+    response_model=CompatNetworkResponse,
+    summary="Изменить подсеть",
+    description="Частичное обновление `cidr`/`description`/`enabled`. Право `(legacy_compat, update)`.",
+    responses={
+        403: {"description": "PERMISSION_DENIED."},
+        404: {"description": "COMPAT_NETWORK_NOT_FOUND."},
+        409: {"description": "COMPAT_NETWORK_DUPLICATE."},
+    },
+)
+async def update_compat_network(
+    network_id: str,
+    payload: CompatNetworkUpdate,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> CompatNetworkResponse:
+    return CompatNetworkResponse.model_validate(await svc.update_network(db, identity, network_id, payload))
+
+
+@router.delete(
+    "/networks/{network_id}",
+    response_model=OkResponse,
+    summary="Удалить подсеть",
+    description="Право `(legacy_compat, update)`.",
+    responses={
+        403: {"description": "PERMISSION_DENIED."},
+        404: {"description": "COMPAT_NETWORK_NOT_FOUND."},
+    },
+)
+async def delete_compat_network(
+    network_id: str,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> OkResponse:
+    await svc.delete_network(db, identity, network_id)
+    return OkResponse()
+
+
+@router.get(
+    "/resolve",
+    response_model=CompatResolveResponse,
+    summary="Проверить адрес: пустит ли compat и какой отдел выберет",
+    description=(
+        "Тот же расчёт, что у `/rest/api/get-*-url`: подсеть, стенд с этим IP, "
+        "отдел и причина выбора. Право `(legacy_compat, view)`."
+    ),
+    responses={
+        403: {"description": "PERMISSION_DENIED."},
+        422: {"description": "LEGACY_COMPAT_IP_INVALID — не IP-адрес."},
+    },
+)
+async def resolve_compat_source(
+    identity: CurrentUserIdentity,
+    ip: str = Query(..., min_length=1, max_length=64, description="IP источника, например `10.177.103.201`."),
+    db: AsyncSession = Depends(get_db),
+) -> CompatResolveResponse:
+    normalized = client_ip.normalize_ip(ip)
+    if normalized is None:
+        raise DomainValidationError(
+            error_code="LEGACY_COMPAT_IP_INVALID", message="Not an IP address", details={"ip": ip},
+        )
+    return CompatResolveResponse(**await svc.explain(db, identity, normalized))

@@ -1,5 +1,5 @@
-# testing_worker — SSH-исполнитель очереди testing_service (§5.5 плана
-# миграции). Отдельный top-level сервис/образ (../testing_worker), симметрично
+# testing_worker — SSH-исполнитель очереди testing_service.
+# Отдельный top-level сервис/образ (../testing_worker), симметрично
 # 60-server-worker.yaml относительно 50-server-service.yaml. В отличие от
 # server-worker у testing-worker пока нет своей БД — ConfigMap и env
 # ограничены Redis-брокером + каналом очереди testing_service.
@@ -21,7 +21,7 @@ metadata:
 data:
   APP_ENV: production
   WORKER_LOG_LEVEL: INFO
-  # Канал очереди (§5.5 плана миграции): POST /internal/queue/claim и
+  # Канал очереди: POST /internal/queue/claim и
   # /completed на testing_service. worker поллит это и исполняет тест по SSH.
   TESTING_SERVICE_URL: http://testing-service:8004
 

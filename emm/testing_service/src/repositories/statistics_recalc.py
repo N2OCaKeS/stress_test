@@ -15,9 +15,13 @@ async def get_singleton(db: AsyncSession) -> StatisticsRecalcState | None:
 
 async def mark_running(
     db: AsyncSession, *, triggered_by: str, test_run_id: str | None,
-    category: str | None = None,
+    category: str | None = None, categories: list[str] | None = None,
 ) -> StatisticsRecalcState:
-    """Строка переходит/заводится в `running`. commit — на caller'е."""
+    """Строка переходит/заводится в `running`. commit — на caller'е.
+
+    `categories` — весь запрошенный набор (NULL — полный пересчёт),
+    `category` — первое/текущее семейство из него.
+    """
     row = await get_singleton(db)
     if row is None:
         row = StatisticsRecalcState(id=SINGLETON_ID)
@@ -25,12 +29,22 @@ async def mark_running(
     row.status = StatisticsRecalcStatus.RUNNING
     row.triggered_by = triggered_by
     row.category = category
+    row.categories = categories
     row.test_run_id = test_run_id
     row.started_at = datetime.now(timezone.utc)
     row.finished_at = None
     row.error = None
     await db.flush()
     return row
+
+
+async def set_current_category(db: AsyncSession, category: str) -> None:
+    """При пересчёте нескольких семейств — какое считается сейчас. commit — на caller'е."""
+    row = await get_singleton(db)
+    if row is None:
+        return
+    row.category = category
+    await db.flush()
 
 
 async def mark_finished(db: AsyncSession, *, succeeded: bool, error: str | None) -> StatisticsRecalcState:

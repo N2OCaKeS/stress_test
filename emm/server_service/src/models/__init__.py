@@ -29,6 +29,7 @@ from src.models.server_category import ServerCategory
 from src.models.server_disk import ServerDisk
 from src.models.server_prepare_for_test import (
     ServerPrepareForTestRequest,
+    ServerStandSetupRequest,
     ServerTestCredentials,
 )
 from src.models.vm import Vm
@@ -38,6 +39,7 @@ from src.models.vm_ip_pool import VmIpPool
 from src.models.vm_package_inventory import VmPackageInventory
 from src.models.vm_preset import VmPreset
 from src.models.vm_snapshot import VmSnapshot
+from src.models.vm_test_settings import VmTestSettings
 
 __all__ = [
     "AccountNopasswdSudoSettings",
@@ -66,6 +68,7 @@ __all__ = [
     "ServerCategory",
     "ServerDisk",
     "ServerPrepareForTestRequest",
+    "ServerStandSetupRequest",
     "ServerTestCredentials",
     "Vm",
     "VmDisk",
@@ -74,4 +77,5 @@ __all__ = [
     "VmPackageInventory",
     "VmPreset",
     "VmSnapshot",
+    "VmTestSettings",
 ]

@@ -34,7 +34,15 @@ class TestCommandArg(Base):
         nullable=False,
         index=True,
     )
-    # Порядок в списке (drag&drop в будущем UI-конструкторе). Уникальность не
+    # Шаг теста: слоты команды — у каждого шага свои. `test_id`
+    # остаётся ради выборок «все слоты теста» и каскада удаления теста.
+    step_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("test_steps.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Порядок в списке шага (drag&drop в будущем UI-конструкторе). Уникальность не
     # форсируется на уровне БД — переупорядочивание идёт отдельными PATCH'ами
     # по одному слоту, жёсткий UNIQUE(test_id, position) заставил бы клиента
     # сдвигать соседей отдельной транзакцией на каждый drag.

@@ -1,0 +1,40 @@
+# ШАБЛОН. Реальный 52-legacy-compat-ingress.yaml генерирует
+# scripts/k8s/gen_secrets.sh (подставляет __LEGACY_COMPAT_HOST__ из
+# k8s/deploy.env; пустое значение — правило без host, то есть любой Host).
+# Применяет scripts/k8s/deploy.sh, если файл есть (в kustomization не входит,
+# чтобы старые деплои без сгенерированного файла не ломались на `apply -k`).
+#
+# Публичный compat легаси-путей ALLTA: скрипты на стендах ходят
+# на http://allta.devos.astralinux.ru/rest/api/... по plain HTTP и без токена
+# (ветки stress_test не меняются). Здесь — только префикс /rest/api на
+# entrypoint `web` (порт 80 traefik'а); весь остальной UI/API остаётся на
+# websecure (50-ingress.yaml). Кто может ходить — решает testing_service по
+# подсети источника (таблица compat_allowed_networks, UI «Легаси /rest/api»).
+#
+# Требования к кластеру (см. k8s/README.md, раздел «Легаси /rest/api»):
+#   - entrypoint `web` у traefik не закрыт (make prepare-k3s советует его
+#     закрыть — для этого маршрута он нужен);
+#   - Service traefik с `externalTrafficPolicy: Local`, иначе klipper-lb
+#     SNAT'ит адрес стенда в адрес ноды и подсеть не совпадёт;
+#   - NetworkPolicy testing-service-ingress (80-networkpolicy.yaml).
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dbos-legacy-compat
+  namespace: dbos
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: __LEGACY_COMPAT_HOST__
+      http:
+        paths:
+          - path: /rest/api
+            pathType: Prefix
+            backend:
+              service:
+                name: testing-service
+                port:
+                  number: 8004

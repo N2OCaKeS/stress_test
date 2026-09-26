@@ -65,6 +65,22 @@ mode` того прогона СТП, откуда взята ячейка: по
 совпадать (СТП-генерация делит тесты по их собственному режиму), но если
 где-то разошлись — это рассинхронизация данных, а не повод класть в очередь
 режим, которого у теста уже нет.
+
+**Сценарии.** Тест-кейс, у которого в отделе есть `ready`-сценарий с тем же
+`stp_test_case_code`, в не-debug кампании запускается сценарием
+(`scenario_queue.start_run` с `stp_test_run_id` и записью кампании), а не
+одиночной постановкой: такому кейсу нужны несколько стендов сразу. Исход
+записи — исход запуска сценария (`test_run_status`). Превью помечает такие
+записи `scenario_id`.
+
+**Порядок постановки.** Перед постановкой состав кампании
+сортируется правилом отдела `department_test_settings.campaign_sort_rule`
+(`sort_entry_specs`) — в обоих путях сборки. По умолчанию — легаси
+`allta_back.py:393`: режим → ядро → имя тест-кейса. Так же упорядочено и
+превью. Одиночные/debug-постановки через `POST /queue-items` и retry этой
+сортировки не касаются — встают в конец очереди стенда (FIFO). Дальше
+порядок ещё не начатых элементов меняется вручную
+(`services/queue.py::reorder_queue`).
 """
 
 from __future__ import annotations
@@ -90,23 +106,85 @@ from src.repositories import test_run as repo
 from src.repositories import test_run_entry as test_run_entry_repo
 from src.repositories import test_stand as test_stand_repo
 from src.schemas.test_run import TestRunPartialError, TestRunPreviewEntry
-from src.services import audit_service, launch_stp, permissions, queue as queue_svc, test_run_status
+from src.services import audit_service, launch_stp, permissions, queue as queue_svc, scenario_queue, test_run_status
+from src.services import scenario as scenario_svc
+from src.services import department_test_settings as dts_svc
 from src.utils.ids import test_run_id as new_id
 
 logger = logging.getLogger(__name__)
 
 
 class _EntrySpec:
-    """Одна будущая запись кампании до постановки в очередь — общий вид для обоих путей сборки состава."""
+    """Одна будущая запись кампании до постановки в очередь — общий вид для обоих путей сборки состава.
 
-    __slots__ = ("stand_id", "kernel", "mode", "test", "stp_test_run_id")
+    `test_case_name` — имя тест-кейса СТП (`stp_test_cases.title`, зеркало
+    имени тест-кейса Zephyr — того, по которому сортировал легаси), если у
+    теста его нет — `test.full_name`. Нужно только правилу сортировки
+    кампании (`sort_entry_specs`)."""
 
-    def __init__(self, *, stand_id: str, kernel: str, mode: str, test: TestDefinition, stp_test_run_id: str | None):
+    __slots__ = ("stand_id", "kernel", "mode", "test", "stp_test_run_id", "test_case_name", "case_code", "scenario_id")
+
+    def __init__(
+        self, *, stand_id: str, kernel: str, mode: str, test: TestDefinition, stp_test_run_id: str | None,
+        test_case_name: str | None = None, case_code: str | None = None,
+    ):
         self.stand_id = stand_id
         self.kernel = kernel
         self.mode = mode
         self.test = test
         self.stp_test_run_id = stp_test_run_id
+        self.test_case_name = test_case_name or test.full_name
+        # Код тест-кейса СТП записи; у кейса, запускаемого сценарием без
+        # одноимённого теста, `test` — тест действия-вердикта.
+        self.case_code = case_code or test.code
+        # `ready`-сценарий отдела, запускающий этот кейс (`_attach_scenarios`).
+        self.scenario_id: str | None = None
+
+
+# Белый список ключей правила сортировки кампании — механизм:
+# какие поля записи вообще сравнимы. Само правило — данные отдела
+# (`department_test_settings.campaign_sort_rule`), сид — легаси
+# `allta_back.py:393`. Строки сравниваются как строки — ровно как `sorted()`
+# легаси (ядро `5.10…` раньше `5.4…`), без «умного» сравнения версий.
+_SORT_KEY_GETTERS = {
+    "mode": lambda spec: spec.mode or "",
+    "kernel": lambda spec: spec.kernel or "",
+    "test_case_name": lambda spec: spec.test_case_name or "",
+    "test_code": lambda spec: spec.test.code or "",
+    "priority": lambda spec: spec.test.priority or 0,
+}
+
+
+def sort_entry_specs(specs: list[_EntrySpec], rule: list[dict]) -> list[_EntrySpec]:
+    """Упорядочить состав кампании по правилу отдела — детерминированно.
+
+    Сначала — базовый порядок по неизменным полям записи (стенд, код теста,
+    ядро, режим, id теста): вход из `stp_cells` приходит без `ORDER BY`, и
+    равные по правилу записи иначе вставали бы в очередь как придётся. Затем
+    — устойчивые сортировки по ключам правила от младшего к старшему, каждая
+    со своим направлением (`reverse=True` у `list.sort` сохраняет
+    устойчивость). Неизвестный ключ (строка правила, записанная в обход
+    схемы) пропускается с предупреждением, а не роняет кампанию.
+    """
+    ordered = sorted(specs, key=lambda s: (s.stand_id, s.test.code, s.kernel, s.mode, s.test.id))
+    for item in reversed(rule or []):
+        getter = _SORT_KEY_GETTERS.get(item.get("key"))
+        if getter is None:
+            logger.warning("test_run: unknown campaign sort key %r ignored", item.get("key"))
+            continue
+        ordered.sort(key=getter, reverse=item.get("direction") == "desc")
+    return ordered
+
+
+async def _campaign_sort_rule(db: AsyncSession, department_id: str) -> list[dict]:
+    settings = await dts_svc.get_effective(db, department_id)
+    return list(settings["campaign_sort_rule"])
+
+
+async def _case_names_by_code(db: AsyncSession, tests: list[TestDefinition]) -> dict[str, str]:
+    """`code → stp_test_cases.title` для путей без ячеек СТП (явный пул, превью `full`)."""
+    codes = sorted({t.code for t in tests})
+    return {case.code: case.title for case in await stp_test_case_repo.list_by_codes(db, codes)}
 
 
 async def _resolve_kernels(os_version_id: str, kernel: str | None) -> list[str]:
@@ -127,8 +205,12 @@ async def _explicit_stand_entries(
 ) -> list[_EntrySpec]:
     """Прежний путь §6.1 — все тесты, закреплённые за каждым стендом явного пула."""
     tests = await test_definition_repo.list_by_pinned_stands(db, test_run_stands)
+    names = await _case_names_by_code(db, tests)
     return [
-        _EntrySpec(stand_id=test.pinned_stand_id, kernel=selected_kernel, mode=test.mode, test=test, stp_test_run_id=None)
+        _EntrySpec(
+            stand_id=test.pinned_stand_id, kernel=selected_kernel, mode=test.mode, test=test,
+            stp_test_run_id=None, test_case_name=names.get(test.code),
+        )
         for selected_kernel in kernels for test in tests
     ]
 
@@ -151,8 +233,12 @@ async def _full_scope_candidate_entries(
     tests = await test_definition_repo.list_by_department_pinned(db, department_id)
     ready_tests = [t for t in tests if t.readiness == TestReadiness.READY]
     kernels = await _resolve_kernels(os_version_id, kernel)
+    names = await _case_names_by_code(db, ready_tests)
     return [
-        _EntrySpec(stand_id=t.pinned_stand_id, kernel=selected_kernel, mode=t.mode, test=t, stp_test_run_id=None)
+        _EntrySpec(
+            stand_id=t.pinned_stand_id, kernel=selected_kernel, mode=t.mode, test=t,
+            stp_test_run_id=None, test_case_name=names.get(t.code),
+        )
         for selected_kernel in kernels for t in ready_tests
     ]
 
@@ -194,6 +280,14 @@ async def _derive_stp_entries(
     cases_by_id = {c.id: c for c in await stp_test_case_repo.list_by_ids(db, case_ids)}
     codes = sorted({case.code for case in cases_by_id.values()})
     tests_by_code = {t.code: t for t in await test_definition_repo.list_by_codes(db, codes)}
+    # Кейс сценария может не совпадать по коду ни с одним тестом — тогда
+    # запись кампании несёт тест действия-вердикта.
+    for code, (_scenario, verdict_test_id) in (await scenario_svc.ready_for_stp_codes(
+        db, department_id, [c for c in codes if c not in tests_by_code],
+    )).items():
+        verdict_test = await test_definition_repo.get_by_id(db, verdict_test_id) if verdict_test_id else None
+        if verdict_test is not None:
+            tests_by_code[code] = verdict_test
 
     candidate_stands = sorted({run_by_id[c.stp_test_run_id].stand_id for c in active_cells})
 
@@ -215,8 +309,19 @@ async def _derive_stp_entries(
                 "test_run: test %s mode=%s disagrees with its stp run %s mode=%s, using test.mode",
                 test.code, test.mode, run.id, run.mode,
             )
-        specs.append(_EntrySpec(stand_id=run.stand_id, kernel=run.kernel, mode=test.mode, test=test, stp_test_run_id=run.id))
+        specs.append(_EntrySpec(
+            stand_id=run.stand_id, kernel=run.kernel, mode=test.mode, test=test,
+            stp_test_run_id=run.id, test_case_name=case.title, case_code=case.code,
+        ))
     return specs, candidate_stands
+
+
+async def _attach_scenarios(db: AsyncSession, department_id: str, specs: list[_EntrySpec]) -> None:
+    """Кейс, у которого есть `ready`-сценарий отдела, запускается сценарием."""
+    scenarios = await scenario_svc.ready_for_stp_codes(db, department_id, sorted({s.case_code for s in specs}))
+    for spec in specs:
+        found = scenarios.get(spec.case_code)
+        spec.scenario_id = found[0].id if found else None
 
 
 async def _require_stands_own_department(db: AsyncSession, identity: Identity, stand_ids: list[str]) -> None:
@@ -365,10 +470,14 @@ async def create_test_run(
     else:
         if full:
             from src.services import stp as stp_svc
-            _touched, stp_sync_errors = await stp_svc.generate_stp_runs(
+            _touched, stp_sync_errors, folder_info = await stp_svc.generate_stp_runs(
                 db, identity, os_version_id=os_version_id, mode=None, kernel=kernel,
                 scope=StpCompositionScope.FULL, department_id=department_id,
             )
+            # Папка Zephyr не найдена — `-fti` тестов кампании не резолвится
+            #; показываем причину вместе с остальными ошибками синка.
+            if folder_info.get("error"):
+                stp_sync_errors = [*stp_sync_errors, {"stand_id": None, **folder_info["error"]}]
         entry_specs, _candidate_stands = await _derive_stp_entries(
             db, department_id=department_id, os_version_id=os_version_id, kernel=kernel,
         )
@@ -385,6 +494,15 @@ async def create_test_run(
             stp_composition_id = composition_row.id
             stp_revision = composition_row.revision
     kernel = kernels[0]
+
+    # D15: состав кампании встаёт в очереди стендов в порядке правила отдела
+    # (по умолчанию легаси — режим → ядро → имя тест-кейса), в обоих путях
+    # сборки. Дальше порядок меняется только вручную (`PATCH /test-stands/
+    # {id}/queue/order`); одиночные постановки идут в конец очереди (FIFO).
+    sort_rule = await _campaign_sort_rule(db, department_id)
+    entry_specs = sort_entry_specs(entry_specs, sort_rule)
+    if not debug:
+        await _attach_scenarios(db, department_id, entry_specs)
 
     run = await repo.create(db, {
         "id": new_id(),
@@ -418,6 +536,15 @@ async def create_test_run(
     for entry, spec in zip(entries, entry_specs):
         try:
             ctx = {"RC": os_version_id, "KERNEL": entry.kernel, "MODE": entry.mode}
+            if spec.scenario_id:
+                # Допуск по СТП (права на стенды + членство кейса) — внутри
+                # `start_run`, по стенду действия-вердикта.
+                await scenario_queue.start_run(
+                    db, identity, spec.scenario_id, os_version_id=os_version_id,
+                    kernel=entry.kernel, mode=entry.mode, stp_test_run_id=spec.stp_test_run_id,
+                    test_run_id=run.id, test_run_entry_id=entry.id,
+                )
+                continue
             stp = None
             if not debug:
                 stp = await launch_stp.require_membership(
@@ -468,6 +595,7 @@ async def create_test_run(
             "composition_source": composition_source,
             "stp_composition_id": stp_composition_id,
             "stp_sync_error_count": len(stp_sync_errors),
+            "sort_rule": sort_rule,
         },
     )
     return run, stands_without_tests, enqueue_errors, stp_sync_errors
@@ -550,6 +678,11 @@ async def preview_test_run(
         stands_without_tests = [stand_id for stand_id in candidate_stands if stand_id not in populated_stands]
 
     skip_stp_check = debug or full
+    # Превью показывает записи в том же порядке, в каком их поставит в
+    # очередь `create_test_run`.
+    entry_specs = sort_entry_specs(entry_specs, await _campaign_sort_rule(db, department_id))
+    if not debug:
+        await _attach_scenarios(db, department_id, entry_specs)
 
     stands: dict[str, object] = {}
     entries: list[TestRunPreviewEntry] = []
@@ -577,7 +710,7 @@ async def preview_test_run(
             continue
         if not skip_stp_check:
             ctx = {"RC": os_version_id, "KERNEL": spec.kernel, "MODE": spec.mode}
-            stp = await launch_stp.find_membership(db, test.code, spec.stand_id, ctx, run_id=spec.stp_test_run_id)
+            stp = await launch_stp.find_membership(db, spec.case_code, spec.stand_id, ctx, run_id=spec.stp_test_run_id)
             if stp is None:
                 context_run = await launch_stp.find_context_run(db, spec.stand_id, ctx, run_id=spec.stp_test_run_id)
                 if context_run is None:
@@ -591,7 +724,7 @@ async def preview_test_run(
                         reason="Тест отсутствует в активном составе СТП",
                     ))
                 continue
-        entries.append(TestRunPreviewEntry(**common, action="launch"))
+        entries.append(TestRunPreviewEntry(**common, action="launch", scenario_id=spec.scenario_id))
 
     return stands_without_tests, entries
 

@@ -16,7 +16,7 @@ data:
   AUTH_SERVICE_URL: http://auth-service:8000
   SECRET_SERVICE_URL: http://secret-service:8003
   LOGGING_SERVICE_URL: http://logging-service:8001
-  # Исходящий callback завершения prepare-for-test (§5.1 плана миграции).
+  # Исходящий callback завершения prepare-for-test.
   TESTING_SERVICE_URL: http://testing-service:8004
   # introspect идёт по plain http — verify не применим.
   INTROSPECT_TLS_VERIFY: "false"

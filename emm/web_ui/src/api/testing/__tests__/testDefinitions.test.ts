@@ -21,6 +21,7 @@ import {
   deleteTestDefinition,
   getTestDefinitionByCode,
   listTestDefinitions,
+  previewTestLaunch,
   updateTestDefinition,
 } from "@/api/testing/testDefinitions";
 
@@ -66,5 +67,11 @@ describe("testDefinitions wrappers", () => {
   it("delete — DELETE по id", async () => {
     await deleteTestDefinition("tdef_1");
     expect(apiDeleteMock).toHaveBeenCalledWith("/testing/v1/test-definitions/tdef_1");
+  });
+
+  it("launch-preview — POST с выбранными стендом, РЦ и ядром", async () => {
+    const body = { stand_id: "tst_1", os_version_id: "osv_1", kernel: "6.1", debug: true };
+    await previewTestLaunch("tdef_1", body);
+    expect(apiPostMock).toHaveBeenCalledWith("/testing/v1/test-definitions/tdef_1/launch-preview", body);
   });
 });

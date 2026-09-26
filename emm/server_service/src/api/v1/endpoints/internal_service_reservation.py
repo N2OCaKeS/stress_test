@@ -40,7 +40,8 @@ from src.schemas.internal import (
     ServiceReservationResponse,
 )
 from src.schemas.server import AcsSnapshotItem, AcsSnapshotListResponse
-from src.services import acs_client, acs_settings as acs_settings_svc, server as server_svc
+from src.services import acs_client, acs_settings as acs_settings_svc, acs_snapshot_lookup, server as server_svc
+from src.api.v1.endpoints.internal_vm_service import vm_status_items
 
 # Whitelist identity, которым разрешена бронь от имени сервиса. `acs` заведён
 # заранее под ретрофит снимков (сегодня server_service ставит эти поля себе
@@ -216,7 +217,7 @@ async def get_connection_info(
     `testing_worker` получает задание на исполнение через shared-secret канал
     `testing_service`'а и физически не может пробросить чужой bearer в
     `GET /servers/{id}` (там видимость гейтится department_id держателя
-    токена). IP в `test_stands` намеренно не дублируется (§4 плана миграции),
+    токена). IP в `test_stands` намеренно не дублируется,
     поэтому вместо этого — узкий эндпоинт, отдающий только хост.
 
     Не читается как признак владения броней и ничего не проверяет по
@@ -249,22 +250,25 @@ async def acs_snapshots_for_service(
     есть снимок, на который ACS сможет откатиться при `prepare-for-test`
     (иначе `acs.snapshot_restore` провалится часы спустя асинхронно).
 
+    Каждый снимок несёт `normalized_version` (хвост в форме каталога,
+    `1710rc52` → `1.7.10.52`): testing_service сравнивает с ним
+    `os_version.name` сам, не копируя нормализацию. `hostname` — чтобы
+    назвать искомый снимок в `ACS_SNAPSHOT_NOT_FOUND`.
+
     Ошибки ACS (disabled/timeout/unreachable/ошибочный статус) пробрасываются
     как есть — тот же контракт, что у user-facing эндпоинта.
     """
     server = await server_svc.get_connection_info_for_service(db, server_id=server_id)
-    acs_url, acs_password = await acs_settings_svc.get_acs_credentials(db)
-    all_names = await acs_client.list_snapshots(acs_url, acs_password)
-    prefix = f"{server.hostname}-"
-    items = sorted(
-        (
-            AcsSnapshotItem(name=name, version_name=name[len(prefix):])
-            for name in all_names
-            if name.startswith(prefix)
-        ),
-        key=lambda item: item.name,
-    )
-    return AcsSnapshotListResponse(snapshots=items)
+    all_names = await acs_snapshot_lookup.list_acs_snapshot_names(db)
+    items = [
+        AcsSnapshotItem(
+            name=item.name,
+            version_name=item.version_name,
+            normalized_version=item.normalized_version,
+        )
+        for item in acs_snapshot_lookup.host_snapshots(all_names, server.hostname)
+    ]
+    return AcsSnapshotListResponse(hostname=server.hostname, snapshots=items)
 
 
 @router.post(
@@ -279,6 +283,9 @@ async def batch_status(
 ) -> ServerBatchStatusResponse:
     """Ping/busy пачкой для обзора пула (`testing_service`), без per-server round-trip.
 
+    Список смешанный: `server_ids` → `servers`,
+    `vm_ids` → `vms` (бронь ВМ сведена к `busy_state` серверов).
+
     Не гейтит видимость по отделу — тот же безведомственный s2s-канал, что и
     остальные эндпоинты этого роутера (см. module docstring); вызывающий сам
     ограничивает список своими стендами. Отсутствующий id возвращается с
@@ -289,6 +296,7 @@ async def batch_status(
     не меняет и не раскрывает чувствительных данных.
     """
     found = await server_svc.get_batch_status_for_service(db, server_ids=body.server_ids)
+    vms = await vm_status_items(db, body.vm_ids)
     items: list[ServerStatusItem] = []
     for server_id in body.server_ids:
         server = found.get(server_id)
@@ -306,4 +314,4 @@ async def batch_status(
             ping_reachable=server.ping_reachable,
             ping_checked_at=server.ping_checked_at,
         ))
-    return ServerBatchStatusResponse(servers=items)
+    return ServerBatchStatusResponse(servers=items, vms=vms)

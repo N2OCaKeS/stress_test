@@ -1,4 +1,4 @@
-"""Use cases для пресетов стандартных ВМ (vm_preset, §Пресеты дизайна).
+"""Use cases для пресетов стандартных ВМ (vm_preset).
 
 CRUD шаблонов «типовых» ВМ отдела. Право на всё — `(vm, vm_preset_manage)`
 (тип-wide, dep_admin / service-admin). Разворачивание пресетов на hub'е живёт в

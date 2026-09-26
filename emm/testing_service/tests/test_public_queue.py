@@ -12,6 +12,7 @@ from tests.test_queue import (
     _create_test_def,
     _get_item,
     LAUNCH_CTX,
+    TESTS_BASE,
     mock_server_service as mock_server_service,
     recorded_calls as recorded_calls,
     configure_internal_keys as configure_internal_keys,
@@ -394,6 +395,12 @@ async def test_stp_result_is_updated_only_for_normal_launch(
     await mock_git_token()
     stand_id, _ = await _create_stand(client, admin_token)
     test_id = await _create_test_def(client, admin_token, stand_id)
+    # Исход по коду выхода: у прогона `seed_stp` нет ключа Zephyr, а вердикт
+    # из Zephyr покрыт в `test_zephyr_verdict.py`.
+    patched = await client.patch(
+        f"{TESTS_BASE}/{test_id}", headers=auth_hdr(admin_token), json={"verdict_source": "exit_code"},
+    )
+    assert patched.status_code == 200, patched.text
     _, cell_id = await seed_stp(test_id, stand_id)
     response = await client.post(
         BASE,

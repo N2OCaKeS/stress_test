@@ -132,11 +132,24 @@ def mock_statistics_client(monkeypatch):
 
 @pytest.fixture
 def mock_statistics_category_client(monkeypatch):
-    """Как `mock_statistics_client`, но для пер-категорийного вызова."""
-    calls: list[dict] = []
+    """Как `mock_statistics_client`, но для пер-категорийного вызова.
 
-    async def fake_trigger(*, base_url, username, token, timeout, category):
-        calls.append({"base_url": base_url, "username": username, "token": token, "category": category})
+    `calls.failing` — ключи семейств, на которых внешний сервис «падает».
+    """
+
+    class _Calls(list):
+        failing: set[str]
+
+    calls = _Calls()
+    calls.failing = set()
+    failing = calls.failing
+
+    async def fake_trigger(*, base_url, username, token, timeout, spec):
+        calls.append({"base_url": base_url, "username": username, "token": token, "category": spec.key})
+        if spec.key in failing:
+            from src.core.exceptions import ServiceUnavailableError
+
+            raise ServiceUnavailableError(error_code="STATISTICS_SERVICE_ERROR", message="boom")
 
     monkeypatch.setattr(statistics_client, "trigger_category_statistics", fake_trigger)
     return calls
@@ -386,42 +399,63 @@ class TestRecalculateEndpoint:
 # ── Пер-категорийный пересчёт: девять триггеров легаси ─────────────────────
 
 
+async def _db_spec(key: str) -> statistics_client.CategorySpec:
+    async with AsyncSessionLocal() as db:
+        specs = await statistics_client.load_categories(db, enabled_only=False)
+    return next(spec for spec in specs if spec.key == key)
+
+
 class TestStatisticsCategoryCatalog:
-    """Ровно восемь семейств + «всё сразу» = девять кнопок легаси.
+    """Сид справочника — ровно восемь семейств легаси + «всё сразу» = девять кнопок.
 
     Источник — девять Flask-роутов `allta_app/allta_front.py:713-880`;
     `Docker`/`Network` есть у внешнего сервиса, но кнопки в легаси не имели.
     """
 
-    def test_exactly_eight_categories(self):
-        assert len(statistics_client.CATEGORIES) == 8
+    async def test_exactly_eight_seeded_categories(self):
+        async with AsyncSessionLocal() as db:
+            specs = await statistics_client.load_categories(db)
+        assert len(specs) == 8
 
-    def test_legacy_labels_and_order(self):
-        assert [item["label"] for item in statistics_client.category_choices()] == [
+    async def test_legacy_labels_and_order(self):
+        async with AsyncSessionLocal() as db:
+            choices = await statistics_client.category_choices(db)
+        assert [item["label"] for item in choices] == [
             "Apache", "FreeIPA", "Parsec", "PostgreSQL",
             "Qemu/KVM/Libvirt", "UnixBench", "Системные службы", "Файловые системы",
         ]
 
-    def test_three_families_share_base_statistics(self):
+    async def test_three_families_share_base_statistics(self):
         """Легаси отправляло Apache/UnixBench/Системные службы на `/base-statistics`."""
-        shared = {k for k, spec in statistics_client.CATEGORIES.items() if spec.path == "/base-statistics"}
+        async with AsyncSessionLocal() as db:
+            specs = await statistics_client.load_categories(db)
+        shared = {spec.key for spec in specs if spec.path == "/base-statistics"}
         assert shared == {"apache", "unixbench", "system_services"}
 
-    def test_postgresql_carries_kernel_comparison(self):
+    async def test_postgresql_carries_kernel_comparison(self):
         """Единственное семейство с `comparison_kernel_list` в легаси-конфиге."""
-        with_kernel = {
-            k for k, spec in statistics_client.CATEGORIES.items()
-            if spec.comparison_kernel_list is not None
-        }
+        async with AsyncSessionLocal() as db:
+            specs = await statistics_client.load_categories(db)
+        with_kernel = {spec.key for spec in specs if spec.comparison_kernel_list is not None}
         assert with_kernel == {"postgresql"}
-        assert statistics_client.CATEGORIES["postgresql"].comparison_kernel_list == ("postgresql",)
+        assert (await _db_spec("postgresql")).comparison_kernel_list == ("postgresql",)
+
+    async def test_seed_has_sql_null_not_json_null(self):
+        """Семейства без сравнений — SQL NULL, иначе ключ ушёл бы во внешний сервис как `null`."""
+        spec = await _db_spec("apache")
+        assert spec.comparison_list is None
+        assert spec.comparison_kernel_list is None
 
     async def test_categories_endpoint_lists_them(self, client, guest_token):
         resp = await client.get(CATEGORIES_BASE, headers=_hdr(guest_token))
         assert resp.status_code == 200, resp.text
         items = resp.json()["items"]
         assert len(items) == 8
-        assert items[0] == {"key": "apache", "label": "Apache"}
+        assert items[0]["key"] == "apache"
+        assert items[0]["label"] == "Apache"
+        assert items[0]["path"] == "/base-statistics"
+        assert items[0]["set_of_test_types"] == ["apache-rp"]
+        assert items[0]["enabled"] is True
 
     async def test_categories_endpoint_rejects_anonymous(self, client):
         resp = await client.get(CATEGORIES_BASE)
@@ -429,7 +463,7 @@ class TestStatisticsCategoryCatalog:
 
 
 class TestStatisticsCategoryPayload:
-    """Тело запроса к внешнему сервису — буквальный перенос легаси."""
+    """Тело запроса к внешнему сервису — буквальный перенос легаси, но из БД."""
 
     async def test_apache_payload(self, monkeypatch):
         captured = {}
@@ -440,7 +474,8 @@ class TestStatisticsCategoryPayload:
 
         monkeypatch.setattr(statistics_client, "_post", fake_post)
         await statistics_client.trigger_category_statistics(
-            base_url="http://stats:7777", username="bot", token="tok", timeout=5.0, category="apache",
+            base_url="http://stats:7777", username="bot", token="tok", timeout=5.0,
+            spec=await _db_spec("apache"),
         )
         assert captured["path"] == "/base-statistics"
         assert captured["payload"] == {
@@ -460,7 +495,8 @@ class TestStatisticsCategoryPayload:
 
         monkeypatch.setattr(statistics_client, "_post", fake_post)
         await statistics_client.trigger_category_statistics(
-            base_url="http://stats:7777", username="bot", token="tok", timeout=5.0, category="freeipa",
+            base_url="http://stats:7777", username="bot", token="tok", timeout=5.0,
+            spec=await _db_spec("freeipa"),
         )
         assert "comparison_list" not in captured["payload"]
         assert "comparison_kernel_list" not in captured["payload"]
@@ -474,19 +510,12 @@ class TestStatisticsCategoryPayload:
 
         monkeypatch.setattr(statistics_client, "_post", fake_post)
         await statistics_client.trigger_category_statistics(
-            base_url="http://stats:7777", username="bot", token="tok", timeout=5.0, category="postgresql",
+            base_url="http://stats:7777", username="bot", token="tok", timeout=5.0,
+            spec=await _db_spec("postgresql"),
         )
         assert captured["path"] == "/postgresql-statistics"
         assert captured["payload"]["comparison_kernel_list"] == ["postgresql"]
         assert ["postgresql", "postgresql-sm"] in captured["payload"]["comparison_list"]
-
-    async def test_unknown_category_raises(self):
-        from src.core.exceptions import ServiceUnavailableError
-
-        with pytest.raises(ServiceUnavailableError):
-            await statistics_client.trigger_category_statistics(
-                base_url="http://stats:7777", username="b", token="t", timeout=1.0, category="nope",
-            )
 
 
 class TestRecalculateEndpointCategories:

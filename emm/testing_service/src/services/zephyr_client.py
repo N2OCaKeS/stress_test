@@ -54,11 +54,24 @@
   `{"results": [...]}` (paginated-стиль, которым отвечают другие
   Atlassian-эндпоинты этого же сервиса, см. `confluence_client.py`) — какая
   из них у search-эндпоинта настоящей Jira, не проверялось.
+* `find_test_run_folder_id`/`create_test_run_folder` — (D7): id папки
+  Zephyr (`folderTreeId`, легаси `-fti`) по её пути. Поиска папки по пути в
+  ATM REST 1.0 нет, поэтому id берётся из test-run'ов, уже лежащих в этой
+  папке (`search_test_runs`, поля `folderId` / `folder.id` ответа — так
+  отвечает `rest/tests/1.0/testrun/search`, которым пользовалось легаси:
+  `allta_app_full/test2_zephyr_folder.py:15-41`, `libs/zefir.py:156-163`).
+  Создание — `POST /rest/atm/1.0/folder` с `{"projectKey", "name": <путь>,
+  "type": "TEST_RUN"}`, ответ `{"id": …}` — ровно как легаси
+  `TestrunManager.add_testrun_folder` (`allta_app_full/libs/liballta.py:
+  2119-2140`), это единственная из операций с рабочим легаси-
+  прецедентом. Что ATM search отдаёт id папки, **не проверено** против живой
+  Jira (см. оговорку у `search_test_runs`).
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import httpx
@@ -102,8 +115,18 @@ def map_status(status: str) -> str:
 _REVERSE_STATUS_MAP: dict[str, str] = {zephyr: local for local, zephyr in _STATUS_MAP.items()}
 
 
-def map_status_from_zephyr(zephyr_status: str | None) -> str:
-    """Обратное к `map_status` — статус Zephyr ATM → `StpCellStatus` (§D8).
+def map_status_from_zephyr(
+    zephyr_status: str | None, mapping: Mapping[str, str] | None = None,
+) -> str:
+    """Статус Zephyr → `StpCellStatus` (§D8).
+
+    `mapping` — таблица отдела `zephyr_status_mappings` (,
+    `zephyr_verdict.load_mapping`): ключи уже нормализованы
+    (`zephyr_verdict.normalize_status`), значения — `passed`/`failed`/
+    `not_finished`. `passed`/`failed` дают `passed`/`fail`; у
+    `not_finished` таблица не различает «выполняется» и «не запускался»,
+    поэтому различие берётся из имени статуса ATM, иначе — `not_run`.
+    Без `mapping` — прежний разбор имён ATM (`_STATUS_MAP`).
 
     Пустое или незнакомое значение — безопасный дефолт `not_run`, а не
     исключение: чтение из Zephyr не должно падать на экзотическом статусе
@@ -111,6 +134,15 @@ def map_status_from_zephyr(zephyr_status: str | None) -> str:
     заметно занизить его до "не запускался", чем уронить весь импорт.
     """
     if not zephyr_status:
+        return StpCellStatus.NOT_RUN
+    if mapping is not None:
+        outcome = mapping.get(zephyr_status.strip().casefold())
+        if outcome == "passed":
+            return StpCellStatus.PASSED
+        if outcome == "failed":
+            return StpCellStatus.FAIL
+        if _REVERSE_STATUS_MAP.get(zephyr_status) == StpCellStatus.IN_PROGRESS:
+            return StpCellStatus.IN_PROGRESS
         return StpCellStatus.NOT_RUN
     return _REVERSE_STATUS_MAP.get(zephyr_status, StpCellStatus.NOT_RUN)
 
@@ -399,6 +431,23 @@ class ZephyrTestRunSummary:
     key: str
     name: str
     folder: str | None = None
+    # id папки (`folderTreeId`) — если ответ его несёт (`folderId` или
+    # объект `folder` с `id`). ATM REST 1.0 отдаёт `folder` строкой пути, без
+    # id; внутренний `rest/tests/1.0` — объектом с `id`.
+    folder_id: str | None = None
+
+
+def _parse_folder(raw: dict) -> tuple[str | None, str | None]:
+    """`(путь, id)` папки из элемента ответа поиска test-run'ов."""
+    folder = raw.get("folder")
+    folder_id = raw.get("folderId")
+    path: str | None = None
+    if isinstance(folder, dict):
+        folder_id = folder_id if folder_id not in (None, "") else folder.get("id")
+        path = folder.get("fullName") or folder.get("path") or folder.get("name")
+    elif isinstance(folder, str):
+        path = folder
+    return path, (str(folder_id) if folder_id not in (None, "") else None)
 
 
 @dataclass(frozen=True)
@@ -406,13 +455,16 @@ class ZephyrTestRunResultItem:
     """Один тест-кейс внутри test-run'а с его ТЕКУЩИМ статусом (`get_test_run`).
 
     `status` уже переведён в `StpCellStatus` через `map_status_from_zephyr` —
-    вызывающему коду не нужно знать вокабуляр Zephyr.
+    вызывающему коду не нужно знать вокабуляр Zephyr. `status_raw` — статус
+    как его отдал Zephyr: по нему вердикт теста ищется в таблице
+    `zephyr_status_mappings`.
     """
 
     test_case_key: str
     status: str
     environment: str | None = None
     test_case_name: str | None = None
+    status_raw: str | None = None
 
 
 @dataclass(frozen=True)
@@ -479,12 +531,90 @@ async def search_test_runs(
         key = raw.get("key")
         if not key:
             continue
-        results.append(ZephyrTestRunSummary(key=key, name=raw.get("name") or "", folder=raw.get("folder")))
+        path, folder_id = _parse_folder(raw)
+        results.append(ZephyrTestRunSummary(
+            key=key, name=raw.get("name") or "", folder=path, folder_id=folder_id,
+        ))
     return results
+
+
+async def find_test_run_folder_id(
+    *, base_url: str, bearer_token: str, folder: str, project_key: str = "BT",
+) -> str | None:
+    """id папки Zephyr по её пути — через test-run'ы, лежащие в ней.
+
+    `None` — в папке нет ни одного test-run'а или ответ поиска не несёт id
+    папки. Сбой Zephyr пробрасывается как `ServiceUnavailableError` (как у
+    `search_test_runs`) — вызывающий отличает «не нашли» от «не спросили».
+    """
+    runs = await search_test_runs(
+        base_url=base_url, bearer_token=bearer_token, folder=folder, project_key=project_key,
+    )
+    wanted = folder.rstrip("/")
+    for run in runs:
+        if not run.folder_id:
+            continue
+        # Полный путь в ответе, отличный от искомого, — прогон из вложенной
+        # папки: его id не наш. Имя без пути (`"1.8.5.46"`) или отсутствие
+        # пути сравнить не с чем — доверяем фильтру самого запроса.
+        if run.folder and run.folder.startswith("/") and run.folder.rstrip("/") != wanted:
+            continue
+        return run.folder_id
+    return None
+
+
+async def create_test_run_folder(
+    *, base_url: str, bearer_token: str, folder: str, project_key: str = "BT",
+) -> str | None:
+    """`POST /rest/atm/1.0/folder` — завести папку test-run'ов, вернуть её id.
+
+    Легаси `TestrunManager.add_testrun_folder` (`allta_app_full/libs/
+    liballta.py:2122-2140`): тело `{"projectKey": "BT", "name": "/stress_test/
+    <release>/<rc>", "type": "TEST_RUN"}`, id — `response.json()["id"]`.
+    `None` — Zephyr отказал ответом 4xx (обычно папка уже есть: ATM не
+    заводит двух папок с одним путём). Недоступность или 5xx —
+    `ServiceUnavailableError`.
+    """
+    settings = get_settings()
+    url = f"{_base(base_url)}/rest/atm/1.0/folder"
+    body = {"projectKey": project_key, "name": folder, "type": "TEST_RUN"}
+    async with build_client(settings.zephyr_request_timeout_seconds) as client:
+        try:
+            response = await client.post(url, json=body, headers=bearer_header(bearer_token))
+        except httpx.HTTPError as exc:
+            raise ServiceUnavailableError(
+                error_code="ZEPHYR_UNREACHABLE",
+                message=f"Unable to reach Jira/Zephyr: {type(exc).__name__}",
+            ) from exc
+
+    if 400 <= response.status_code < 500:
+        logger.info(
+            "zephyr: create_test_run_folder(%s) refused status=%s body=%s",
+            folder, response.status_code, response.text[:500],
+        )
+        return None
+    if response.status_code not in (200, 201):
+        logger.warning(
+            "zephyr: create_test_run_folder(%s) failed status=%s body=%s",
+            folder, response.status_code, response.text[:500],
+        )
+        raise ServiceUnavailableError(
+            error_code="ZEPHYR_CREATE_FOLDER_FAILED",
+            message=f"Zephyr returned {response.status_code} creating the test run folder",
+        )
+    try:
+        folder_id = response.json().get("id")
+    except (ValueError, AttributeError) as exc:
+        raise ServiceUnavailableError(
+            error_code="ZEPHYR_ERROR",
+            message="Zephyr returned a non-JSON body creating the test run folder",
+        ) from exc
+    return str(folder_id) if folder_id not in (None, "") else None
 
 
 async def get_test_run(
     *, base_url: str, bearer_token: str, test_run_key: str,
+    status_mapping: Mapping[str, str] | None = None,
 ) -> ZephyrTestRunDetail:
     """`GET /rest/atm/1.0/testrun/{key}` — детали test-run'а: имя, папка, состав
     тест-кейсов с их ТЕКУЩИМ статусом (§D8).
@@ -495,6 +625,7 @@ async def get_test_run(
     ищется в нескольких правдоподобных местах ответа (`testCaseName` на
     самом элементе либо вложенный `testCase.name`) — какое из них
     настоящее, не проверялось; при отсутствии обоих используется сам ключ.
+    `status_mapping` — таблица отдела для `map_status_from_zephyr`.
     """
     settings = get_settings()
     url = f"{_base(base_url)}/rest/atm/1.0/testrun/{test_run_key}"
@@ -536,11 +667,14 @@ async def get_test_run(
         if not case_key:
             continue
         name = raw.get("testCaseName") or (raw.get("testCase") or {}).get("name")
+        raw_status = raw.get("status")
+        raw_status = str(raw_status) if raw_status not in (None, "") else None
         items.append(ZephyrTestRunResultItem(
             test_case_key=case_key,
-            status=map_status_from_zephyr(raw.get("status")),
+            status=map_status_from_zephyr(raw_status, status_mapping),
             environment=raw.get("environment"),
             test_case_name=name,
+            status_raw=raw_status,
         ))
     return ZephyrTestRunDetail(
         key=body.get("key") or test_run_key,

@@ -1,7 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { ToastProvider } from "@/contexts/ToastContext";
-import type { TestCommandArg, TestDefinition, GlobalVariable } from "@/api/testing/types";
+import { ApiError } from "@/api/client";
+import type {
+  GlobalVariable,
+  GlobalVariableSourceOptions,
+  LaunchPreview,
+  TestCommandArg,
+  TestDefinition,
+} from "@/api/testing/types";
 
 const confirmMock = vi.fn(async () => true);
 vi.mock("@/components/ui/ConfirmDialog", () => ({
@@ -12,7 +19,9 @@ const listTestDefinitionsMock = vi.fn();
 const createTestDefinitionMock = vi.fn();
 const updateTestDefinitionMock = vi.fn();
 const deleteTestDefinitionMock = vi.fn();
+const previewTestLaunchMock = vi.fn();
 vi.mock("@/api/testing/testDefinitions", () => ({
+  previewTestLaunch: (...args: unknown[]) => previewTestLaunchMock(...args),
   listTestDefinitions: (...args: unknown[]) => listTestDefinitionsMock(...args),
   createTestDefinition: (...args: unknown[]) => createTestDefinitionMock(...args),
   updateTestDefinition: (...args: unknown[]) => updateTestDefinitionMock(...args),
@@ -32,12 +41,27 @@ vi.mock("@/api/testing/testCommandArgs", () => ({
   deleteTestCommandArg: (...args: unknown[]) => deleteTestCommandArgMock(...args),
 }));
 
+// Шаги теста: у каталожных тестов здесь один шаг — конструктор
+// работает как с одношаговым тестом. Сами шаги — `TestStepsPanel.test.tsx`.
+vi.mock("@/api/testing/testSteps", () => ({
+  listTestSteps: vi.fn(async (testId: string) => [{
+    id: `step_${testId}`, test_id: testId, position: 0, name: "", starter_suffix: null,
+    run_mode: "full", stand_setup: null, created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z",
+  }]),
+  createTestStep: vi.fn(),
+  updateTestStep: vi.fn(),
+  deleteTestStep: vi.fn(),
+  reorderTestSteps: vi.fn(),
+}));
+
 const listGlobalVariablesMock = vi.fn();
 const getGlobalVariableChoicesMock = vi.fn();
 const createGlobalVariableMock = vi.fn();
 const updateGlobalVariableMock = vi.fn();
 const deleteGlobalVariableMock = vi.fn();
+const getGlobalVariableSourceOptionsMock = vi.fn();
 vi.mock("@/api/testing/global_variables", () => ({
+  getGlobalVariableSourceOptions: (...args: unknown[]) => getGlobalVariableSourceOptionsMock(...args),
   listGlobalVariables: (...args: unknown[]) => listGlobalVariablesMock(...args),
   getGlobalVariableChoices: (...args: unknown[]) => getGlobalVariableChoicesMock(...args),
   createGlobalVariable: (...args: unknown[]) => createGlobalVariableMock(...args),
@@ -57,6 +81,13 @@ vi.mock("@/api/testing/stp", () => ({
   listStpTestCases: (...args: unknown[]) => listStpTestCasesMock(...args),
   createStpTestCase: (...args: unknown[]) => createStpTestCaseMock(...args),
   updateStpTestCase: (...args: unknown[]) => updateStpTestCaseMock(...args),
+}));
+
+const listOsVersionsMock = vi.fn();
+const resolveOsKernelsMock = vi.fn();
+vi.mock("@/api/server/osVersions", () => ({
+  listOsVersions: (...args: unknown[]) => listOsVersionsMock(...args),
+  resolveOsKernels: (...args: unknown[]) => resolveOsKernelsMock(...args),
 }));
 
 const listDepartmentsMock = vi.fn();
@@ -155,6 +186,50 @@ const SLOTS: TestCommandArg[] = [
   },
 ];
 
+const SOURCE_OPTIONS: GlobalVariableSourceOptions = {
+  sources: ["launch_context", "static", "per_test_override", "secret_service", "template", "test_field", "stand",
+    "department_integration", "os_version", "test_account", "zephyr_folder", "stand_ref"],
+  test_fields: ["category", "changelog_component", "code", "full_name", "short_name"],
+  stand_fields: ["host", "id", "legacy_token", "number"],
+  stand_ref_fields: ["host", "legacy_token", "number"],
+  department_integration_fields: [
+    { field: "confluence_credential_id", is_credential: true },
+    { field: "credential_id", is_credential: true },
+    { field: "stp_matrix_confluence_space", is_credential: false },
+  ],
+  credential_parts: ["login", "secret"],
+  os_version_fields: ["is_urgent_update", "name", "rc_number"],
+  test_account_fields: ["home", "login", "password"],
+  zephyr_folder_fields: ["folder_path", "folder_tree_id"],
+  template_conditions: ["debug", "not_debug"],
+};
+
+const PREVIEW: LaunchPreview = {
+  test_id: "td_1",
+  stand_id: "st_1",
+  launch_context: { RC: "osv_1", KERNEL: "6.1.90-1-generic", MODE: "orel" },
+  debug: false,
+  testenv: false,
+  launch_profile: { profile_id: "lp_default", name: "Легаси starter.sh", version_id: "lpv_1", version: 1 },
+  variables: [
+    { code: "CONFLUENCE_NEW_PAGE", label: "Страница", source: "template", value: "XFS_1.8.1.6_orel_6.1.90-1-generic_stand3", sensitive: false, slot_position: null },
+    { code: "CONFLUENCE_TOKEN", label: "Токен", source: "department_integration", value: "***", sensitive: true, slot_position: null },
+    { code: "QUEUE_ITEM_ID", label: null, source: "claim", value: "qi_preview", sensitive: false, slot_position: null },
+  ],
+  dates_content_masked: "--token '***' --confluence-new-page XFS_1.8.1.6_orel_6.1.90-1-generic_stand3",
+  files: [
+    { role: "script", path: "/home/u/starter.sh", mode: "0755", sensitive: false, content: "#!/bin/bash\necho start" },
+    { role: "token", path: "/home/u/git_token_qi_preview.conf", mode: "0600", sensitive: true, content: "***" },
+    { role: "dates", path: "/home/u/dates_qi_preview.conf", mode: "0644", sensitive: true, content: "--token '***'" },
+    { role: "testenv_marker", path: "/home/u/testenv_marker.conf", mode: "0644", sensitive: false, content: "off" },
+  ],
+  launch_command_masked: "sudo bash /home/u/starter.sh file_systems git_token_qi_preview.conf dates_qi_preview.conf 1.8.1.6 ''",
+  stop_command: "sudo pkill -f '[/]home/u/starter\\.sh'",
+  use_pty: true,
+  cleanup_globs: [],
+  errors: [],
+};
+
 function renderWorkzone() {
   return render(
     <ToastProvider>
@@ -185,6 +260,13 @@ beforeEach(() => {
   createGlobalVariableMock.mockResolvedValue(VARIABLES[0]);
   updateGlobalVariableMock.mockResolvedValue(VARIABLES[0]);
   deleteGlobalVariableMock.mockResolvedValue({ ok: true });
+  getGlobalVariableSourceOptionsMock.mockResolvedValue(SOURCE_OPTIONS);
+  previewTestLaunchMock.mockResolvedValue(PREVIEW);
+  listOsVersionsMock.mockResolvedValue({
+    items: [{ id: "osv_1", name: "1.8.1.6", kernels: ["6.1.90-1-generic", "5.15.0-1"] }],
+    total: 1, limit: 500, offset: 0,
+  });
+  resolveOsKernelsMock.mockResolvedValue({ kernels: [] });
 });
 
 describe("TestsWorkzone — каталог тестов из API", () => {
@@ -301,6 +383,27 @@ describe("TestsWorkzone — каталог тестов из API", () => {
       expect(createTestDefinitionMock).toHaveBeenCalledWith(
         expect.objectContaining({ timeout_seconds: 120 }),
       ),
+    );
+  });
+
+  it("приоритет теста для порядка прогона РЦ уходит в createTestDefinition числом (по умолчанию 0)", async () => {
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+
+    fireEvent.click(screen.getByRole("button", { name: /Добавить тест/ }));
+    fireEvent.change(await screen.findByPlaceholderText("FS-EXT4-FILL"), {
+      target: { value: "NET-IPERF3" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("filesystem / ext4 fill+remove cycle"), {
+      target: { value: "network / iperf3 throughput" },
+    });
+    const priority = screen.getByLabelText(/Приоритет в прогоне РЦ/) as HTMLInputElement;
+    expect(priority.value).toBe("0");
+    fireEvent.change(priority, { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: "Создать" }));
+
+    await waitFor(() =>
+      expect(createTestDefinitionMock).toHaveBeenCalledWith(expect.objectContaining({ priority: 7 })),
     );
   });
 
@@ -628,5 +731,249 @@ describe("TestsWorkzone — глобальные переменные", () => {
     fireEvent.click(screen.getByRole("button", { name: "Переменная" }));
     fireEvent.click(screen.getByRole("button", { name: /выберите переменную/ }));
     expect(await screen.findByRole("option", { name: /NEW_VAR/ })).toBeInTheDocument();
+  });
+});
+
+describe("TestsWorkzone — источники переменных", () => {
+  async function openVariables() {
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+    fireEvent.click(screen.getByRole("button", { name: /Переменные/ }));
+    await screen.findByText("Глобальные переменные");
+  }
+
+  async function newVariable(code: string, source: RegExp) {
+    fireEvent.click(screen.getByRole("button", { name: /Добавить переменную/ }));
+    fireEvent.change(screen.getByPlaceholderText("код, например RC"), { target: { value: code } });
+    fireEvent.change(screen.getByPlaceholderText("метка"), { target: { value: code.toLowerCase() } });
+    fireEvent.click(screen.getByRole("button", { name: /launch_context — из контекста запуска/ }));
+    fireEvent.click(await screen.findByRole("option", { name: source }));
+  }
+
+  it("шаблон: автодополнение кода после «{» и source_ref.template в теле запроса", async () => {
+    await openVariables();
+    await newVariable("PAGE", /template — шаблон/);
+
+    const input = screen.getByRole("textbox", { name: "Шаблон" }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "X_{R" } });
+    input.setSelectionRange(4, 4);
+    fireEvent.select(input);
+    fireEvent.mouseDown(await screen.findByRole("option", { name: "{RC}" }));
+    expect(input.value).toBe("X_{RC}");
+    // подсветка: известный код отдельно
+    expect(screen.getByTestId("template-highlight")).toHaveTextContent("X_{RC}");
+
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() =>
+      expect(createGlobalVariableMock).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "PAGE", source: "template", source_ref: { template: "X_{RC}" } }),
+      ),
+    );
+  });
+
+  it("неизвестный код шаблона подсвечивается до сохранения", async () => {
+    await openVariables();
+    await newVariable("PAGE", /template — шаблон/);
+    fireEvent.change(screen.getByRole("textbox", { name: "Шаблон" }), { target: { value: "{NOPE}_{RC}" } });
+    expect(screen.getByText("{NOPE}")).toHaveAttribute("title", "Неизвестная переменная");
+    expect(screen.getByText(/Нет в каталоге: NOPE/)).toBeInTheDocument();
+  });
+
+  it("цикл шаблонов с сервиса показывается у поля шаблона, без всплывающего сообщения", async () => {
+    createGlobalVariableMock.mockRejectedValueOnce(new ApiError(422, {
+      error: "validation_error", error_code: "VARIABLE_TEMPLATE_CYCLE", message: "Template cycle",
+      details: { code: "PAGE", cycle: ["PAGE", "RC", "PAGE"] },
+    }));
+    await openVariables();
+    await newVariable("PAGE", /template — шаблон/);
+    fireEvent.change(screen.getByRole("textbox", { name: "Шаблон" }), { target: { value: "{RC}" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    expect(await screen.findByText("Цикл подстановок: PAGE → RC → PAGE")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Шаблон" })).toHaveAttribute("aria-invalid", "true");
+    // форма осталась открытой
+    expect(screen.getByPlaceholderText("код, например RC")).toHaveValue("PAGE");
+  });
+
+  it("неверная ссылка с сервиса показывается с подсказкой", async () => {
+    createGlobalVariableMock.mockRejectedValueOnce(new ApiError(422, {
+      error: "validation_error", error_code: "VARIABLE_SOURCE_REF_INVALID",
+      message: "A variable revealing a credential secret must be is_sensitive=true",
+      details: { hint: "включите is_sensitive" },
+    }));
+    await openVariables();
+    await newVariable("CONF_TOKEN", /department_integration/);
+    fireEvent.click(screen.getByRole("button", { name: "— поле —" }));
+    fireEvent.click(await screen.findByRole("option", { name: "credential_id (учётные данные)" }));
+    fireEvent.click(screen.getByRole("button", { name: "— login или secret —" }));
+    fireEvent.click(await screen.findByRole("option", { name: /secret — секрет/ }));
+    expect(screen.getByText(/только в чувствительной переменной/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() =>
+      expect(createGlobalVariableMock).toHaveBeenCalledWith(expect.objectContaining({
+        source: "department_integration",
+        source_ref: { field: "credential_id", credential_part: "secret" },
+      })),
+    );
+    expect(await screen.findByText(/must be is_sensitive=true — включите is_sensitive/)).toBeInTheDocument();
+  });
+
+  it("поле теста с запасным полем уходит в source_ref", async () => {
+    await openVariables();
+    await newVariable("SHORT", /test_field — поле теста/);
+    fireEvent.click(screen.getByRole("button", { name: "— поле —" }));
+    fireEvent.click(await screen.findByRole("option", { name: "short_name" }));
+    fireEvent.click(screen.getByRole("button", { name: "— без запасного поля —" }));
+    fireEvent.click(await screen.findByRole("option", { name: "full_name" }));
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() =>
+      expect(createGlobalVariableMock).toHaveBeenCalledWith(expect.objectContaining({
+        source: "test_field", source_ref: { field: "short_name", fallback: "full_name" },
+      })),
+    );
+  });
+
+  it("строка каталога показывает ссылку источника, форма правки предзаполнена", async () => {
+    listGlobalVariablesMock.mockResolvedValue({
+      items: [{
+        ...VARIABLES[0], id: "gv_9", code: "RC_RELEASE", label: "Релиз", source: "os_version",
+        source_ref: { field: "name", segments: 3, uu_segments: 5 },
+      }],
+      total: 1, limit: 200, offset: 0,
+    });
+    await openVariables();
+    expect(screen.getByText("name segments=3 uu_segments=5")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Изменить переменную" }));
+    expect(await screen.findByDisplayValue("3")).toBeInTheDocument();
+    fireEvent.change(screen.getByDisplayValue("5"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+    await waitFor(() =>
+      expect(updateGlobalVariableMock).toHaveBeenCalledWith("gv_9", expect.objectContaining({
+        source: "os_version", source_ref: { field: "name", segments: 3, uu_segments: null },
+      })),
+    );
+  });
+});
+
+describe("TestsWorkzone — поля теста и превью запуска", () => {
+  const STANDS = {
+    items: [{ id: "st_1", server_id: "srv_1", department_id: "dep_a", server: { display_name: "stand3" } }],
+    total: 1, limit: 500, offset: 0,
+  };
+
+  async function openPreview() {
+    listTestStandsMock.mockResolvedValue(STANDS);
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+    fireEvent.click(within(screen.getByText("FS-EXT4-FILL").closest("tr")!).getByRole("button", { name: "Превью запуска" }));
+    await screen.findByText(/Превью запуска · FS-EXT4-FILL/);
+    const show = screen.getByRole("button", { name: /Показать/ });
+    expect(show).toBeDisabled();
+    fireEvent.click(await screen.findByRole("button", { name: "Выберите стенд" }));
+    fireEvent.click(await screen.findByRole("option", { name: "stand3" }));
+    fireEvent.click(screen.getByRole("button", { name: "Выберите РЦ" }));
+    fireEvent.click(await screen.findByRole("option", { name: "1.8.1.6" }));
+    await waitFor(() => expect(show).not.toBeDisabled());
+    fireEvent.click(show);
+  }
+
+  it("короткое имя, экранирование dates.conf и исход теста уходят в createTestDefinition", async () => {
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+    fireEvent.click(screen.getByRole("button", { name: /Добавить тест/ }));
+    fireEvent.change(await screen.findByPlaceholderText("FS-EXT4-FILL"), { target: { value: "file_systems.xfs" } });
+    fireEvent.change(screen.getByPlaceholderText("filesystem / ext4 fill+remove cycle"), {
+      target: { value: "file system benchmark. XFS" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("XFS"), { target: { value: "XFS" } });
+    fireEvent.click(screen.getByRole("button", { name: /shell — каждый токен/ }));
+    fireEvent.click(await screen.findByRole("option", { name: /legacy — кавычки/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Статус тест-кейса в Zephyr/ }));
+    fireEvent.click(await screen.findByRole("option", { name: "Код выхода starter.sh" }));
+    fireEvent.click(screen.getByRole("button", { name: "Создать" }));
+
+    await waitFor(() =>
+      expect(createTestDefinitionMock).toHaveBeenCalledWith(expect.objectContaining({
+        short_name: "XFS", dates_quoting: "legacy", verdict_source: "exit_code",
+      })),
+    );
+  });
+
+  it("без правок: short_name=null, dates_quoting=shell, verdict_source=zephyr", async () => {
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+    fireEvent.click(screen.getAllByRole("button", { name: "Изменить тест" })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "Сохранить" }));
+    await waitFor(() =>
+      expect(updateTestDefinitionMock).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+        short_name: null, dates_quoting: "shell", verdict_source: "zephyr",
+      })),
+    );
+  });
+
+  it("карточка теста открывает превью запуска", async () => {
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+    fireEvent.click(screen.getAllByRole("button", { name: "Изменить тест" })[0]);
+    fireEvent.click(await screen.findByRole("button", { name: /Превью запуска/ }));
+    expect(await screen.findByText(/Превью запуска · /)).toBeInTheDocument();
+  });
+
+  it("превью: выбор стенда, РЦ и ядра, показ команды, dates.conf, файлов и переменных", async () => {
+    await openPreview();
+
+    await waitFor(() =>
+      expect(previewTestLaunchMock).toHaveBeenCalledWith("td_1", {
+        stand_id: "st_1", os_version_id: "osv_1", kernel: "6.1.90-1-generic", mode: "orel", debug: false, testenv: false,
+        step_index: 0,
+      }),
+    );
+    const result = await screen.findByTestId("launch-preview-result");
+    expect(within(result).getByLabelText("Команда запуска")).toHaveTextContent(
+      "sudo bash /home/u/starter.sh file_systems git_token_qi_preview.conf dates_qi_preview.conf 1.8.1.6 ''",
+    );
+    expect(within(result).getByLabelText("dates.conf")).toHaveTextContent(
+      "--confluence-new-page XFS_1.8.1.6_orel_6.1.90-1-generic_stand3",
+    );
+    expect(within(result).getByLabelText("/home/u/git_token_qi_preview.conf")).toHaveTextContent("***");
+    expect(within(result).getByText("/home/u/starter.sh")).toBeInTheDocument();
+    expect(within(result).getByLabelText("Команда остановки")).toHaveTextContent("pkill");
+    expect(within(result).getByText("CONFLUENCE_TOKEN").closest("tr")).toHaveTextContent("***");
+    expect(within(result).getByText("QUEUE_ITEM_ID").closest("tr")).toHaveTextContent("задание (профиль запуска)");
+    expect(within(result).getByText(/профиль «Легаси starter.sh» v1/)).toBeInTheDocument();
+  });
+
+  it("ошибки этапов превью показываются с подсказкой", async () => {
+    previewTestLaunchMock.mockResolvedValue({
+      ...PREVIEW,
+      dates_content_masked: null,
+      files: PREVIEW.files.map((f) => (f.role === "dates" ? { ...f, content: null } : f)),
+      errors: [{
+        stage: "dates", error_code: "VARIABLE_VALUE_MISSING", message: "Zephyr folder folder_tree_id is not known",
+        details: { hint: "сгенерируйте СТП" },
+      }],
+    });
+    await openPreview();
+
+    const alert = await screen.findByText(/провалится на подготовке задания/);
+    expect(alert.parentElement).toHaveTextContent("VARIABLE_VALUE_MISSING");
+    expect(alert.parentElement).toHaveTextContent("(сгенерируйте СТП)");
+    expect(screen.getAllByText("не собрано — см. ошибки выше").length).toBe(2);
+  });
+
+  it("override_value слота подсказывает подстановки {CODE}", async () => {
+    renderWorkzone();
+    await screen.findByText("FS-EXT4-FILL");
+    fireEvent.click(within(screen.getByText("FS-EXT4-FILL").closest("tr")!).getByRole("button", { name: /Конструктор/ }));
+    await screen.findByText("backup_image.py");
+    fireEvent.click(screen.getByRole("button", { name: /Добавить слот/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Переменная" }));
+    expect(screen.getByText(/В override работают подстановки/)).toBeInTheDocument();
+    const input = screen.getByRole("textbox", { name: "override_value" });
+    fireEvent.change(input, { target: { value: "{RC}_{MISSING}" } });
+    expect(screen.getByText("{MISSING}")).toHaveAttribute("title", "Неизвестная переменная");
   });
 });

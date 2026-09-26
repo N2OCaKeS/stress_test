@@ -49,6 +49,9 @@ const INTEGRATION_FIELDS: Array<{ key: string; label: string; placeholder?: stri
   { key: "confluence_report_parent_page_title", label: "Родительская страница отчёта по активностям", placeholder: "Отчёты по активности" },
   { key: "stp_matrix_confluence_space", label: "Confluence space для СТП-матрицы", placeholder: "DEPTQA" },
   { key: "stp_matrix_confluence_root_page_title", label: "Корневая страница СТП-матрицы", placeholder: "Состав тестового прогона" },
+  // Шаблоны с подстановками `{CODE}` глобальных переменных; пусто — легаси-дефолт.
+  { key: "zephyr_folder_path_template", label: "Шаблон пути папки Zephyr (прогоны СТП)", placeholder: "/stress_test/{RC_RELEASE}/{RC_NAME}", mono: true },
+  { key: "zephyr_run_name_template", label: "Шаблон имени прогона Zephyr", placeholder: "{RC_NAME}_{MODE}_{KERNEL}_{STAND_TOKEN}", mono: true },
   { key: "credential_id", label: "Credential id (Jira/Zephyr)", placeholder: "cred_...", mono: true },
   { key: "confluence_credential_id", label: "Credential id (Confluence)", placeholder: "cred_...", mono: true },
   { key: "bitbucket_credential_id", label: "Credential id (Bitbucket)", placeholder: "cred_...", mono: true },

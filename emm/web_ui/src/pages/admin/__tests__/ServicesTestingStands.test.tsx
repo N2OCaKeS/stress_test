@@ -12,7 +12,9 @@ const createTestStandMock = vi.fn();
 const updateTestStandMock = vi.fn();
 const deleteTestStandMock = vi.fn();
 const getTestStandCredentialsMock = vi.fn();
+const getTestStandVmSnapshotsMock = vi.fn();
 vi.mock("@/api/testing/testStands", () => ({
+  getTestStandVmSnapshots: (...a: unknown[]) => getTestStandVmSnapshotsMock(...a),
   listTestStands: (...a: unknown[]) => listTestStandsMock(...a),
   getTestStand: (...a: unknown[]) => getTestStandMock(...a),
   createTestStand: (...a: unknown[]) => createTestStandMock(...a),
@@ -24,6 +26,11 @@ vi.mock("@/api/testing/testStands", () => ({
 const listServersMock = vi.fn();
 vi.mock("@/api/server/servers", () => ({
   listServers: (...a: unknown[]) => listServersMock(...a),
+}));
+
+const listVmsMock = vi.fn();
+vi.mock("@/api/server/vms", () => ({
+  listVms: (...a: unknown[]) => listVmsMock(...a),
 }));
 
 const listOsVersionsMock = vi.fn();
@@ -68,6 +75,14 @@ describe("ServicesTestingStands — управление стендами пул
     deleteTestStandMock.mockReset();
     getTestStandCredentialsMock.mockReset();
     listServersMock.mockReset();
+    listVmsMock.mockReset();
+    getTestStandVmSnapshotsMock.mockReset();
+    listVmsMock.mockResolvedValue({
+      items: [{ id: "vm_2", name: "stand7", hostname: "virtual-station2", ip_address: "10.177.120.12" }],
+      total: 1,
+      limit: 200,
+      offset: 0,
+    });
     listOsVersionsMock.mockReset();
     resolveOsKernelsMock.mockReset();
     previewTestRunMock.mockReset();
@@ -281,5 +296,74 @@ describe("ServicesTestingStands — управление стендами пул
 
     fireEvent.click(await screen.findByRole("button", { name: "Готово" }));
     await waitFor(() => expect(screen.queryByRole("heading", { name: "Группа запущена" })).not.toBeInTheDocument());
+  });
+
+  describe("ВМ-стенды", () => {
+    const vmStand = {
+      id: "ts_vm",
+      target_type: "vm",
+      server_id: null,
+      vm_id: "vm_1",
+      department_id: "dep_1",
+      queue_enabled: true,
+      is_active: true,
+      created_at: "2026-09-01T00:00:00Z",
+      updated_at: "2026-09-01T00:00:00Z",
+      created_by: null,
+      server: { id: "vm_1", name: "stand6", hostname: "virtual-station1", ip_address: "10.177.120.11" },
+      server_unavailable: false,
+    };
+
+    it("ВМ-стенд помечен «ВМ», «Снимки по версиям ОС» показывает сопоставление", async () => {
+      listTestStandsMock.mockResolvedValue({ items: [vmStand], total: 1, limit: 500, offset: 0 });
+      getTestStandMock.mockResolvedValue(vmStand);
+      getTestStandVmSnapshotsMock.mockResolvedValue({
+        stand_id: "ts_vm",
+        vm_id: "vm_1",
+        templates: ["{version}", "{version}_{mode}"],
+        snapshots: [
+          {
+            snapshot_id: "s1", name: "1710rc52", kind: "os_baseline", os_version: null, snapshot_mode: null,
+            is_current: true, version_name: "1710rc52", normalized_version: "1.7.10.52", mode: null, template: "{version}",
+          },
+          {
+            snapshot_id: "s2", name: "my-work", kind: "user", os_version: null, snapshot_mode: null,
+            is_current: false, version_name: null, normalized_version: null, mode: null, template: null,
+          },
+        ],
+      });
+      renderAdminStands();
+      await screen.findAllByText("virtual-station1");
+      expect(screen.getByText("ВМ")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: /Снимки по версиям ОС/ }));
+      await waitFor(() => expect(getTestStandVmSnapshotsMock).toHaveBeenCalledWith("ts_vm"));
+      expect(await screen.findByRole("cell", { name: "1.7.10.52" })).toBeInTheDocument();
+      expect(screen.getByRole("cell", { name: /1710rc52/ })).toBeInTheDocument();
+      expect(screen.getByText("my-work")).toBeInTheDocument();
+    });
+
+    it("«Добавить стенд» → «Виртуальная машина» создаёт стенд с target_type=vm", async () => {
+      createTestStandMock.mockResolvedValue({ ...vmStand, id: "ts_vm2", vm_id: "vm_2" });
+      renderAdminStands();
+      await screen.findAllByText("stand-live-01");
+
+      fireEvent.click(screen.getByRole("button", { name: /Добавить стенд/ }));
+      await screen.findByRole("heading", { name: "Добавить стенд" });
+      fireEvent.click(screen.getByRole("button", { name: "Виртуальная машина" }));
+
+      fireEvent.click(await screen.findByRole("button", { name: "Выберите ВМ" }));
+      fireEvent.click(await screen.findByRole("option", { name: /stand7/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Добавить" }));
+
+      await waitFor(() =>
+        expect(createTestStandMock).toHaveBeenCalledWith({
+          target_type: "vm",
+          vm_id: "vm_2",
+          queue_enabled: true,
+          is_active: true,
+        }),
+      );
+    });
   });
 });

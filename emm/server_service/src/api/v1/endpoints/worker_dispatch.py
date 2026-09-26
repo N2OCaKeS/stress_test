@@ -128,6 +128,7 @@ from src.services import (
     account_nopasswd_sudo_settings as nopasswd_sudo_svc,
     acs_client,
     acs_settings as acs_settings_svc,
+    acs_snapshot_lookup,
     audit_service,
     management_creds as management_creds_svc,
     management_user_config as management_user_config_svc,
@@ -2451,7 +2452,8 @@ async def server_acs_snapshot_restore_dispatch(
         "Читает `GET check-snapshots` у ACS и фильтрует по префиксу "
         "`{hostname}-` этого сервера — своей таблицы снимков нет, ACS сам "
         "хранит директорию. `version_name` — хвост имени после этого "
-        "префикса. Доступ: `(server, *, acs_snapshot_list)`."
+        "префикса, `normalized_version` — он же в форме каталога версий ОС "
+        "(`1710rc52` → `1.7.10.52`). Доступ: `(server, *, acs_snapshot_list)`."
     ),
     responses={
         200: {"description": "Снимки этого сервера, отсортированы по имени."},
@@ -2504,15 +2506,14 @@ async def server_acs_snapshot_list(
         )
         raise
 
-    prefix = f"{server.hostname}-"
-    items = sorted(
-        (
-            AcsSnapshotItem(name=name, version_name=name[len(prefix):])
-            for name in all_names
-            if name.startswith(prefix)
-        ),
-        key=lambda item: item.name,
-    )
+    items = [
+        AcsSnapshotItem(
+            name=item.name,
+            version_name=item.version_name,
+            normalized_version=item.normalized_version,
+        )
+        for item in acs_snapshot_lookup.host_snapshots(all_names, server.hostname)
+    ]
 
     audit_service.emit(
         audit_action, target_id=server_id, target_type="server",
@@ -2522,7 +2523,7 @@ async def server_acs_snapshot_list(
             "snapshot_count": len(items),
         },
     )
-    return AcsSnapshotListResponse(snapshots=items)
+    return AcsSnapshotListResponse(hostname=server.hostname, snapshots=items)
 
 
 @router_servers.get(

@@ -33,6 +33,16 @@ async def get_by_prepare_request_id(db: AsyncSession, prepare_request_id: str) -
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def get_by_stand_setup_correlation_id(
+    db: AsyncSession, correlation_id: str, *, for_update: bool = True,
+) -> QueueItem | None:
+    """SELECT (FOR UPDATE) по `stand_setup_correlation_id` — callback настройки стенда между шагами."""
+    stmt = select(QueueItem).where(QueueItem.stand_setup_correlation_id == correlation_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    return (await db.execute(stmt.execution_options(populate_existing=True))).scalar_one_or_none()
+
+
 async def count_active_for_stand(db: AsyncSession, stand_id: str) -> int:
     """Сколько элементов очереди этого стенда сейчас "заняты" (не терминальны).
 
@@ -179,6 +189,28 @@ async def claim_next_ready(db: AsyncSession) -> QueueItem | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
+async def list_awaiting_verdict_ids(db: AsyncSession) -> list[str]:
+    """Id item'ов, ждущих вердикт из Zephyr, старые первыми."""
+    stmt = (
+        select(QueueItem.id)
+        .where(QueueItem.state == QueueItemState.AWAITING_VERDICT)
+        .order_by(QueueItem.verdict_wait_started_at.asc().nulls_first(), QueueItem.id)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def get_awaiting_verdict_for_update(db: AsyncSession, item_id: str) -> QueueItem | None:
+    """Item в `awaiting_verdict` под локом; `None` — его уже держит другой
+    опрос (вторая реплика) или он успел выйти из ожидания."""
+    stmt = (
+        select(QueueItem)
+        .where(QueueItem.id == item_id, QueueItem.state == QueueItemState.AWAITING_VERDICT)
+        .with_for_update(skip_locked=True)
+        .execution_options(populate_existing=True)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def list_by_test_run_id(db: AsyncSession, test_run_id: str) -> list[QueueItem]:
     """Все item'ы, порождённые этой кампанией — для агрегации статуса и детальной карточки."""
     stmt = (
@@ -279,7 +311,8 @@ async def aggregate_pool_overview(
             QueueItemState.READY, QueueItemState.PAUSED,
         ):
             remaining += 1
-        elif state == QueueItemState.RUNNING:
+        elif state in (QueueItemState.RUNNING, QueueItemState.AWAITING_VERDICT):
+            # Ждём вердикт из Zephyr — стенд всё ещё занят этим тестом.
             running += 1
         elif current and state == QueueItemState.SUCCEEDED:
             succeeded += 1
@@ -332,7 +365,7 @@ async def list_for_department(
         stmt = stmt.where(or_(*[
             column.icontains(q.strip(), autoescape=True) for column in (
                 QueueItem.id, TestDefinition.code, TestDefinition.full_name,
-                QueueItem.stand_id, TestStand.server_id,
+                QueueItem.stand_id, TestStand.server_id, TestStand.vm_id,
             )
         ]))
     total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar_one()

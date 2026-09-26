@@ -15,6 +15,7 @@
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
@@ -35,6 +36,12 @@ class GlobalVariable(Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # На что ссылается переменная в своём источнике (CONTRACTS.md C1):
+    # `{"template": "..."}`, `{"field": "short_name"}` и т.п. Форма зависит от
+    # `source` и проверяется `services/variable_resolver.validate_source_ref`
+    # при сохранении. `NULL` у источников, которым ссылка не нужна
+    # (`launch_context`, `per_test_override`, `secret_service`).
+    source_ref: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -15,11 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.dependencies.auth import CurrentUserIdentity
 from src.dependencies.db import get_db
 from src.schemas.common import OkResponse, PaginatedResponse
+from src.schemas.launch_preview import LaunchPreviewRequest, LaunchPreviewResponse
 from src.schemas.test_definition import (
     TestDefinitionCreate,
     TestDefinitionResponse,
     TestDefinitionUpdate,
 )
+from src.services import launch_preview as launch_preview_svc
 from src.services import test_definition as svc
 
 router = APIRouter(prefix="/test-definitions")
@@ -124,6 +126,39 @@ async def get_test_definition(
     """Get теста по id. Свой отдел либо платформенный тест."""
     obj = await svc.get_test_definition(db, identity, test_id)
     return TestDefinitionResponse.model_validate(obj)
+
+
+@router.post(
+    "/{test_id}/launch-preview",
+    response_model=LaunchPreviewResponse,
+    summary="Превью запуска теста",
+    description=(
+        "Задание воркеру, которое собрал бы claim для теста на "
+        "выбранных стенде, версии ОС, ядре и режиме: переменные (код → значение "
+        "→ источник), `dates.conf`, файлы для стенда (starter.sh, токен, dates, "
+        "маркер testenv), команда запуска и команда остановки. Секреты — `***`. "
+        "Ничего не пишет в БД и не ставит в очередь. Этап, который не удался, "
+        "не обрывает превью — он в `errors` (с тем же кодом, с которым упал бы "
+        "claim). Права — как на чтение теста и стенда (свой отдел)."
+    ),
+    responses={
+        200: {"description": "Превью; непустой `errors` — claim с этими параметрами провалил бы item."},
+        401: {"description": "ACCESS_TOKEN_MISSING — запрос без bearer'а."},
+        403: {"description": "DEPARTMENT_ISOLATION — тест или стенд чужого отдела; PERMISSION_DENIED — тест другого отдела, чем стенд."},
+        404: {"description": "TEST_DEFINITION_NOT_FOUND / TEST_STAND_NOT_FOUND."},
+        422: {"description": "Невалидное тело запроса."},
+    },
+)
+async def launch_preview(
+    test_id: str,
+    body: LaunchPreviewRequest,
+    identity: CurrentUserIdentity,
+    db: AsyncSession = Depends(get_db),
+) -> LaunchPreviewResponse:
+    """Превью задания воркеру. Доступ — чтение теста и стенда своего отдела."""
+    return LaunchPreviewResponse.model_validate(
+        await launch_preview_svc.preview(db, identity, test_id, body),
+    )
 
 
 @router.patch(

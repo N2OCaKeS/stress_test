@@ -2,7 +2,7 @@
  * Тонкие обёртки над `testing_service` `/test-stands/*` (§2.3, §4 плана
  * миграции). Изначально файл нёс только то, что нужно консоли сервера, чтобы
  * обнаружить активный прогон теста на этом стенде (§8.6 — кнопка «Живой лог
- * теста»); с волны 11 расширен полным CRUD стендов. Источник истины (backend)
+ * теста»); позже расширен полным CRUD стендов. Источник истины (backend)
  * — `testing_service/src/api/v1/endpoints/test_stands.py`.
  *
  * Чтение (список/карточка) доступно любому аутентифицированному актору,
@@ -20,6 +20,7 @@ import type {
   TestStandSummary,
   TestStandTestCredentials,
   TestStandUpdateRequest,
+  TestStandVmSnapshots,
 } from "@/api/testing/types";
 
 const BASE = "/testing/v1";
@@ -32,6 +33,7 @@ export interface ListTestStandsQuery {
   is_active?: boolean;
   queue_enabled?: boolean;
   server_id?: string;
+  vm_id?: string;
 }
 
 /** `GET /test-stands` — страница списка стендов. Любой аутентифицированный актор. */
@@ -71,6 +73,15 @@ export function updateTestStand(
   body: TestStandUpdateRequest,
 ): Promise<TestStand> {
   return apiPatch<TestStand>(`${BASE}/test-stands/${standId}`, body);
+}
+
+/**
+ * `GET /test-stands/{id}/vm-snapshots` — снимки ВМ-стенда и версии ОС, на
+ * которые они откатывают. Таблицы сопоставления нет: server_service
+ * читает версию из имени снимка по шаблонам.
+ */
+export function getTestStandVmSnapshots(standId: string): Promise<TestStandVmSnapshots> {
+  return apiGet<TestStandVmSnapshots>(`${BASE}/test-stands/${standId}/vm-snapshots`);
 }
 
 /** `DELETE /test-stands/{id}` — hard-delete записи стенда. Доступ: `(test_stand, *, delete)`. */

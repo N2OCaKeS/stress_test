@@ -105,6 +105,23 @@ class DepartmentIntegrationSettingsUpdate(BaseModel):
         description="Заголовок корневой (grandparent) страницы иерархии СТП-матрицы.",
     )
 
+    zephyr_folder_path_template: str | None = Field(
+        default=None, max_length=512,
+        description=(
+            "Шаблон пути папки Zephyr для прогонов СТП одной версии ОС, с подстановками "
+            "`{CODE}` глобальных переменных (только РЦ/отдел: без стенда и теста). "
+            "Пусто — легаси-дефолт `/stress_test/{RC_RELEASE}/{RC_NAME}`."
+        ),
+    )
+    zephyr_run_name_template: str | None = Field(
+        default=None, max_length=512,
+        description=(
+            "Шаблон имени Zephyr test-run'а стенда (контекст: РЦ, режим, ядро, стенд). "
+            "Должен совпадать с `TEST_CYCLE_NAME` — по нему скрипт находит свой прогон. "
+            "Пусто — легаси-дефолт `{RC_NAME}_{MODE}_{KERNEL}_{STAND_TOKEN}`."
+        ),
+    )
+
     @field_validator("jira_base_url", "confluence_base_url", "bitbucket_base_url")
     @classmethod
     def _check_base_url(cls, value: str | None) -> str | None:
@@ -133,5 +150,7 @@ class DepartmentIntegrationSettingsResponse(BaseModel):
     confluence_report_parent_page_title: str | None = Field(default=None)
     stp_matrix_confluence_space: str | None = Field(default=None)
     stp_matrix_confluence_root_page_title: str | None = Field(default=None)
+    zephyr_folder_path_template: str | None = Field(default=None)
+    zephyr_run_name_template: str | None = Field(default=None)
     created_at: datetime | None = Field(default=None)
     updated_at: datetime | None = Field(default=None)

@@ -1,45 +1,23 @@
 """Проверка доступности внешних сервисов перед запуском теста на стенде.
 
-Перенос легаси `allta_app/libs/liballta.py::available_astra_services_checker`
-(+ `response_used_astra_services`), которым `backup_image.py:1045-1050`
-гейтил сам запуск:
+Перенос легаси `available_astra_services_checker`: HTTP-пробы на
+Jira/Confluence/git/releases и DNS-проверка корпоративных серверов, до
+120 минут с ретраями. Нужно потому, что `starter.sh` первым делом клонирует
+ветку с git.astralinux.ru, а недоступность git сжигает retry сразу.
 
-```python
-if available_astra_services_checker():
-    remote_test_run()
-else:
-    logging.error('Testrun aborted, because some services not run')
-```
+Настройки — из `item["preflight"]` claim payload (`department_test_settings.
+preflight` отдела стенда, форма `CONTRACTS.md` C3), env `PREFLIGHT_*` — только
+фолбэк. `PREFLIGHT_FORCE_DISABLED` — аварийный выключатель на уровне воркера,
+сильнее payload.
 
-Что проверяло легаси:
+`ok_status` на HTTP-пробу: `200` — строго `200` с редиректами (паритет с
+легаси); `lt500` — любой ответ `< 500` без редиректов, дефолт env-фолбэка.
 
-* `requests.get('https://<host>')` на четыре адреса из `allta_image_conf.py` —
-  `jira.astralinux.ru`, `life.astralinux.ru`, `git.astralinux.ru`,
-  `releases.devos.astralinux.ru`; каждый обязан был отдать ровно `200`;
-* `ping -c 1 <ip>` на три корпоративных DNS (`ASTRA_DNS`) — достаточно, чтобы
-  отозвался ЛЮБОЙ один (`if 0 in available_dns.values()`);
-* цикл: пока не всё зелено — `sleep(180)` и заново, суммарно до 120 минут,
-  после чего отказ.
+DNS проверяется TCP-коннектом на `dns_port`, не ICMP: `ping` недоступен без
+`NET_RAW` в контейнере.
 
-Зачем это вообще нужно в новой системе: `starter.sh` первым делом клонирует
-ветку с `git.astralinux.ru`, а сами тесты ходят в Jira/Confluence по
-`dates.conf`-флагам. Кратковременная недоступность git в новой системе
-проваливает item сразу и сжигает единственную попытку retry (`services/
-queue.py::_fail_item_and_maybe_retry`), тогда как легаси её просто пережидало.
-
-Два сознательных отличия от легаси:
-
-* «Доступен» — любой HTTP-ответ со статусом < 500, а не строго `200`.
-  Проверка отвечает на вопрос «сеть и сервис живы», а не «мне разрешено
-  читать корневую страницу»: 301/401/403 доказывают, что хост отвечает,
-  тогда как строгое `== 200` заставило бы ждать все два часа впустую из-за
-  одного редиректа на SSO.
-* DNS проверяется TCP-коннектом на 53-й порт, а не ICMP-пингом: в контейнере
-  без `NET_RAW` `ping` недоступен, а интересует именно «DNS-сервер отвечает».
-
-Проверка живёт в воркере, а не в `testing_service`: ждать надо ровно перед
-SSH-исполнением, когда item уже выдан. См. подробнее докстринг
-`queue_loop._run_one_item`.
+Проверка живёт в воркере, не в `testing_service`: ждать надо перед
+SSH-исполнением, когда item уже выдан.
 """
 
 from __future__ import annotations
@@ -48,6 +26,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
+from typing import Literal
 
 import httpx
 
@@ -74,16 +53,105 @@ class PreflightResult:
     aborted: str | None = None
 
 
+OkStatus = Literal["200", "lt500"]
+_OK_STATUSES: tuple[str, ...] = ("200", "lt500")
+
+
+@dataclass(frozen=True)
+class HttpProbe:
+    url: str
+    ok_status: OkStatus = "200"
+
+
+@dataclass(frozen=True)
+class PreflightConfig:
+    """Эффективные настройки одного ожидания. `source` — `payload` или `env` (для логов)."""
+
+    enabled: bool
+    http: tuple[HttpProbe, ...]
+    dns_hosts: tuple[str, ...]
+    dns_port: int
+    poll_interval_seconds: float
+    timeout_seconds: float
+    probe_timeout_seconds: float
+    source: str = "env"
+
+
 def _split_csv(raw: str) -> list[str]:
     return [chunk.strip() for chunk in (raw or "").split(",") if chunk.strip()]
 
 
-async def _probe_http(client: httpx.AsyncClient, url: str) -> bool:
-    """Один HTTP-запрос. Доступность = получили ответ со статусом < 500."""
+def _ok_status(raw) -> OkStatus:
+    value = str(raw or "").strip()
+    if value not in _OK_STATUSES:
+        raise ValueError(f"unknown preflight ok_status {raw!r}, expected one of {_OK_STATUSES}")
+    return value  # type: ignore[return-value]
+
+
+def config_from_env(settings) -> PreflightConfig:
+    """Фолбэк: настройки из env воркера (`core/config.py`, `PREFLIGHT_*`)."""
+    ok_status = _ok_status(settings.preflight_http_ok_status)
+    return PreflightConfig(
+        enabled=settings.preflight_enabled and not settings.preflight_force_disabled,
+        http=tuple(HttpProbe(url, ok_status) for url in _split_csv(settings.preflight_http_urls)),
+        dns_hosts=tuple(_split_csv(settings.preflight_dns_hosts)),
+        dns_port=settings.preflight_dns_port,
+        poll_interval_seconds=settings.preflight_poll_interval_seconds,
+        timeout_seconds=settings.preflight_timeout_seconds,
+        probe_timeout_seconds=settings.preflight_probe_timeout_seconds,
+        source="env",
+    )
+
+
+def resolve_config(payload: dict | None, settings) -> PreflightConfig:
+    """Настройки из claim payload (CONTRACTS.md C3), env — только фолбэк.
+
+    `payload is None` — testing_service не прислал поле: целиком env. Иначе
+    берётся payload; поле, которого в нём нет (например, необязательный
+    `probe_timeout_seconds`), добирается из env. `PREFLIGHT_FORCE_DISABLED`
+    выключает проверку в любом случае.
+    """
+    env = config_from_env(settings)
+    if payload is None:
+        return env
+
+    http = env.http
+    if "http" in payload:
+        http = tuple(
+            HttpProbe(str(probe["url"]), _ok_status(probe.get("ok_status", "200")))
+            for probe in (payload.get("http") or [])
+        )
+    dns_hosts = env.dns_hosts
+    if "dns_hosts" in payload:
+        dns_hosts = tuple(str(host).strip() for host in (payload.get("dns_hosts") or []) if str(host).strip())
+
+    def _num(key: str, fallback):
+        value = payload.get(key)
+        return fallback if value is None else value
+
+    enabled = payload.get("enabled")
+    return PreflightConfig(
+        enabled=(settings.preflight_enabled if enabled is None else bool(enabled))
+        and not settings.preflight_force_disabled,
+        http=http,
+        dns_hosts=dns_hosts,
+        dns_port=int(_num("dns_port", env.dns_port)),
+        poll_interval_seconds=float(_num("poll_interval_seconds", env.poll_interval_seconds)),
+        timeout_seconds=float(_num("timeout_seconds", env.timeout_seconds)),
+        probe_timeout_seconds=float(_num("probe_timeout_seconds", env.probe_timeout_seconds)),
+        source="payload",
+    )
+
+
+async def _probe_http(client: httpx.AsyncClient, probe: HttpProbe) -> bool:
+    """Один HTTP-запрос. Доступность — по `probe.ok_status` (см. module docstring)."""
+    strict = probe.ok_status == "200"
     try:
-        response = await client.get(url)
+        response = await client.get(probe.url, follow_redirects=strict)
     except (httpx.HTTPError, OSError):
         return False
+    if strict:
+        return response.status_code == 200
     return response.status_code < 500
 
 
@@ -105,22 +173,22 @@ async def _probe_tcp(host: str, port: int, timeout: float) -> bool:
     return True
 
 
-async def check_once(settings) -> list[str]:
+async def check_once(config: PreflightConfig) -> list[str]:
     """Один раунд проб. Возвращает список недоступного (пустой — всё в порядке)."""
-    urls = _split_csv(settings.preflight_http_urls)
-    dns_hosts = _split_csv(settings.preflight_dns_hosts)
-    probe_timeout = settings.preflight_probe_timeout_seconds
+    probes = config.http
+    dns_hosts = config.dns_hosts
+    probe_timeout = config.probe_timeout_seconds
 
     unavailable: list[str] = []
 
-    if urls:
+    if probes:
         async with build_client(probe_timeout) as client:
-            results = await asyncio.gather(*(_probe_http(client, url) for url in urls))
-        unavailable.extend(url for url, ok in zip(urls, results) if not ok)
+            results = await asyncio.gather(*(_probe_http(client, probe) for probe in probes))
+        unavailable.extend(probe.url for probe, ok in zip(probes, results) if not ok)
 
     if dns_hosts:
         dns_results = await asyncio.gather(*(
-            _probe_tcp(host, settings.preflight_dns_port, probe_timeout) for host in dns_hosts
+            _probe_tcp(host, config.dns_port, probe_timeout) for host in dns_hosts
         ))
         # Легаси-семантика: достаточно одного живого DNS из списка.
         if not any(dns_results):
@@ -131,37 +199,42 @@ async def check_once(settings) -> list[str]:
 
 async def wait_for_external_services(
     *,
+    preflight: dict | None = None,
     on_wait=None,
     should_abort=None,
 ) -> PreflightResult:
     """Ждать, пока внешние сервисы не станут доступны. Ограничено по времени.
 
-    `on_wait(unavailable, elapsed)` — необязательный коллбэк, которому отдаётся
-    каждая неудачная попытка (вызывающий пишет её в лог теста, чтобы оператор
-    видел, чего ждём). Его исключения не срывают ожидание.
+    `preflight` — поле claim payload (CONTRACTS.md C3), `None` — настройки
+    из env (`resolve_config`). `on_wait(unavailable, elapsed)` — коллбэк на
+    каждую неудачную попытку. `should_abort()` — опрашивается между
+    попытками; непустой результат обрывает ожидание с `aborted` (заявка
+    оператора на снятие теста).
 
-    `should_abort()` — необязательная корутина, которую спрашивают между
-    попытками. Вернула непустое значение — ожидание прекращается с `ok=False`,
-    `error=None` и этим значением в `aborted`: вызывающий сам знает, что с ним
-    делать (у него это заявка оператора на снятие теста).
-
-    Возвращает `PreflightResult`. Таймаут — обычный провал item'а, как и
-    любая другая ошибка запуска: очередь стенда не должна вставать намертво
-    из-за подвисшей проверки.
+    Таймаут — обычный провал item'а, очередь стенда не встаёт из-за
+    подвисшей проверки.
     """
-    settings = get_settings()
-    if not settings.preflight_enabled:
+    try:
+        config = resolve_config(preflight, get_settings())
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
+        # Payload валидирует testing_service; сюда попадаем только при
+        # рассинхроне контракта — провал item'а с понятной причиной лучше,
+        # чем тихий откат на env с другими адресами.
+        logger.error("preflight: invalid settings in claim payload: %r", exc)
+        return PreflightResult(ok=False, error=f"invalid preflight settings in claim payload: {exc}")
+    if not config.enabled:
         return PreflightResult(ok=True)
+    logger.debug("preflight: using %s settings", config.source)
 
-    deadline = time.monotonic() + settings.preflight_timeout_seconds
-    interval = settings.preflight_poll_interval_seconds
+    deadline = time.monotonic() + config.timeout_seconds
+    interval = config.poll_interval_seconds
     attempts = 0
     unavailable: list[str] = []
 
     while True:
         attempts += 1
         try:
-            unavailable = await check_once(settings)
+            unavailable = await check_once(config)
         except Exception as exc:  # noqa: BLE001 — сбой самой пробы = «недоступно», не падение воркера
             logger.warning("preflight: probe round raised %r, treating as unavailable", exc)
             unavailable = [f"probe-error({type(exc).__name__})"]
@@ -184,7 +257,7 @@ async def wait_for_external_services(
                 unavailable=unavailable,
             )
 
-        elapsed = settings.preflight_timeout_seconds - remaining
+        elapsed = config.timeout_seconds - remaining
         logger.warning(
             "preflight: attempt %d, unavailable: %s (waiting, %.0fs left)",
             attempts, ", ".join(unavailable), remaining,

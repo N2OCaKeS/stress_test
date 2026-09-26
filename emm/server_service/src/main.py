@@ -403,8 +403,8 @@ def create_application() -> FastAPI:
     #     значит, что platform-admin attempt НЕ эмитит дополнительный
     #     `http.access_denied` (audit_access ниже не запускается, так как
     #     middleware возвращает response без `call_next`), а только наш
-    #     более специфичный `http.platform_admin_blocked` (см. §7-8
-    #     security-модели в `1.txt` репо).
+    #     более специфичный `http.platform_admin_blocked` (см. security-модель
+    #     в `1.txt` репо).
     #   * `audit_access` innermost — видит финальный response от route и
     #     эмитит audit на 4xx/5xx внутри контекста, выставленного выше.
 

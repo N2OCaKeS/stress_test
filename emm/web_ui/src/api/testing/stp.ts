@@ -15,7 +15,7 @@
  * Source of truth: `testing_service/src/api/v1/endpoints/stp.py`.
  */
 
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
+import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from "@/api/client";
 import type {
   StpAddTestOperation,
   StpAddTestRequest,
@@ -36,6 +36,8 @@ import type {
   StpTestRun,
   TestingOkResponse,
   TestingPaginatedResponse,
+  ZephyrFolder,
+  ZephyrFolderManualUpdateRequest,
 } from "@/api/testing/types";
 
 const BASE = "/testing/v1";
@@ -106,6 +108,27 @@ export function getStpComposition(params: {
   department_id?: string;
 }): Promise<StpComposition> {
   return apiGet<StpComposition>(`${BASE}/stp/composition`, { query: { ...params } });
+}
+
+/**
+ * `GET /stp/zephyr-folder` — папка Zephyr пары (отдел, РЦ), источник `-fti`
+ * тестов. Нет записи — не 404, а `id: null` и путь по шаблону отдела.
+ */
+export function getZephyrFolder(params: {
+  os_version_id: string;
+  department_id?: string;
+}): Promise<ZephyrFolder> {
+  return apiGet<ZephyrFolder>(`${BASE}/stp/zephyr-folder`, { query: { ...params } });
+}
+
+/** `PUT /stp/zephyr-folder` — id папки вручную; генерация СТП его больше не трогает. */
+export function setZephyrFolder(body: ZephyrFolderManualUpdateRequest): Promise<ZephyrFolder> {
+  return apiPut<ZephyrFolder>(`${BASE}/stp/zephyr-folder`, body);
+}
+
+/** `POST /stp/zephyr-folder/refresh` — найти (или создать) папку заново, снимает ручную метку. */
+export function refreshZephyrFolder(body: { os_version_id: string; department_id?: string }): Promise<ZephyrFolder> {
+  return apiPost<ZephyrFolder>(`${BASE}/stp/zephyr-folder/refresh`, body);
 }
 
 /**

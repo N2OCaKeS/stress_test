@@ -8,6 +8,8 @@
 
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/api/client";
 import type {
+  LaunchPreview,
+  LaunchPreviewRequest,
   TestDefinition,
   TestDefinitionCreateRequest,
   TestDefinitionUpdateRequest,
@@ -69,4 +71,14 @@ export function updateTestDefinition(
  */
 export function deleteTestDefinition(testId: string): Promise<TestingOkResponse> {
   return apiDelete<TestingOkResponse>(`${BASE}/test-definitions/${testId}`);
+}
+
+/**
+ * `POST /test-definitions/{id}/launch-preview` — задание воркеру, которое
+ * собрал бы claim для выбранных стенда, РЦ и ядра: переменные,
+ * dates.conf, файлы для стенда, команды запуска и остановки. Секреты — `***`.
+ * Ничего не ставит в очередь. Доступ — как на чтение теста.
+ */
+export function previewTestLaunch(testId: string, body: LaunchPreviewRequest): Promise<LaunchPreview> {
+  return apiPost<LaunchPreview>(`${BASE}/test-definitions/${testId}/launch-preview`, body);
 }

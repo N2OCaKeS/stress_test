@@ -13,8 +13,11 @@ import {
   EyeOff,
   FileText,
   Gauge,
+  Globe,
   HardDrive,
   KeyRound,
+  Rocket,
+  ServerCog,
   Layers,
   Link2,
   ListChecks,
@@ -53,6 +56,7 @@ import { ServicesIgnoredLogins } from "./services/ServicesIgnoredLogins";
 import { ServicesManagementUser } from "./services/ServicesManagementUser";
 import { ServicesProbeSettings } from "./services/ServicesProbeSettings";
 import { ServicesAcsSettings } from "./services/ServicesAcsSettings";
+import { ServicesVmTestSnapshots } from "./services/ServicesVmTestSnapshots";
 import { ServicesAccountNopasswdSudo } from "./services/ServicesAccountNopasswdSudo";
 import { ServicesHostControl } from "./services/ServicesHostControl";
 import { ServicesPasswordPolicy } from "./services/ServicesPasswordPolicy";
@@ -64,7 +68,11 @@ import { ServicesTestingStands } from "./services/ServicesTestingStands";
 import { ServicesTestingSprintBoard } from "./services/ServicesTestingSprintBoard";
 import { ServicesTestingIntegrationSettings } from "./services/ServicesTestingIntegrationSettings";
 import { ServicesTestingQueueSettings } from "./services/ServicesTestingQueueSettings";
+import { ServicesTestingTestAccount } from "./services/ServicesTestingTestAccount";
+import { ServicesTestingLaunchProfile } from "./services/ServicesTestingLaunchProfile";
+import { ServicesTestingProvisioningProfile } from "./services/ServicesTestingProvisioningProfile";
 import { ServicesTestingReportMembers } from "./services/ServicesTestingReportMembers";
+import { ServicesTestingLegacyCompat } from "./services/ServicesTestingLegacyCompat";
 import { ServicesStatisticsSettings } from "./services/ServicesStatisticsSettings";
 import { ServicesLogingRules } from "./services/ServicesLogingRules";
 import { ServicesLogingRetention } from "./services/ServicesLogingRetention";
@@ -336,6 +344,18 @@ const STATIC_ITEMS: AdminItem[] = [
     visibleFor: (p) => isAccountAdmin(p),
   },
   {
+    id: "services.server.vm_test_snapshots",
+    label: "Снимки ВМ для тестов",
+    hint: "шаблоны имени снимка, на который откатывается ВМ-стенд",
+    icon: Camera,
+    block: "services",
+    group: "server",
+    content: ServicesVmTestSnapshots,
+    // платформенный singleton под account_admin (как «Проверки
+    // статуса»). Остальным backend ответит 403.
+    visibleFor: (p) => isAccountAdmin(p),
+  },
+  {
     id: "services.server.account_nopasswd_sudo",
     label: "NOPASSWD sudo тестовых учёток",
     hint: "не спрашивать пароль sudo у has_sudo-аккаунтов при provision/prepare",
@@ -437,12 +457,64 @@ const STATIC_ITEMS: AdminItem[] = [
   {
     id: "services.testing.queue_settings",
     label: "Очередь и повторы",
-    hint: "Ретрай прогонов и учётка исполнения теста на стенде",
+    hint: "Ретрай провалившихся прогонов",
     icon: ListChecks,
     block: "services",
     group: "testing",
     content: ServicesTestingQueueSettings,
     visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
+  },
+
+  // логин/пароль/SSH-ключ пользователя исполнения теста. Backend
+  // гейтит `(department_test_account, view|update)` + department_admin-bypass.
+  {
+    id: "services.testing.test_account",
+    label: "Тестовая учётка",
+    hint: "Логин, пароль и SSH-ключ пользователя исполнения теста на стендах",
+    icon: KeyRound,
+    block: "services",
+    group: "testing",
+    content: ServicesTestingTestAccount,
+    visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
+  },
+
+  // starter.sh, пути на стенде, команды запуска/остановки. Backend
+  // гейтит `(launch_profile, update)` + department_admin-bypass.
+  {
+    id: "services.testing.launch_profile",
+    label: "Профиль запуска",
+    hint: "starter.sh, клонирование, пути на стенде, запуск и остановка теста",
+    icon: Rocket,
+    block: "services",
+    group: "testing",
+    content: ServicesTestingLaunchProfile,
+    visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
+  },
+
+  // готовность стенда после перезагрузки (degraded-allowlist), PAM.
+  {
+    id: "services.testing.provisioning_profile",
+    label: "Профиль подготовки",
+    hint: "Допустимые упавшие юниты, перезагрузки при degraded, PAM-правка",
+    icon: ServerCog,
+    block: "services",
+    group: "testing",
+    content: ServicesTestingProvisioningProfile,
+    visibleFor: (p) => isDepAdmin(p) || hasTestingServiceAdmin(p),
+  },
+
+  // подсети и отдел по умолчанию для публичного /rest/api/*. Backend
+  // гейтит `(legacy_compat, view|update)` по матрице, без bypass'а
+  // department_admin — настройка платформенная.
+  {
+    id: "services.testing.legacy_compat",
+    label: "Легаси /rest/api",
+    hint: "Доступ скриптов стендов к легаси-путям ALLTA: подсети и отдел по умолчанию",
+    icon: Globe,
+    block: "services",
+    group: "testing",
+    content: ServicesTestingLegacyCompat,
+    visibleFor: (p) => hasTestingServiceAdmin(p),
   },
 
   {

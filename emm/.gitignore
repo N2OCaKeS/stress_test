@@ -36,6 +36,7 @@ k8s/20-secrets.yaml
 k8s/21-keystore-secrets.yaml
 k8s/50-ingress.yaml
 k8s/51-ingress-cert.yaml
+k8s/52-legacy-compat-ingress.yaml
 k8s/.env.k8s
 # operator-конфиг предсказуемых кред (admin-пароль и т.д.); шаблон deploy.env.example — в VCS
 k8s/deploy.env

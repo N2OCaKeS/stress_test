@@ -15,11 +15,17 @@
 
 `UNIQUE(server_id)` — один физический/виртуальный сервер не может быть двумя
 разными стендами одновременно.
+
+стенд — либо физический сервер (`target_type=
+server`, `server_id`, подготовка через ACS restore), либо ВМ server_service
+(`target_type=vm`, `vm_id`, подготовка откатом снимка ВМ). Ровно одно из
+`server_id`/`vm_id` — CHECK `ck_test_stands_target`. Все вызовы в
+server_service идут через `services/stand_target.py::target_of(stand)`.
 """
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.db.base import Base
@@ -31,7 +37,13 @@ class TestStand(Base):
     __tablename__ = "test_stands"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    server_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    # `server` | `vm`. Дефолт — физический стенд, как было.
+    target_type: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="server", server_default="server",
+    )
+    server_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
+    # `Vm.id` server_service для `target_type=vm`; сырой id без FK.
+    vm_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
     department_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     # Человеческое имя стенда из allta_app (`stand3`..`stand14`). Внутренний
     # `id` — `stand_<32hex>`, его нельзя ни сопоставить с именем прогона в
@@ -51,4 +63,12 @@ class TestStand(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "(target_type = 'server' AND server_id IS NOT NULL AND vm_id IS NULL) OR "
+            "(target_type = 'vm' AND vm_id IS NOT NULL AND server_id IS NULL)",
+            name="ck_test_stands_target",
+        ),
     )

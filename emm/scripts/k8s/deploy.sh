@@ -57,6 +57,17 @@ echo "→ Применяем манифесты..."
 # load-restrictor, а apply'им через pipe.
 kubectl kustomize "$K8S_DIR" --load-restrictor=LoadRestrictionsNone | kubectl apply -f -
 
+# Публичный compat /rest/api/* по plain HTTP. Файл рендерит gen_secrets.sh;
+# у деплоев со старой генерацией секретов его нет — тогда маршрута нет,
+# остальное работает как раньше.
+LEGACY_COMPAT_INGRESS="$K8S_DIR/52-legacy-compat-ingress.yaml"
+if [[ -f "$LEGACY_COMPAT_INGRESS" ]]; then
+    echo "→ Ingress легаси-путей /rest/api/* (entrypoint web)..."
+    kubectl apply -f "$LEGACY_COMPAT_INGRESS"
+else
+    echo "→ $LEGACY_COMPAT_INGRESS нет — маршрут /rest/api/* не публикуется (make k8s-secrets его создаст)."
+fi
+
 # ── Edge-TLS: cert-manager выписывает ingress-лист внутренним CA ───────────────
 # Certificate dbos-ingress-cert наполняет Secret dbos-ingress-tls (тот же, что
 # слушает Ingress) листом от dbos-ca-issuer. Применяем ОТДЕЛЬНО (не через

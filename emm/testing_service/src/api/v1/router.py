@@ -11,12 +11,19 @@ from src.api.v1.endpoints.department_integration_settings import (
     router as department_integration_settings_router,
 )
 from src.api.v1.endpoints.department_report_members import router as department_report_members_router
+from src.api.v1.endpoints.department_test_account import router as department_test_account_router
 from src.api.v1.endpoints.department_test_settings import router as department_test_settings_router
+from src.api.v1.endpoints.zephyr_status_mappings import router as zephyr_status_mappings_router
+from src.api.v1.endpoints.launch_profiles import router as launch_profiles_router
+from src.api.v1.endpoints.provisioning_profiles import router as provisioning_profiles_router
 from src.api.v1.endpoints.global_variables import router as global_variables_router
 from src.api.v1.endpoints.health import router as health_router
 from src.api.v1.endpoints.legacy_compat import router as legacy_compat_router
 from src.api.v1.endpoints.permissions import router as permissions_router
 from src.api.v1.endpoints.pool_overview import router as pool_overview_router
+from src.api.v1.endpoints.preflight_status import router as preflight_status_router
+from src.api.v1.endpoints.scenarios import router as scenarios_router
+from src.api.v1.endpoints.scenarios import runs_router as scenario_runs_router
 from src.api.v1.endpoints.statistics import router as statistics_router
 from src.api.v1.endpoints.stp import router as stp_router
 from src.api.v1.endpoints.test_command_args import router as test_command_args_router
@@ -24,6 +31,7 @@ from src.api.v1.endpoints.test_definitions import router as test_definitions_rou
 from src.api.v1.endpoints.test_logs import router as test_logs_router
 from src.api.v1.endpoints.test_runs import router as test_runs_router
 from src.api.v1.endpoints.test_stands import router as test_stands_router
+from src.api.v1.endpoints.test_steps import router as test_steps_router
 
 from src.api.v1.endpoints.queue_items import router as queue_items_router
 
@@ -33,8 +41,15 @@ router.include_router(health_router, tags=["health"])
 router.include_router(global_variables_router, tags=["global-variables"])
 router.include_router(test_definitions_router, tags=["test-definitions"])
 router.include_router(test_command_args_router, tags=["test-definitions"])
+router.include_router(scenarios_router, tags=["scenarios"])
+router.include_router(scenario_runs_router, tags=["scenarios"])
+router.include_router(test_steps_router, tags=["test-definitions"])
 router.include_router(test_stands_router, tags=["test-stands"])
 router.include_router(department_test_settings_router, tags=["department-test-settings"])
+router.include_router(department_test_account_router, tags=["department-test-account"])
+router.include_router(zephyr_status_mappings_router, tags=["zephyr-status-mappings"])
+router.include_router(launch_profiles_router, tags=["launch-profiles"])
+router.include_router(provisioning_profiles_router, tags=["provisioning-profiles"])
 router.include_router(test_logs_router, tags=["test-logs"])
 router.include_router(test_runs_router, tags=["test-runs"])
 router.include_router(stp_router, tags=["stp"])
@@ -44,4 +59,5 @@ router.include_router(department_activity_reports_router, tags=["department-acti
 router.include_router(permissions_router, tags=["permissions"])
 router.include_router(statistics_router, tags=["statistics"])
 router.include_router(pool_overview_router, tags=["pool-overview"])
+router.include_router(preflight_status_router, tags=["preflight"])
 router.include_router(legacy_compat_router, tags=["legacy-compat"])

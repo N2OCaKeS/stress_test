@@ -60,8 +60,18 @@ def is_configured() -> bool:
     return bool(settings.testing_service_url and settings.testing_service_api_key)
 
 
+async def send_stand_setup_completed(
+    stand_setup_request_id: str, body: dict,
+) -> tuple[bool, int, str | None]:
+    """Итог «настройки без restore» — `POST /internal/stand-setup/{id}/completed`."""
+    return await send_prepare_for_test_completed(
+        stand_setup_request_id, body,
+        path=f"/internal/stand-setup/{stand_setup_request_id}/completed",
+    )
+
+
 async def send_prepare_for_test_completed(
-    prepare_request_id: str, body: dict,
+    prepare_request_id: str, body: dict, *, path: str | None = None,
 ) -> tuple[bool, int, str | None]:
     """Отправить итог пайплайна в testing_service.
 
@@ -82,7 +92,7 @@ async def send_prepare_for_test_completed(
         )
         return False, 0, "TESTING_SERVICE_NOT_CONFIGURED"
 
-    url = f"{base}{callback_path(prepare_request_id)}"
+    url = f"{base}{path or callback_path(prepare_request_id)}"
     headers = {**bearer_header(api_key), "X-Service-Identity": SERVICE_NAME}
     attempts = 0
     last_error: str | None = None

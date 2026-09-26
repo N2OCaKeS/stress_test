@@ -127,6 +127,9 @@ class _FakeSshClient:
         return response
 
 
+# без `provisioning` в payload — легаси-профиль, PAM-правка включена.
+_PAM_STEP = ("pam_lastlog", (0, "", ""))
+
 _KERNEL_STEPS = [
     ("dpkg -s linux-image", (0, "", "")),
     ("dpkg -s linux-headers", (0, "", "")),
@@ -209,6 +212,7 @@ class TestHappyPath:
     ):
         """Бокс уже на 0 (orel) — `set` не вызывается вовсе."""
         fake = _FakeSshClient([
+            _PAM_STEP,
             *_KERNEL_STEPS,
             ("astra-modeswitch get", (0, "0", "")),
             ("reboot", (0, "", "")),
@@ -238,6 +242,7 @@ class TestHappyPath:
     ):
         """orel → smolensk: set 2 + mac-control + mic-control, потом ребут."""
         fake = _FakeSshClient([
+            _PAM_STEP,
             *_KERNEL_STEPS,
             ("astra-modeswitch get", (0, "0", "")),
             ("astra-modeswitch set 2", (0, "", "")),
@@ -270,6 +275,7 @@ class TestHappyPath:
         """Бокс уже на 2 — `set` не вызывается, но mac/mic-control всё равно
         прогоняются (это отдельные флаги, `get` их состояние не видит)."""
         fake = _FakeSshClient([
+            _PAM_STEP,
             *_KERNEL_STEPS,
             ("astra-modeswitch get", (0, "2", "")),
             ("astra-mac-control enable", (0, "", "")),
@@ -297,6 +303,7 @@ class TestFailures:
         self, monkeypatch, make_task, fetch_task, captured_submit,
     ):
         fake = _FakeSshClient([
+            _PAM_STEP,
             ("dpkg -s linux-image", (0, "", "")),
             ("dpkg -s linux-headers", (0, "", "")),
             ("dpkg -s linux-astra-modules", (0, "", "")),
@@ -326,6 +333,7 @@ class TestFailures:
         """`set 2` возвращает rc=0, но повторный `get` всё ещё видит 0 —
         команда не применилась, `failed_step=mode_switch`, до ребута не идём."""
         fake = _FakeSshClient([
+            _PAM_STEP,
             *_KERNEL_STEPS,
             ("astra-modeswitch get", (0, "0", "")),
             ("astra-modeswitch set 2", (0, "", "")),
@@ -356,6 +364,7 @@ class TestFailures:
         self, monkeypatch, make_task, fetch_task, captured_submit,
     ):
         fake = _FakeSshClient([
+            _PAM_STEP,
             *_KERNEL_STEPS,
             ("astra-modeswitch get", (0, "0", "")),
             ("astra-modeswitch set 2", (1, "", "permission denied")),
@@ -375,3 +384,74 @@ class TestFailures:
         assert task.status == TaskStatus.FAILED
         assert task.last_error and "PREPARE_FOR_TEST_MODE_SWITCH_FAILED" in task.last_error
         assert captured_submit[0]["failed_step"] == "mode_switch"
+
+
+class TestDepartmentTestAccount:
+    """stash несёт учётку отдела из secret_service — её и ставим.
+
+    server_service раскрывает credential тестовой учётки и кладёт в stash
+    логин, пароль и публичный ключ; воркер обязан передать в `create_user`
+    именно их (не сгенерировать свои), перезаписать `authorized_keys` и
+    оставить sudo как было.
+    """
+
+    async def test_create_user_gets_credential_password_and_key(
+        self, monkeypatch, make_task, fetch_task, captured_submit,
+    ):
+        stash = _test_creds_stash(
+            test_username="tester",
+            test_password="Shared-Srv-Pass1",
+            test_ssh_public_key="ssh-ed25519 AAAAdepartmentkey test-account",
+        )
+        fake = _FakeSshClient([
+            _PAM_STEP,
+            *_KERNEL_STEPS,
+            ("astra-modeswitch get", (0, "0", "")),
+            ("reboot", (0, "", "")),
+        ])
+        _patch_ssh(monkeypatch, fake)
+        _patch_redis(monkeypatch, _FakeRedisClient(CREDS_KEY, stash))
+
+        tid = await make_task(
+            task_kind="server.prepare_for_test",
+            target_server_id="srv_pft_ta1",
+            payload=_payload(mode="orel", server_id="srv_pft_ta1"),
+        )
+        await pft_task.server_prepare_for_test.original_func(tid)
+
+        task = await fetch_task(tid)
+        assert task.status == TaskStatus.SUCCEEDED
+        assert fake.create_user_calls == [{
+            "login": "tester",
+            "new_password": "Shared-Srv-Pass1",
+            "public_key": "ssh-ed25519 AAAAdepartmentkey test-account",
+            "has_sudo": True,
+            "force_replace": True,
+        }]
+        # Секреты не утекают ни в результат таски, ни в callback.
+        assert "Shared-Srv-Pass1" not in json.dumps(task.result or {})
+        assert "Shared-Srv-Pass1" not in json.dumps(captured_submit)
+
+    @pytest.mark.parametrize("missing", ["test_password", "test_ssh_public_key", "test_username"])
+    async def test_incomplete_stash_fails_user_provision(
+        self, monkeypatch, make_task, fetch_task, captured_submit, missing,
+    ):
+        fake = _FakeSshClient([])
+        _patch_ssh(monkeypatch, fake)
+        _patch_redis(monkeypatch, _FakeRedisClient(CREDS_KEY, _test_creds_stash(**{missing: ""})))
+
+        server_id = f"srv_pft_ta_{missing}"
+        tid = await make_task(
+            task_kind="server.prepare_for_test",
+            target_server_id=server_id,
+            payload=_payload(mode="orel", server_id=server_id),
+        )
+        await _set_single_attempt(tid)
+        await pft_task.server_prepare_for_test.original_func(tid)
+
+        task = await fetch_task(tid)
+        assert task.status == TaskStatus.FAILED
+        assert task.last_error and "SSH_TEST_CREDS_MISSING" in task.last_error
+        assert fake.create_user_calls == []
+        assert captured_submit[0]["succeeded"] is False
+        assert captured_submit[0]["failed_step"] == "user_provision"

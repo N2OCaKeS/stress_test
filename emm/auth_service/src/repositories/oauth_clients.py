@@ -196,3 +196,21 @@ class OAuthCodeRepository:
         # downstream.
         code.used_at = now
         return True
+
+    async def invalidate_unused_for_user(self, user_id: str) -> int:
+        """Погасить ещё не обменянные коды юзера (выставить `used_at`).
+
+        После смены пароля / бана код, выписанный до этого, не должен
+        превращаться в новую OAuth-пару. Обмен такого кода отбивается
+        `get_by_hash` → `OAUTH_CODE_INVALID`. Возвращает число кодов.
+        """
+        result = await self._db.execute(
+            update(OAuthAuthorizationCode)
+            .where(
+                OAuthAuthorizationCode.user_id == user_id,
+                OAuthAuthorizationCode.used_at.is_(None),
+            )
+            .values(used_at=utcnow())
+            .returning(OAuthAuthorizationCode.id)
+        )
+        return len(result.scalars().all())

@@ -34,7 +34,13 @@ const publishStpMatrixMock = vi.fn();
 const addTestToStpMock = vi.fn();
 const previewPullFromLifeMock = vi.fn();
 const importPullFromLifeMock = vi.fn();
+const getZephyrFolderMock = vi.fn();
+const setZephyrFolderMock = vi.fn();
+const refreshZephyrFolderMock = vi.fn();
 vi.mock("@/api/testing/stp", () => ({
+  getZephyrFolder: (...a: unknown[]) => getZephyrFolderMock(...a),
+  setZephyrFolder: (...a: unknown[]) => setZephyrFolderMock(...a),
+  refreshZephyrFolder: (...a: unknown[]) => refreshZephyrFolderMock(...a),
   listStpTestCases: (...a: unknown[]) => listStpTestCasesMock(...a),
   createStpTestCase: (...a: unknown[]) => createStpTestCaseMock(...a),
   getStpTestCase: (...a: unknown[]) => getStpTestCaseMock(...a),
@@ -186,6 +192,22 @@ function composition(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+function zephyrFolder(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "zfold_1",
+    department_id: "dep_1",
+    os_version_id: "osv_1",
+    folder_path: "/stress_test/1.8.7/1.8.7.46",
+    folder_tree_id: "4242",
+    is_manual: false,
+    resolved_at: ISO,
+    updated_by: null,
+    updated_at: ISO,
+    error: null,
+    ...overrides,
+  };
+}
+
 function Harness() {
   const state = useStpVersionState();
   return (
@@ -244,6 +266,9 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     previewPullFromLifeMock.mockReset();
     importPullFromLifeMock.mockReset();
     listTestDefinitionsMock.mockReset();
+    getZephyrFolderMock.mockReset();
+    setZephyrFolderMock.mockReset();
+    refreshZephyrFolderMock.mockReset();
 
     listOsVersionsMock.mockResolvedValue({ items: [osVersion()], total: 1, limit: 500, offset: 0 });
     listDepartmentsMock.mockResolvedValue([department()]);
@@ -253,6 +278,7 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     listStpTestRunCellsMock.mockResolvedValue([cell()]);
     listTestDefinitionsMock.mockResolvedValue({ items: [testDefinition()], total: 1, limit: 500, offset: 0 });
     getStpCompositionMock.mockResolvedValue(composition({ scope: null, revision: 0, id: null, updated_at: null, updated_by: null }));
+    getZephyrFolderMock.mockResolvedValue(zephyrFolder());
   });
 
   afterEach(() => {
@@ -330,6 +356,80 @@ describe("StpMiddlePanel + StpWorkzone", () => {
     await waitFor(() => expect(generateStpMock).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(/Часть стендов провалилась/)).toBeInTheDocument();
     expect(screen.getByText(/SSH_TIMEOUT: не удалось подключиться/)).toBeInTheDocument();
+  });
+
+  it("папка Zephyr — показывает путь и id из GET /stp/zephyr-folder", async () => {
+    renderPage();
+
+    const line = await screen.findByTestId("zephyr-folder-line");
+    expect(await within(line).findByText("/stress_test/1.8.7/1.8.7.46")).toBeInTheDocument();
+    expect(within(line).getByText("id 4242")).toBeInTheDocument();
+    expect(getZephyrFolderMock).toHaveBeenCalledWith({ os_version_id: "osv_1", department_id: "dep_1" });
+  });
+
+  it("папка Zephyr — без id показывает предупреждение и причину", async () => {
+    getZephyrFolderMock.mockResolvedValue(zephyrFolder({
+      id: null, folder_tree_id: null,
+      error: { error_code: "ZEPHYR_FOLDER_NOT_FOUND", message: "папки нет в Zephyr" },
+    }));
+    renderPage();
+
+    const line = await screen.findByTestId("zephyr-folder-line");
+    expect(await within(line).findByText("id не задан")).toBeInTheDocument();
+    expect(within(line).getByText("папки нет в Zephyr")).toBeInTheDocument();
+  });
+
+  it("папка Zephyr — ручная правка id зовёт setZephyrFolder и перечитывает папку", async () => {
+    setZephyrFolderMock.mockResolvedValue(zephyrFolder({ folder_tree_id: "777", is_manual: true }));
+    renderPage();
+
+    const line = await screen.findByTestId("zephyr-folder-line");
+    await within(line).findByText("id 4242");
+    fireEvent.click(within(line).getByRole("button", { name: "Изменить id" }));
+    const input = within(line).getByLabelText("id папки Zephyr");
+    fireEvent.change(input, { target: { value: " 777 " } });
+    getZephyrFolderMock.mockResolvedValue(zephyrFolder({ folder_tree_id: "777", is_manual: true }));
+    fireEvent.click(within(line).getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => expect(setZephyrFolderMock).toHaveBeenCalledWith({
+      os_version_id: "osv_1", department_id: "dep_1", folder_tree_id: "777",
+    }));
+    expect(await within(line).findByText("id 777")).toBeInTheDocument();
+    expect(within(line).getByText("вручную")).toBeInTheDocument();
+  });
+
+  it("папка Zephyr — «Найти заново» зовёт refreshZephyrFolder, ненайденная папка — предупреждение", async () => {
+    refreshZephyrFolderMock.mockResolvedValue(zephyrFolder({
+      folder_tree_id: null, error: { error_code: "ZEPHYR_FOLDER_NOT_FOUND", message: "не найдена и не создана" },
+    }));
+    renderPage();
+
+    const line = await screen.findByTestId("zephyr-folder-line");
+    await within(line).findByText("id 4242");
+    const loadsBefore = getZephyrFolderMock.mock.calls.length;
+    fireEvent.click(within(line).getByRole("button", { name: "Найти заново" }));
+
+    await waitFor(() => expect(refreshZephyrFolderMock).toHaveBeenCalledWith({
+      os_version_id: "osv_1", department_id: "dep_1",
+    }));
+    expect(await screen.findByText(/Папка Zephyr не найдена: не найдена и не создана/)).toBeInTheDocument();
+    await waitFor(() => expect(getZephyrFolderMock.mock.calls.length).toBeGreaterThan(loadsBefore));
+  });
+
+  it("состав СТП — ненайденная папка Zephyr в ответе генерации даёт предупреждение", async () => {
+    generateStpMock.mockResolvedValue({
+      test_runs: [testRun()], errors: [],
+      zephyr_folder: zephyrFolder({
+        folder_tree_id: null, error: { error_code: "ZEPHYR_UNREACHABLE", message: "Zephyr недоступен" },
+      }),
+    });
+    renderPage();
+
+    await screen.findAllByText("1.8.7.46");
+    fireEvent.click(await screen.findByRole("button", { name: /Состав СТП/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "По changelog" }));
+
+    expect(await screen.findByText(/Папка Zephyr не найдена: Zephyr недоступен/)).toBeInTheDocument();
   });
 
   it("публикация СТП-матрицы — успех зовёт publishStpMatrix с os_version_id", async () => {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, KeyRound, Loader2, Play, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Camera, ChevronDown, ChevronRight, KeyRound, Loader2, Play, Plus, Trash2 } from "lucide-react";
 import { Dropdown } from "@/components/ui/Dropdown";
+import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Modal } from "@/components/ui/Modal";
@@ -14,16 +15,33 @@ import {
   deleteTestStand,
   getTestStand,
   getTestStandCredentials,
+  getTestStandVmSnapshots,
   listTestStands,
   updateTestStand,
 } from "@/api/testing/testStands";
-import type { TestStand, TestStandTestCredentials, TestStandUpdateRequest } from "@/api/testing/types";
+import type {
+  TestStand,
+  TestStandTargetType,
+  TestStandTestCredentials,
+  TestStandUpdateRequest,
+} from "@/api/testing/types";
 import { listServers } from "@/api/server/servers";
+import { listVms, type Vm } from "@/api/server/vms";
 import type { Server as InventoryServer } from "@/api/server/types";
 import { StandGroupLaunchModal } from "@/pages/testing/StandGroupLaunchModal";
 
 function asServerCard(server: TestStand["server"]) {
-  return server as { display_name?: string; hostname?: string; ip_address?: string } | null;
+  return server as { display_name?: string; hostname?: string; name?: string; ip_address?: string } | null;
+}
+
+function isVmStand(stand: TestStand): boolean {
+  return stand.target_type === "vm";
+}
+
+/** Имя стенда для таблиц и диалогов: карточка сервера/ВМ, иначе id. */
+function standLabel(stand: TestStand): string {
+  const card = asServerCard(stand.server);
+  return card?.display_name || card?.hostname || card?.name || stand.server_id || stand.vm_id || stand.id;
 }
 
 async function loadStands(): Promise<TestStand[]> {
@@ -62,6 +80,7 @@ function StandsAdminPanel({
   const [open, setOpen] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [credentialsStandId, setCredentialsStandId] = useState<string | null>(null);
+  const [snapshotsStand, setSnapshotsStand] = useState<TestStand | null>(null);
   const [groupLaunchStand, setGroupLaunchStand] = useState<TestStand | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -80,8 +99,7 @@ function StandsAdminPanel({
   }
 
   async function handleDelete(stand: TestStand) {
-    const server = asServerCard(stand.server);
-    const label = server?.display_name || server?.hostname || stand.server_id;
+    const label = standLabel(stand);
     const ok = await confirm({
       title: "Удалить стенд из пула",
       message: `Удалить стенд «${label}» из testing_service? Сервер останется в инвентаре. Стенд с историей запусков удалить нельзя.`,
@@ -138,7 +156,8 @@ function StandsAdminPanel({
               <table className="mini">
                 <thead>
                   <tr>
-                    <th>Сервер</th>
+                    <th>Стенд</th>
+                    <th>Тип</th>
                     <th>IP</th>
                     <th>Очередь</th>
                     <th>Активен</th>
@@ -151,7 +170,14 @@ function StandsAdminPanel({
                     const rowBusy = busyId === stand.id;
                     return (
                       <tr key={stand.id}>
-                        <td className="mono">{server?.display_name || server?.hostname || stand.server_id}</td>
+                        <td className="mono">{standLabel(stand)}</td>
+                        <td>
+                          {isVmStand(stand) ? (
+                            <Badge kind="info" title="Виртуальный стенд: перед тестом ВМ откатывается на снимок версии ОС">ВМ</Badge>
+                          ) : (
+                            <Badge kind="neutral" title="Физический сервер: перед тестом диск восстанавливается через ACS">Сервер</Badge>
+                          )}
+                        </td>
                         <td className="mono text-xs text-dim">{server?.ip_address ?? "—"}</td>
                         <td>
                           <Button
@@ -184,6 +210,17 @@ function StandsAdminPanel({
                               <Play className="w-3.5 h-3.5" />
                               Запустить все тесты стенда
                             </Button>
+                            {isVmStand(stand) && (
+                              <Button
+                                size="sm"
+                                disabled={rowBusy}
+                                className="inline-flex items-center gap-1"
+                                onClick={() => setSnapshotsStand(stand)}
+                              >
+                                <Camera className="w-3.5 h-3.5" />
+                                Снимки по версиям ОС
+                              </Button>
+                            )}
                             <Button
                               size="sm"
                               disabled={rowBusy}
@@ -210,7 +247,8 @@ function StandsAdminPanel({
 
       {createOpen && (
         <CreateStandModal
-          existingServerIds={stands.map((stand) => stand.server_id)}
+          existingServerIds={stands.flatMap((stand) => (stand.server_id ? [stand.server_id] : []))}
+          existingVmIds={stands.flatMap((stand) => (stand.vm_id ? [stand.vm_id] : []))}
           onClose={() => setCreateOpen(false)}
           onCreated={async () => {
             setCreateOpen(false);
@@ -221,11 +259,14 @@ function StandsAdminPanel({
       {credentialsStandId && (
         <TestStandCredentialsModal standId={credentialsStandId} onClose={() => setCredentialsStandId(null)} />
       )}
+      {snapshotsStand && (
+        <VmSnapshotsModal stand={snapshotsStand} onClose={() => setSnapshotsStand(null)} />
+      )}
       {groupLaunchStand && (
         <StandGroupLaunchModal
           standId={groupLaunchStand.id}
           standDepartmentId={groupLaunchStand.department_id}
-          standLabel={asServerCard(groupLaunchStand.server)?.display_name || asServerCard(groupLaunchStand.server)?.hostname || groupLaunchStand.server_id}
+          standLabel={standLabel(groupLaunchStand)}
           onClose={() => setGroupLaunchStand(null)}
           onLaunched={(id) => {
             setGroupLaunchStand(null);
@@ -239,35 +280,64 @@ function StandsAdminPanel({
 
 function CreateStandModal({
   existingServerIds,
+  existingVmIds,
   onClose,
   onCreated,
 }: {
   existingServerIds: string[];
+  existingVmIds: string[];
   onClose: () => void;
   onCreated: () => void | Promise<void>;
 }) {
   const toast = useToast();
+  const [targetType, setTargetType] = useState<TestStandTargetType>("server");
   const serversQ = useQuery(async () => (await listServers({ limit: 500 })).items, []);
-  const servers = serversQ.data ?? [];
-  const existing = useMemo(() => new Set(existingServerIds), [existingServerIds]);
-  // Сервер, уже заведённый как стенд, из выбора убираем — backend всё равно
-  // отклонит повтор (server_id уникален на стороне test_stand), но так
+  const vmsQ = useQuery(async () => (await listVms({ limit: 200 })).items, []);
+  const existingServers = useMemo(() => new Set(existingServerIds), [existingServerIds]);
+  const existingVms = useMemo(() => new Set(existingVmIds), [existingVmIds]);
+  // Сервер/ВМ, уже заведённые как стенд, из выбора убираем — backend всё равно
+  // отклонит повтор (server_id/vm_id уникальны на стороне test_stand), но так
   // очевиднее, что выбирать больше не из чего.
   const availableServers = useMemo(
-    () => servers.filter((s: InventoryServer) => !existing.has(s.id)),
-    [servers, existing],
+    () => (serversQ.data ?? []).filter((s: InventoryServer) => !existingServers.has(s.id)),
+    [serversQ.data, existingServers],
+  );
+  const availableVms = useMemo(
+    () => (vmsQ.data ?? []).filter((vm: Vm) => !existingVms.has(vm.id)),
+    [vmsQ.data, existingVms],
   );
 
-  const [serverId, setServerId] = useState("");
+  const [targetId, setTargetId] = useState("");
   const [queueEnabled, setQueueEnabled] = useState(true);
   const [isActive, setIsActive] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  const isVm = targetType === "vm";
+  const listQ = isVm ? vmsQ : serversQ;
+  const options = isVm
+    ? availableVms.map((vm: Vm) => ({
+        value: vm.id,
+        label: `${vm.name}${vm.hostname ? ` (${vm.hostname})` : ""} · ${vm.ip_address ?? "без IP"}`,
+      }))
+    : availableServers.map((s: InventoryServer) => ({
+        value: s.id,
+        label: `${s.display_name || s.hostname} · ${s.ip_address}`,
+      }));
+
+  function switchType(next: TestStandTargetType) {
+    setTargetType(next);
+    setTargetId("");
+  }
+
   async function submit() {
-    if (!serverId || submitting) return;
+    if (!targetId || submitting) return;
     setSubmitting(true);
     try {
-      await createTestStand({ server_id: serverId, queue_enabled: queueEnabled, is_active: isActive });
+      await createTestStand({
+        ...(isVm ? { target_type: "vm" as const, vm_id: targetId } : { server_id: targetId }),
+        queue_enabled: queueEnabled,
+        is_active: isActive,
+      });
       toast.success("Стенд добавлен в пул");
       await onCreated();
     } catch (e) {
@@ -282,38 +352,69 @@ function CreateStandModal({
       open
       onOpenChange={(next) => !next && onClose()}
       title="Добавить стенд"
-      subtitle="Зарегистрировать сервер из инвентаря server_service как тестовый стенд"
+      subtitle="Зарегистрировать сервер или ВМ из инвентаря server_service как тестовый стенд"
       width="md"
       footer={
         <>
           <Button type="button" onClick={onClose}>Отмена</Button>
-          <Button variant="primary" type="button" disabled={!serverId || submitting} onClick={submit}>
+          <Button variant="primary" type="button" disabled={!targetId || submitting} onClick={submit}>
             {submitting ? "Добавление…" : "Добавить"}
           </Button>
         </>
       }
     >
       <div className="grid gap-3">
-        {serversQ.loading ? (
-          <div className="text-xs text-dim flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin" /> Загрузка серверов…
+        <div className="grid gap-1">
+          <span className="text-xs text-dim">Тип стенда</span>
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              type="button"
+              size="sm"
+              variant={isVm ? "default" : "primary"}
+              aria-pressed={!isVm}
+              onClick={() => switchType("server")}
+            >
+              Физический сервер
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={isVm ? "primary" : "default"}
+              aria-pressed={isVm}
+              onClick={() => switchType("vm")}
+            >
+              Виртуальная машина
+            </Button>
           </div>
-        ) : serversQ.error ? (
-          <div className="alert alert-danger text-xs">{apiErrMsg(serversQ.error, "Список серверов не загрузился")}</div>
+          <span className="text-xs text-dim">
+            {isVm
+              ? "Перед тестом ВМ откатывается на снимок нужной версии ОС (снимок ищется по имени), дальше — та же подготовка, что у сервера. Нужна тестовая учётка отдела и IP гостя в мостовой сети."
+              : "Перед тестом диск сервера восстанавливается из снимка ACS нужной версии ОС."}
+          </span>
+        </div>
+        {listQ.loading ? (
+          <div className="text-xs text-dim flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> {isVm ? "Загрузка ВМ…" : "Загрузка серверов…"}
+          </div>
+        ) : listQ.error ? (
+          <div className="alert alert-danger text-xs">
+            {apiErrMsg(listQ.error, isVm ? "Список ВМ не загрузился" : "Список серверов не загрузился")}
+          </div>
         ) : (
           <label className="grid gap-1">
-            <span className="text-xs text-dim">Сервер</span>
+            <span className="text-xs text-dim">{isVm ? "ВМ" : "Сервер"}</span>
             <Dropdown
               mode="single"
               searchable
-              placeholder={availableServers.length ? "Выберите сервер" : "Нет доступных серверов — все уже стенды"}
-              options={availableServers.map((s: InventoryServer) => ({
-                value: s.id,
-                label: `${s.display_name || s.hostname} · ${s.ip_address}`,
-              }))}
-              value={serverId}
-              onChange={setServerId}
-              disabled={!availableServers.length}
+              placeholder={
+                options.length
+                  ? isVm ? "Выберите ВМ" : "Выберите сервер"
+                  : isVm ? "Нет доступных ВМ — все уже стенды" : "Нет доступных серверов — все уже стенды"
+              }
+              options={options}
+              value={targetId}
+              onChange={setTargetId}
+              disabled={!options.length}
             />
           </label>
         )}
@@ -331,6 +432,90 @@ function CreateStandModal({
             <span className="text-xs text-dim">Неактивные стенды исключаются из планирования прогонов</span>
           </span>
         </label>
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Сопоставление снимков ВМ-стенда и версий ОС. Таблицы
+ * сопоставления нет (решение T7): server_service читает версию из имени
+ * снимка по шаблонам (Администрирование server_service → «Шаблоны снимков ВМ»)
+ * и тем же правилом выбирает снимок при подготовке. Здесь — живой список: что
+ * на какую версию откатит, и какие снимки названы не по схеме.
+ */
+function VmSnapshotsModal({ stand, onClose }: { stand: TestStand; onClose: () => void }) {
+  const query = useQuery(() => getTestStandVmSnapshots(stand.id), [stand.id]);
+  const data = query.data;
+  const matched = (data?.snapshots ?? []).filter((item) => item.normalized_version);
+  const unmatched = (data?.snapshots ?? []).filter((item) => !item.normalized_version);
+  return (
+    <Modal
+      open
+      onOpenChange={(next) => !next && onClose()}
+      title="Снимки ВМ по версиям ОС"
+      subtitle={standLabel(stand)}
+      width="lg"
+      footer={<Button type="button" onClick={onClose}>Закрыть</Button>}
+    >
+      <div className="grid gap-3">
+        {query.loading ? (
+          <div className="text-xs text-dim flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Загрузка снимков…
+          </div>
+        ) : query.error ? (
+          <div className="alert alert-danger text-xs">{apiErrMsg(query.error, "Список снимков не загрузился")}</div>
+        ) : data ? (
+          <>
+            <div className="text-xs text-dim">
+              Перед тестом ВМ откатывается на снимок, в имени которого версия ОС запуска (сравнение после
+              нормализации: <span className="mono">1710rc52</span> = <span className="mono">1.7.10.52</span>).
+              Шаблоны имени по порядку:{" "}
+              {data.templates.map((template, index) => (
+                <span key={template}>
+                  {index > 0 && ", "}
+                  <span className="mono">{template}</span>
+                </span>
+              ))}
+              . Нет снимка версии — постановка теста отклоняется (<span className="mono">VM_SNAPSHOT_NOT_FOUND</span>).
+            </div>
+            {matched.length === 0 ? (
+              <div className="text-xs text-dim">Ни один снимок не назван по шаблонам — запустить тест на этой ВМ нельзя.</div>
+            ) : (
+              <div className="surface-2 border border-token rounded overflow-hidden">
+                <table className="mini">
+                  <thead>
+                    <tr>
+                      <th>Версия ОС</th>
+                      <th>Режим</th>
+                      <th>Снимок</th>
+                      <th>Шаблон</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matched.map((item) => (
+                      <tr key={item.snapshot_id}>
+                        <td className="mono">{item.normalized_version}</td>
+                        <td>{item.mode ?? "любой"}</td>
+                        <td className="mono">
+                          {item.name}
+                          {item.is_current && <span className="text-xs text-dim"> · текущий</span>}
+                        </td>
+                        <td className="mono text-xs text-dim">{item.template}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {unmatched.length > 0 && (
+              <div className="text-xs text-dim">
+                Не подходят под шаблоны (при подготовке не используются):{" "}
+                <span className="mono">{unmatched.map((item) => item.name).join(", ")}</span>
+              </div>
+            )}
+          </>
+        ) : null}
       </div>
     </Modal>
   );

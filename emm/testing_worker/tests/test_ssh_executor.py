@@ -66,8 +66,9 @@ class _FakeConnection:
         self._create_process_exc = create_process_exc
         self.created_commands: list[tuple[str, object, object]] = []
 
-    async def create_process(self, cmd: str, *, stdin, stderr):
-        self.created_commands.append((cmd, stdin, stderr))
+    async def create_process(self, cmd: str, **kwargs):
+        self.created_commands.append((cmd, kwargs.get("stdin"), kwargs.get("stderr")))
+        self.created_kwargs = kwargs
         if self._create_process_exc is not None:
             raise self._create_process_exc
         return self._process
@@ -77,6 +78,15 @@ class _FakeConnection:
 
     async def __aexit__(self, exc_type, exc, tb):
         return False
+
+
+async def _execute(host, user, key, command, **kwargs):
+    """`execute` с командой-строкой; список собирается `shlex.join`, как в сервисе."""
+    if isinstance(command, list):
+        command = shlex.join(command)
+    kwargs.setdefault("stop_command", "STOP-TREE")
+    kwargs.setdefault("use_pty", False)
+    return await ssh_executor.execute(host, user, key, command, **kwargs)
 
 
 def _patch_connect(monkeypatch, conn=None, connect_exc: Exception | None = None):
@@ -104,7 +114,7 @@ class TestExecuteSuccess:
         conn = _FakeConnection(process=process)
         _patch_connect(monkeypatch, conn=conn)
 
-        result = await ssh_executor.execute(
+        result = await _execute(
             "10.0.0.1", "u", "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
             ["--flag", "value"],
         )
@@ -128,7 +138,7 @@ class TestExecuteSuccess:
         conn = _FakeConnection(process=process)
         _patch_connect(monkeypatch, conn=conn)
 
-        result = await ssh_executor.execute("10.0.0.1", "u", "keydata", ["cmd"])
+        result = await _execute("10.0.0.1", "u", "keydata", ["cmd"])
 
         assert result.output == "part1 part2 part3"
 
@@ -140,7 +150,7 @@ class TestExecuteCommandFailure:
         conn = _FakeConnection(process=process)
         _patch_connect(monkeypatch, conn=conn)
 
-        result = await ssh_executor.execute("10.0.0.1", "u", "keydata", ["do-thing"])
+        result = await _execute("10.0.0.1", "u", "keydata", ["do-thing"])
 
         assert result.connected is True
         assert result.succeeded is False
@@ -155,7 +165,7 @@ class TestExecuteCommandFailure:
         conn = _FakeConnection(process=process)
         _patch_connect(monkeypatch, conn=conn)
 
-        result = await ssh_executor.execute("10.0.0.1", "u", "keydata", ["do-thing"])
+        result = await _execute("10.0.0.1", "u", "keydata", ["do-thing"])
 
         assert result.succeeded is False
         assert result.error is not None
@@ -168,7 +178,7 @@ class TestExecuteRedactsSecrets:
     """`redact_secrets` — секрет не должен уйти в `error` (а значит, в
     `queue_item.error`/аудит), даже если он засветился в выводе команды."""
 
-    async def test_secret_is_redacted_from_error_but_not_from_output(self, monkeypatch):
+    async def test_secret_is_redacted_from_error_and_output(self, monkeypatch):
         _patch_import_key(monkeypatch)
         leaked = (
             '+ git -c http.extraHeader="Authorization: Bearer super-secret-token" clone ...\n'
@@ -178,7 +188,7 @@ class TestExecuteRedactsSecrets:
         conn = _FakeConnection(process=process)
         _patch_connect(monkeypatch, conn=conn)
 
-        result = await ssh_executor.execute(
+        result = await _execute(
             "10.0.0.1", "u", "keydata", ["do-thing"],
             redact_secrets=["Bearer super-secret-token"],
         )
@@ -186,8 +196,9 @@ class TestExecuteRedactsSecrets:
         assert result.succeeded is False
         assert "Bearer super-secret-token" not in result.error
         assert "***" in result.error
-        # `output` — отдельный, уже принятый канал (живой лог), не трогаем его.
-        assert "Bearer super-secret-token" in result.output
+        # живой лог и итоговый вывод тоже без секрета (redact_values).
+        assert "Bearer super-secret-token" not in result.output
+        assert "Authorization: ***" in result.output
 
     async def test_no_secrets_leaves_error_untouched(self, monkeypatch):
         _patch_import_key(monkeypatch)
@@ -195,7 +206,7 @@ class TestExecuteRedactsSecrets:
         conn = _FakeConnection(process=process)
         _patch_connect(monkeypatch, conn=conn)
 
-        result = await ssh_executor.execute(
+        result = await _execute(
             "10.0.0.1", "u", "keydata", ["cmd"], redact_secrets=None,
         )
 
@@ -206,7 +217,7 @@ class TestExecuteConnectFailure:
     async def test_invalid_private_key(self, monkeypatch):
         _patch_import_key(monkeypatch, import_exc=asyncssh.KeyImportError("bad key"))
 
-        result = await ssh_executor.execute("10.0.0.1", "u", "not-a-key", ["cmd"])
+        result = await _execute("10.0.0.1", "u", "not-a-key", ["cmd"])
 
         assert result.connected is False
         assert result.succeeded is False
@@ -218,7 +229,7 @@ class TestExecuteConnectFailure:
         _patch_import_key(monkeypatch)
         _patch_connect(monkeypatch, connect_exc=asyncssh.PermissionDenied("denied"))
 
-        result = await ssh_executor.execute("10.0.0.1", "u", "keydata", ["cmd"])
+        result = await _execute("10.0.0.1", "u", "keydata", ["cmd"])
 
         assert result.connected is False
         assert result.exit_code is None
@@ -228,7 +239,7 @@ class TestExecuteConnectFailure:
         _patch_import_key(monkeypatch)
         _patch_connect(monkeypatch, connect_exc=TimeoutError("timed out"))
 
-        result = await ssh_executor.execute("10.0.0.1", "u", "keydata", ["cmd"])
+        result = await _execute("10.0.0.1", "u", "keydata", ["cmd"])
 
         assert result.connected is False
         assert result.exit_code is None
@@ -238,7 +249,7 @@ class TestExecuteConnectFailure:
         _patch_import_key(monkeypatch)
         _patch_connect(monkeypatch, connect_exc=asyncssh.ConnectionLost("lost"))
 
-        result = await ssh_executor.execute("10.0.0.1", "u", "keydata", ["cmd"])
+        result = await _execute("10.0.0.1", "u", "keydata", ["cmd"])
 
         assert result.connected is False
         assert result.exit_code is None
@@ -248,7 +259,7 @@ class TestExecuteConnectFailure:
         _patch_import_key(monkeypatch)
         _patch_connect(monkeypatch, connect_exc=OSError("no route to host"))
 
-        result = await ssh_executor.execute("10.0.0.1", "u", "keydata", ["cmd"])
+        result = await _execute("10.0.0.1", "u", "keydata", ["cmd"])
 
         assert result.connected is False
         assert result.exit_code is None
@@ -259,7 +270,7 @@ class TestExecuteConnectFailure:
         conn = _FakeConnection(create_process_exc=asyncssh.ChannelOpenError(1, "no channel"))
         _patch_connect(monkeypatch, conn=conn)
 
-        result = await ssh_executor.execute("10.0.0.1", "u", "keydata", ["cmd"])
+        result = await _execute("10.0.0.1", "u", "keydata", ["cmd"])
 
         assert result.connected is False
         assert result.exit_code is None
@@ -273,7 +284,7 @@ class TestExecuteRunFailureAfterConnect:
         conn = _FakeRunConnection(process=process)
         _patch_connect(monkeypatch, conn=conn)
 
-        result = await ssh_executor.execute(
+        result = await _execute(
             "10.0.0.1", "u", "keydata", ["cmd"], command_timeout=0.05,
         )
 
@@ -285,7 +296,7 @@ class TestExecuteRunFailureAfterConnect:
         assert result.output == "partial output"
         # Обрыв SSH-канала сам процесс на стенде не гасит — таймаут обязан
         # явно его убить, симметрично ручному interrupt-пути.
-        assert conn.ran == [("sudo pkill -f starter.sh", False)]
+        assert conn.ran == [("STOP-TREE", False)]
 
     async def test_kill_failure_on_timeout_does_not_hide_the_timeout_result(self, monkeypatch):
         """`kill_remote_process` best-effort — его собственный провал не должен
@@ -295,7 +306,7 @@ class TestExecuteRunFailureAfterConnect:
         conn = _FakeRunConnection(process=process, run_exc=asyncssh.ChannelOpenError(1, "no channel"))
         _patch_connect(monkeypatch, conn=conn)
 
-        result = await ssh_executor.execute(
+        result = await _execute(
             "10.0.0.1", "u", "keydata", ["cmd"], command_timeout=0.05,
         )
 
@@ -308,7 +319,7 @@ class TestExecuteRunFailureAfterConnect:
         conn = _FakeConnection(process=process)
         _patch_connect(monkeypatch, conn=conn)
 
-        result = await ssh_executor.execute("10.0.0.1", "u", "keydata", ["cmd"])
+        result = await _execute("10.0.0.1", "u", "keydata", ["cmd"])
 
         assert result.connected is True
         assert result.succeeded is False
@@ -329,7 +340,7 @@ class TestExecuteChunkStreaming:
         async def _on_chunk(text: str) -> None:
             received.append(text)
 
-        result = await ssh_executor.execute(
+        result = await _execute(
             "10.0.0.1", "u", "keydata", ["cmd"], on_output_chunk=_on_chunk,
         )
 
@@ -347,7 +358,7 @@ class TestExecuteChunkStreaming:
         async def _on_chunk(text: str) -> None:
             received.append(text)
 
-        await ssh_executor.execute(
+        await _execute(
             "10.0.0.1", "u", "keydata", ["cmd"],
             on_output_chunk=_on_chunk, chunk_max_bytes=5,
         )
@@ -364,7 +375,7 @@ class TestExecuteChunkStreaming:
         conn = _FakeConnection(process=process)
         _patch_connect(monkeypatch, conn=conn)
 
-        result = await ssh_executor.execute("10.0.0.1", "u", "keydata", ["cmd"])
+        result = await _execute("10.0.0.1", "u", "keydata", ["cmd"])
 
         assert result.output == "abc"
 
@@ -377,7 +388,7 @@ class TestExecuteChunkStreaming:
         async def _on_chunk(text: str) -> None:
             received.append(text)
 
-        await ssh_executor.execute("10.0.0.1", "u", "keydata", ["cmd"], on_output_chunk=_on_chunk)
+        await _execute("10.0.0.1", "u", "keydata", ["cmd"], on_output_chunk=_on_chunk)
 
         assert received == []
 
@@ -395,7 +406,7 @@ class TestExecuteChunkStreaming:
         async def _on_chunk(text: str) -> None:
             received.append(text)
 
-        result = await ssh_executor.execute(
+        result = await _execute(
             "10.0.0.1", "u", "keydata", ["cmd"],
             on_output_chunk=_on_chunk, chunk_interval_seconds=0.02, chunk_max_bytes=10_000,
         )
@@ -431,10 +442,10 @@ class TestKillRemoteProcess:
         conn = _FakeRunConnection()
         _patch_connect(monkeypatch, conn=conn)
 
-        killed = await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata")
+        killed = await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata", stop_command="STOP-TREE")
 
         assert killed is True
-        assert conn.ran == [("sudo pkill -f starter.sh", False)]
+        assert conn.ran == [("STOP-TREE", False)]
 
     async def test_nonzero_pkill_exit_is_not_a_failure(self, monkeypatch):
         """`pkill` возвращает 1, когда гасить уже нечего — тест успел упасть сам."""
@@ -442,12 +453,12 @@ class TestKillRemoteProcess:
         conn = _FakeRunConnection(exit_status=1)
         _patch_connect(monkeypatch, conn=conn)
 
-        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata") is True
+        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata", stop_command="STOP-TREE") is True
 
     async def test_invalid_private_key_is_best_effort(self, monkeypatch):
         _patch_import_key(monkeypatch, import_exc=asyncssh.KeyImportError("bad key"))
 
-        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "not-a-key") is False
+        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "not-a-key", stop_command="STOP-TREE") is False
 
     @pytest.mark.parametrize(
         "connect_exc",
@@ -462,14 +473,14 @@ class TestKillRemoteProcess:
         _patch_import_key(monkeypatch)
         _patch_connect(monkeypatch, connect_exc=connect_exc)
 
-        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata") is False
+        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata", stop_command="STOP-TREE") is False
 
     async def test_run_failure_is_swallowed(self, monkeypatch):
         _patch_import_key(monkeypatch)
         conn = _FakeRunConnection(run_exc=asyncssh.ChannelOpenError(1, "no channel"))
         _patch_connect(monkeypatch, conn=conn)
 
-        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata") is False
+        assert await ssh_executor.kill_remote_process("10.0.0.1", "u", "keydata", stop_command="STOP-TREE") is False
 
 
 class _FakeSftpFile:
@@ -591,3 +602,73 @@ class TestShlexJoinSafety:
     def test_roundtrip_via_shlex_split(self, args):
         joined = shlex.join(args)
         assert shlex.split(joined) == args
+
+
+class TestPtyAndStreamFilter:
+    """pty, нормализация `\r\n`, ANSI, секреты на границе кусков."""
+
+    async def test_pty_requests_terminal_and_keeps_stdin_open(self, monkeypatch):
+        _patch_import_key(monkeypatch)
+        conn = _FakeConnection(process=_FakeProcess(["line1\r\n", "line2\r\n"], exit_status=0))
+        _patch_connect(monkeypatch, conn=conn)
+
+        result = await _execute("10.0.0.1", "u", "keydata", "sudo bash /home/u/starter.sh", use_pty=True)
+
+        assert conn.created_kwargs["term_type"] == "xterm"
+        assert "stdin" not in conn.created_kwargs and "stderr" not in conn.created_kwargs
+        assert result.output == "line1\nline2\n"
+
+    async def test_crlf_split_across_reads_and_ansi_are_normalized(self, monkeypatch):
+        _patch_import_key(monkeypatch)
+        chunks = ["\x1b[32mok\x1b[0m done\r", "\nnext\x1b[", "1mbold\x1b[0m\r\n"]
+        conn = _FakeConnection(process=_FakeProcess(chunks, exit_status=0))
+        _patch_connect(monkeypatch, conn=conn)
+
+        result = await _execute("10.0.0.1", "u", "keydata", "cmd", use_pty=True)
+
+        assert result.output == "ok done\nnextbold\n"
+
+    async def test_secret_split_across_chunks_never_reaches_a_chunk(self, monkeypatch):
+        _patch_import_key(monkeypatch)
+        secret = "Bearer TOPSECRET123"
+        chunks = ["start Bearer TOP", "SECRET", "123 end\n", "tail Bearer TOPSECRET123\n"]
+        conn = _FakeConnection(process=_FakeProcess(chunks, exit_status=0))
+        _patch_connect(monkeypatch, conn=conn)
+        sent: list[str] = []
+
+        async def on_chunk(text: str) -> None:
+            sent.append(text)
+
+        result = await _execute(
+            "10.0.0.1", "u", "keydata", "cmd", use_pty=True,
+            on_output_chunk=on_chunk, redact_secrets=[secret], chunk_max_bytes=1,
+        )
+
+        assert len(sent) > 1
+        joined = "".join(sent)
+        assert joined == result.output == "start *** end\ntail ***\n"
+        for piece in sent:
+            for n in range(4, len(secret) + 1):
+                assert secret[:n] not in piece
+
+    async def test_live_chunks_arrive_before_process_exits(self, monkeypatch):
+        """Процесс печатает строку раз в «секунду» — куски уходят по ходу, а не в конце."""
+        _patch_import_key(monkeypatch)
+        lines = [f"tick {i}\r\n" for i in range(10)]
+        process = _FakeProcess(lines, exit_status=0, chunk_delay=0.03)
+        conn = _FakeConnection(process=process)
+        _patch_connect(monkeypatch, conn=conn)
+        sent: list[tuple[int, str]] = []
+
+        async def on_chunk(text: str) -> None:
+            sent.append((len(process.stdout._chunks), text))
+
+        await _execute(
+            "10.0.0.1", "u", "keydata", "cmd", use_pty=True,
+            on_output_chunk=on_chunk, chunk_interval_seconds=0.05,
+        )
+
+        # Первые куски отправлены, пока у процесса ещё оставался вывод.
+        assert sent and sent[0][0] > 0
+        assert "".join(t for _, t in sent) == "".join(f"tick {i}\n" for i in range(10))
+        assert all("\r" not in t for _, t in sent)

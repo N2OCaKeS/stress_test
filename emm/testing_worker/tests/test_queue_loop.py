@@ -106,15 +106,15 @@ class TestRunOneItem:
             "host": "10.0.0.1",
             "test_username": "u",
             "test_ssh_private_key": "keydata",
-            "command": ["--flag", "value"],
-            "command_masked": ["--flag", "***"],
+            "launch_command": '--flag value', "stop_command": "STOP-TREE", "files": [],
+            "launch_command_masked": "--flag '***'",
             "debug_mode": False,
             "is_retry": False,
         }
 
         await queue_loop._run_one_item(item)
 
-        assert recorded["execute_args"] == ("10.0.0.1", "u", "keydata", ["--flag", "value"])
+        assert recorded["execute_args"] == ("10.0.0.1", "u", "keydata", "--flag value")
 
         # log-segment уходит до report_completed, ровно один раз, с
         # замаскированной командой и полным выводом от execute().
@@ -159,7 +159,7 @@ class TestRunOneItem:
 
         item = {
             "queue_item_id": "qi_2", "host": "10.0.0.1", "test_username": "u",
-            "test_ssh_private_key": "keydata", "command": ["x"], "command_masked": ["x"],
+            "test_ssh_private_key": "keydata", "launch_command": 'x', "stop_command": "STOP-TREE", "files": [], "launch_command_masked": 'x',
             "debug_mode": False, "is_retry": False,
         }
         await queue_loop._run_one_item(item)
@@ -189,7 +189,7 @@ class TestRunOneItem:
 
         item = {
             "queue_item_id": "qi_3", "host": "10.0.0.1", "test_username": "u",
-            "test_ssh_private_key": "keydata", "command": ["x"], "command_masked": ["x"],
+            "test_ssh_private_key": "keydata", "launch_command": 'x', "stop_command": "STOP-TREE", "files": [], "launch_command_masked": 'x',
             "debug_mode": False, "is_retry": False, "command_timeout_seconds": 120,
         }
         await queue_loop._run_one_item(item)
@@ -220,8 +220,8 @@ class TestRunOneItem:
             "host": "10.0.0.2",
             "test_username": "u",
             "test_ssh_private_key": "keydata",
-            "command": ["cmd"],
-            "command_masked": ["cmd"],
+            "launch_command": 'cmd', "stop_command": "STOP-TREE", "files": [],
+            "launch_command_masked": 'cmd',
             "debug_mode": True,
             "is_retry": True,
         }
@@ -234,6 +234,37 @@ class TestRunOneItem:
             "host": "10.0.0.2", "started_at": _STARTED, "finished_at": _FINISHED,
         })
         assert recorded["calls"][1] == ("report_completed", "qi_2", False, 1, "boom")
+
+    async def test_multistep_segment_label_carries_step(self, monkeypatch):
+        """сегмент лога шага подписан номером и именем шага."""
+        recorded: list[dict] = []
+
+        async def fake_execute(host, username, key, command, **kwargs):
+            return ExecutionResult(
+                connected=True, succeeded=True, exit_code=0, error=None,
+                output="ok", started_at=_STARTED, finished_at=_FINISHED,
+            )
+
+        async def fake_log_segment(queue_item_id, **fields):
+            recorded.append(fields)
+
+        async def fake_report(queue_item_id, **kwargs):
+            return None
+
+        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
+        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
+
+        base = {
+            "queue_item_id": "qi_steps", "host": "10.0.0.3", "test_username": "u",
+            "test_ssh_private_key": "keydata", "launch_command": "cmd", "stop_command": "STOP-TREE",
+            "files": [], "launch_command_masked": "cmd",
+        }
+        await queue_loop._run_one_item({**base, "step": {"index": 1, "count": 4, "name": "maxcpus=16"}})
+        await queue_loop._run_one_item({**base, "step": {"index": 0, "count": 1, "name": ""}})
+        assert [f["label"] for f in recorded] == [
+            "Выполнение теста · шаг 2/4 «maxcpus=16»", "Выполнение теста",
+        ]
 
     async def test_connect_failure_skips_log_segment(self, monkeypatch):
         recorded = {"calls": []}
@@ -259,8 +290,8 @@ class TestRunOneItem:
             "host": "10.0.0.3",
             "test_username": "u",
             "test_ssh_private_key": "keydata",
-            "command": ["cmd"],
-            "command_masked": ["cmd"],
+            "launch_command": 'cmd', "stop_command": "STOP-TREE", "files": [],
+            "launch_command_masked": 'cmd',
             "debug_mode": False,
             "is_retry": False,
         }
@@ -286,8 +317,8 @@ class TestRunOneItemPreflight:
             "host": "10.0.0.9",
             "test_username": "u",
             "test_ssh_private_key": "keydata",
-            "command": ["x"],
-            "command_masked": ["x"],
+            "launch_command": 'x', "stop_command": "STOP-TREE", "files": [],
+            "launch_command_masked": 'x',
             "debug_mode": False,
             "is_retry": False,
         }
@@ -352,7 +383,8 @@ class TestRunOneItemPreflight:
         recorded = {"chunks": [], "interrupt_checks": 0}
         captured = {}
 
-        async def fake_wait(*, on_wait=None, should_abort=None):
+        async def fake_wait(*, preflight=None, on_wait=None, should_abort=None):
+            captured["preflight"] = preflight
             captured["on_wait"] = on_wait
             captured["should_abort"] = should_abort
             return queue_loop.preflight.PreflightResult(ok=True, attempts=1)
@@ -390,579 +422,182 @@ class TestRunOneItemPreflight:
         # Тот же `interrupt-check`, что и во время исполнения теста.
         assert await captured["should_abort"]() is None
         assert recorded["interrupt_checks"] == 1
+        # Без `preflight` в item — env-фолбэк (`None`).
+        assert captured["preflight"] is None
+
+    async def test_item_preflight_is_passed_to_the_wait(self, monkeypatch):
+        """настройки отдела из claim payload уходят в проверку как есть."""
+        captured = {}
+        settings = {
+            "enabled": True, "http": [{"url": "https://x.test", "ok_status": "200"}],
+            "dns_hosts": [], "dns_port": 53, "poll_interval_seconds": 5, "timeout_seconds": 5,
+        }
+
+        async def fake_wait(*, preflight=None, on_wait=None, should_abort=None):
+            captured["preflight"] = preflight
+            return queue_loop.preflight.PreflightResult(ok=False, error="down")
+
+        async def noop(*a, **k):
+            return None
+
+        monkeypatch.setattr(queue_loop.preflight, "wait_for_external_services", fake_wait)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", noop)
+
+        await queue_loop._run_one_item(self._item(preflight=settings))
+        assert captured["preflight"] == settings
 
 
-class TestRunOneItemDeliversStarterScript:
-    """`/home/u/starter.sh` кладём на стенд сами, перед каждым запуском.
+    async def test_waiting_is_reported_for_the_ui_and_cleared(self, monkeypatch):
+        """каждое ожидание — `waiting` для левой панели, в конце — `ok`."""
+        states = []
 
-    Стенд откатывается на образ перед прогоном, поэтому копия скрипта с
-    прошлого раза — не гарантия. Команда `sudo bash /home/u/starter.sh`
-    обязана запускать тот файл, который положил воркер.
-    """
+        async def fake_wait(*, preflight=None, on_wait=None, should_abort=None):
+            await on_wait(["https://git.test"], 180.0)
+            await on_wait(["dns"], 360.0)
+            return queue_loop.preflight.PreflightResult(ok=False, error="down")
+
+        async def fake_state(queue_item_id, *, waiting, unavailable=None):
+            states.append((queue_item_id, waiting, unavailable))
+
+        async def noop(*a, **k):
+            return None
+
+        monkeypatch.setattr(queue_loop.preflight, "wait_for_external_services", fake_wait)
+        monkeypatch.setattr(queue_loop.testing_client, "report_preflight_state", fake_state)
+        monkeypatch.setattr(queue_loop.testing_client, "log_chunk", noop)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", noop)
+
+        await queue_loop._run_one_item(self._item())
+        assert states == [
+            ("qi_pf", True, ["https://git.test"]),
+            ("qi_pf", True, ["dns"]),
+            ("qi_pf", False, None),
+        ]
+
+    async def test_no_wait_no_state_reports(self, monkeypatch):
+        """Сервисы доступны с первой попытки — UI не дёргаем."""
+        states = []
+
+        async def fake_wait(*, preflight=None, on_wait=None, should_abort=None):
+            return queue_loop.preflight.PreflightResult(ok=False, error="stop here")
+
+        async def fake_state(*a, **k):
+            states.append(a)
+
+        async def noop(*a, **k):
+            return None
+
+        monkeypatch.setattr(queue_loop.preflight, "wait_for_external_services", fake_wait)
+        monkeypatch.setattr(queue_loop.testing_client, "report_preflight_state", fake_state)
+        monkeypatch.setattr(queue_loop.testing_client, "report_completed", noop)
+
+        await queue_loop._run_one_item(self._item())
+        assert states == []
+
+class TestRunOneItemWritesFiles:
+    """файлы задания пишутся по SFTP в порядке списка, с правами,
+    до запуска; провал любой записи фатален. Путей у воркера нет."""
 
     def _item(self, **overrides) -> dict:
         item = {
-            "queue_item_id": "qi_starter",
-            "host": "10.0.0.6",
-            "test_username": "u",
-            "test_ssh_private_key": "keydata",
-            "command": ["sudo", "bash", "/home/u/starter.sh", "postgresql", "git-token", "dates_qi_starter.conf", "1.8.5", ""],
-            "command_masked": ["sudo", "bash", "/home/u/starter.sh", "postgresql", "***", "dates_qi_starter.conf", "1.8.5", ""],
-            "debug_mode": False,
-            "is_retry": False,
-        }
-        item.update(overrides)
-        return item
-
-    async def test_writes_script_content_before_executing(self, monkeypatch):
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            recorded["calls"].append(("write", host, username, key, remote_path, content))
-
-        async def fake_execute(host, username, key, command, **kwargs):
-            recorded["calls"].append(("execute", command))
-            return ExecutionResult(
-                connected=True, succeeded=True, exit_code=0, error=None,
-                output="ok", started_at=_STARTED, finished_at=_FINISHED,
-            )
-
-        async def fake_log_segment(queue_item_id, **fields):
-            recorded["calls"].append(("log_segment",))
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed", succeeded, error))
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        await queue_loop._run_one_item(self._item())
-
-        kinds = [call[0] for call in recorded["calls"]]
-        assert kinds == ["write", "execute", "log_segment", "report_completed"]
-
-        _, host, username, key, remote_path, content = recorded["calls"][0]
-        # Те же креды и хост, что и у самого запуска, — иначе скрипт лёг бы не туда.
-        assert (host, username, key) == ("10.0.0.6", "u", "keydata")
-        assert remote_path == "/home/u/starter.sh"
-        # Путь записи совпадает с тем, что собрал testing_service в argv.
-        assert remote_path in self._item()["command"]
-        assert content == queue_loop._starter_script_content()
-
-    def test_asset_matches_the_legacy_script(self):
-        content = queue_loop._starter_script_content()
-        assert content.startswith("#!/bin/bash")
-        # Позиционные аргументы, которые кладёт в argv testing_service:
-        # $1 ветка, $2 имя файла с git-токеном, $3 dates-файл, $5 суффикс запуска.
-        assert 'git -c http.extraHeader="Authorization: $(cat "/home/u/$2")" clone --branch "$1"' in content
-        assert 'python3 run.py -n "$3"' in content
-        assert 'if [ "$5" == "kernel" ]' in content
-
-    async def test_write_failure_is_fatal_for_the_item(self, monkeypatch):
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            raise asyncssh.SFTPError(asyncssh.FX_PERMISSION_DENIED, "permission denied")
-
-        async def fake_execute(*args, **kwargs):
-            raise AssertionError("execute() must not run without starter.sh on the stand")
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error))
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        await queue_loop._run_one_item(self._item())
-
-        assert recorded["calls"] == [
-            ("report_completed", "qi_starter", False, None,
-             "SFTP write of starter.sh failed: SFTPError"),
-        ]
-
-    async def test_write_failure_skips_the_dates_write_too(self, monkeypatch):
-        """Провал первой записи обрывает пайплайн — dates уже не пишем."""
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            recorded["calls"].append(("write", remote_path))
-            raise OSError("connection reset")
-
-        async def fake_execute(*args, **kwargs):
-            raise AssertionError("execute() must not run after a failed SFTP write")
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed", succeeded, error))
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        item = self._item(dates_content="-sn 1", dates_filename="dates_qi_starter.conf")
-        await queue_loop._run_one_item(item)
-
-        assert recorded["calls"] == [
-            ("write", "/home/u/starter.sh"),
-            ("report_completed", False, "SFTP write of starter.sh failed: OSError"),
-        ]
-
-    async def test_unreadable_asset_fails_the_item_without_ssh(self, monkeypatch):
-        recorded = {"calls": []}
-
-        def fake_content():
-            raise OSError("No such file or directory")
-
-        async def fake_write_remote_file(*args, **kwargs):
-            raise AssertionError("no SSH attempt makes sense without the script text")
-
-        async def fake_execute(*args, **kwargs):
-            raise AssertionError("execute() must not run without starter.sh on the stand")
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed", queue_item_id, succeeded, error))
-
-        monkeypatch.setattr(queue_loop, "_starter_script_content", fake_content)
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        await queue_loop._run_one_item(self._item())
-
-        assert recorded["calls"] == [
-            ("report_completed", "qi_starter", False, "starter.sh asset unreadable: OSError"),
-        ]
-
-
-class TestRunOneItemWritesGitTokenFile:
-    """`git_token_content`/`git_token_filename` в `item` — токен едет по SFTP,
-    не argv'ом: он больше не виден в `ps` на стенде весь срок теста."""
-
-    def _item(self, **overrides) -> dict:
-        item = {
-            "queue_item_id": "qi_token",
-            "host": "10.0.0.11",
-            "test_username": "u",
-            "test_ssh_private_key": "keydata",
-            "command": ["sudo", "bash", "/home/u/starter.sh", "postgresql", "git_token_qi_token.conf", "dates_qi_token.conf", "1.8.5", ""],
-            "command_masked": ["sudo", "bash", "/home/u/starter.sh", "postgresql", "git_token_qi_token.conf", "dates_qi_token.conf", "1.8.5", ""],
-            "git_token_content": "Bearer secret-token",
-            "git_token_filename": "git_token_qi_token.conf",
-            "debug_mode": False,
-            "is_retry": False,
-        }
-        item.update(overrides)
-        return item
-
-    async def test_writes_before_dates_and_before_executing(self, monkeypatch):
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            recorded["calls"].append(("write", remote_path, content))
-
-        async def fake_execute(host, username, key, command, **kwargs):
-            recorded["calls"].append(("execute", command))
-            recorded["redact_secrets"] = kwargs.get("redact_secrets")
-            return ExecutionResult(
-                connected=True, succeeded=True, exit_code=0, error=None,
-                output="ok", started_at=_STARTED, finished_at=_FINISHED,
-            )
-
-        async def fake_log_segment(queue_item_id, **fields):
-            recorded["calls"].append(("log_segment",))
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed", succeeded, exit_code, error))
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        await queue_loop._run_one_item(self._item(dates_content="-sn 1", dates_filename="dates_qi_token.conf"))
-
-        writes = [call for call in recorded["calls"] if call[0] == "write"]
-        assert writes == [
-            ("write", "/home/u/starter.sh", queue_loop._starter_script_content()),
-            ("write", "/home/u/git_token_qi_token.conf", "Bearer secret-token"),
-            ("write", "/home/u/dates_qi_token.conf", "-sn 1"),
-        ]
-        # Токен уходит в execute() как секрет для редакции, не как контент
-        # для дополнительной записи.
-        assert recorded["redact_secrets"] == ["Bearer secret-token"]
-
-    async def test_write_failure_is_fatal_and_skips_dates(self, monkeypatch):
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            if remote_path.endswith("starter.sh"):
-                return None
-            recorded["calls"].append(("write", remote_path))
-            raise asyncssh.SFTPError(asyncssh.FX_FAILURE, "disk full")
-
-        async def fake_execute(*args, **kwargs):
-            raise AssertionError("execute() must not run after a failed SFTP write")
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed", succeeded, error))
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        await queue_loop._run_one_item(self._item(dates_content="-sn 1", dates_filename="dates_qi_token.conf"))
-
-        assert recorded["calls"] == [
-            ("write", "/home/u/git_token_qi_token.conf"),
-            ("report_completed", False, "SFTP write of git_token_qi_token.conf failed: SFTPError"),
-        ]
-
-    async def test_missing_fields_skip_the_write_step(self, monkeypatch):
-        """Старый/тестовый `item` без токен-полей — шаг просто пропускается."""
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            recorded["calls"].append(("write", remote_path))
-
-        async def fake_execute(host, username, key, command, **kwargs):
-            recorded["calls"].append(("execute",))
-            return ExecutionResult(
-                connected=True, succeeded=True, exit_code=0, error=None,
-                output="ok", started_at=_STARTED, finished_at=_FINISHED,
-            )
-
-        async def fake_log_segment(*a, **k):
-            pass
-
-        async def fake_report(*a, **k):
-            pass
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        item = {
-            "queue_item_id": "qi_no_token",
-            "host": "10.0.0.12",
-            "test_username": "u",
-            "test_ssh_private_key": "keydata",
-            "command": ["cmd"],
-            "command_masked": ["cmd"],
-            "debug_mode": False,
-            "is_retry": False,
-        }
-        await queue_loop._run_one_item(item)
-
-        written = [call[1] for call in recorded["calls"] if call[0] == "write"]
-        assert written == ["/home/u/starter.sh"]
-        assert ("execute",) in recorded["calls"]
-
-
-class TestRunOneItemWritesDatesFile:
-    """`dates_content` в `item` — SFTP-запись обязана произойти ДО `execute()`."""
-
-    def _item(self, **overrides) -> dict:
-        item = {
-            "queue_item_id": "qi_dates",
-            "host": "10.0.0.4",
-            "test_username": "u",
-            "test_ssh_private_key": "keydata",
-            "command": ["sudo", "bash", "/home/u/starter.sh", "postgresql", "git-token", "dates_qi_dates.conf", "1.8.5", ""],
-            "command_masked": ["sudo", "bash", "/home/u/starter.sh", "postgresql", "***", "dates_qi_dates.conf", "1.8.5", ""],
-            "dates_content": "-sn 1 -tcv 1.8.5",
-            "dates_content_masked": "-sn 1 -tcv 1.8.5",
-            "dates_filename": "dates_qi_dates.conf",
-            "debug_mode": False,
-            "is_retry": False,
-        }
-        item.update(overrides)
-        return item
-
-    async def test_writes_before_executing(self, monkeypatch):
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            recorded["calls"].append(("write", host, remote_path, content))
-
-        async def fake_execute(host, username, key, command, **kwargs):
-            recorded["calls"].append(("execute", host, command))
-            return ExecutionResult(
-                connected=True, succeeded=True, exit_code=0, error=None,
-                output="ok", started_at=_STARTED, finished_at=_FINISHED,
-            )
-
-        async def fake_log_segment(queue_item_id, **fields):
-            recorded["calls"].append(("log_segment",))
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed", succeeded, exit_code, error))
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        await queue_loop._run_one_item(self._item())
-
-        kinds = [call[0] for call in recorded["calls"]]
-        assert kinds == ["write", "write", "execute", "log_segment", "report_completed"]
-        # Первой уходит доставка самого скрипта, второй — его аргумент-файл.
-        assert recorded["calls"][0][:3] == ("write", "10.0.0.4", "/home/u/starter.sh")
-        assert recorded["calls"][1] == ("write", "10.0.0.4", "/home/u/dates_qi_dates.conf", "-sn 1 -tcv 1.8.5")
-        assert recorded["calls"][4] == ("report_completed", True, 0, None)
-
-    async def test_write_failure_skips_execute_and_reports_failure(self, monkeypatch):
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            # Доставку `starter.sh` пропускаем — проверяем именно провал dates.
-            if remote_path.endswith("starter.sh"):
-                return None
-            raise asyncssh.SFTPError(asyncssh.FX_FAILURE, "disk full")
-
-        async def fake_execute(*args, **kwargs):
-            recorded["calls"].append(("execute",))
-            raise AssertionError("execute() must not run after a failed SFTP write")
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed", queue_item_id, succeeded, exit_code, error))
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        await queue_loop._run_one_item(self._item(queue_item_id="qi_dates_fail"))
-
-        assert recorded["calls"] == [
-            ("report_completed", "qi_dates_fail", False, None,
-             "SFTP write of dates_qi_dates.conf failed: SFTPError"),
-        ]
-
-    async def test_no_dates_content_skips_write_step(self, monkeypatch):
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            recorded["calls"].append(("write", remote_path))
-
-        async def fake_execute(host, username, key, command, **kwargs):
-            recorded["calls"].append(("execute",))
-            return ExecutionResult(
-                connected=True, succeeded=True, exit_code=0, error=None,
-                output="ok", started_at=_STARTED, finished_at=_FINISHED,
-            )
-
-        async def fake_log_segment(queue_item_id, **fields):
-            recorded["calls"].append(("log_segment",))
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed",))
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        item = {
-            "queue_item_id": "qi_no_dates",
+            "queue_item_id": "qi_files",
             "host": "10.0.0.5",
             "test_username": "u",
             "test_ssh_private_key": "keydata",
-            "command": ["cmd"],
-            "command_masked": ["cmd"],
-            "debug_mode": False,
-            "is_retry": False,
-        }
-        await queue_loop._run_one_item(item)
-
-        written = [call[1] for call in recorded["calls"] if call[0] == "write"]
-        # Скрипт едет всегда, dates — только когда его прислали в item'е.
-        assert written == ["/home/u/starter.sh"]
-        assert ("execute",) in recorded["calls"]
-
-
-class TestBuildPrepareOnlyCommand:
-    """Команда, которую `starter.sh` запустил бы, если бы не вышел раньше по testenv."""
-
-    def test_generic_test_has_no_extra_flag(self):
-        command = queue_loop._build_prepare_only_command({
-            "dates_filename": "dates_qi_1.conf", "starter_suffix": "",
-        })
-        assert command == "python3 run.py -n dates_qi_1.conf"
-
-    def test_kernel_suffix_adds_kn_flag(self):
-        command = queue_loop._build_prepare_only_command({
-            "dates_filename": "dates_qi_2.conf", "starter_suffix": "kernel",
-        })
-        assert command == "python3 run.py -n dates_qi_2.conf -kn kernel"
-
-    def test_balance_suffix_adds_bl_flag(self):
-        command = queue_loop._build_prepare_only_command({
-            "dates_filename": "dates_qi_3.conf", "starter_suffix": "balance",
-        })
-        assert command == "python3 run.py -n dates_qi_3.conf -bl balance"
-
-    def test_oom_suffix_adds_oom_flag(self):
-        command = queue_loop._build_prepare_only_command({
-            "dates_filename": "dates_qi_4.conf", "starter_suffix": "oom",
-        })
-        assert command == "python3 run.py -n dates_qi_4.conf -oom oom"
-
-    def test_missing_fields_default_to_empty_string(self):
-        assert queue_loop._build_prepare_only_command({}) == "python3 run.py -n ''"
-
-    def test_special_characters_in_dates_filename_are_quoted(self):
-        """Регрессия: значение со спецсимволом не должно разваливать команду
-        на несколько слов/подставлять command substitution при копипасте."""
-        command = queue_loop._build_prepare_only_command({
-            "dates_filename": "dates_$(whoami).conf", "starter_suffix": "",
-        })
-        assert command == "python3 run.py -n 'dates_$(whoami).conf'"
-
-
-class TestRunOneItemPrepareOnly:
-    """`prepare_only=True` — testenv-маркер и `command.txt` вместо результата теста."""
-
-    def _item(self, **overrides) -> dict:
-        item = {
-            "queue_item_id": "qi_prep",
-            "host": "10.0.0.8",
-            "test_username": "u",
-            "test_ssh_private_key": "keydata",
-            "command": ["sudo", "bash", "/home/u/starter.sh", "postgresql", "git-token", "dates_qi_prep.conf", "1.8.5", "kernel"],
-            "command_masked": ["sudo", "bash", "/home/u/starter.sh", "postgresql", "***", "dates_qi_prep.conf", "1.8.5", "kernel"],
-            "dates_filename": "dates_qi_prep.conf",
-            "starter_suffix": "kernel",
-            "prepare_only": True,
+            "files": [
+                {"path": "/home/u/starter.sh", "content": "#!/bin/bash\n", "mode": "0755", "sensitive": False},
+                {"path": "/home/u/git_token_qi.conf", "content": "Bearer x", "mode": "0600", "sensitive": True},
+                {"path": "/home/u/dates_qi.conf", "content": "-sn 1", "mode": "0644", "sensitive": False},
+                {"path": "/home/u/testenv_marker.conf", "content": "off", "mode": "0644", "sensitive": False},
+            ],
+            "launch_command": "sudo bash /home/u/starter.sh b git_token_qi.conf dates_qi.conf 1.8 ''",
+            "launch_command_masked": "sudo bash /home/u/starter.sh b git_token_qi.conf dates_qi.conf 1.8 ''",
+            "stop_command": "STOP-TREE",
             "debug_mode": False,
             "is_retry": False,
         }
         item.update(overrides)
         return item
 
-    async def test_writes_testenv_marker_and_command_file_before_executing(self, monkeypatch):
-        recorded = {"calls": []}
+    def _patch(self, monkeypatch, recorded, *, fail_on: str | None = None):
+        async def fake_write(host, username, key, path, content, *, mode=None, connect_timeout=None):
+            recorded.append(("write", path, content, mode))
+            if path == fail_on:
+                raise OSError("sftp broke")
 
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            recorded["calls"].append(("write", remote_path, content))
-
-        async def fake_execute(host, username, key, command, **kwargs):
-            recorded["calls"].append(("execute", command))
-            return ExecutionResult(
-                connected=True, succeeded=True, exit_code=0, error=None,
-                output="prepared", started_at=_STARTED, finished_at=_FINISHED,
-            )
-
-        async def fake_log_segment(queue_item_id, **fields):
-            recorded["calls"].append(("log_segment", fields.get("label")))
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed", succeeded, exit_code, error))
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        await queue_loop._run_one_item(self._item())
-
-        writes = [call for call in recorded["calls"] if call[0] == "write"]
-        assert writes == [
-            ("write", "/home/u/starter.sh", queue_loop._starter_script_content()),
-            ("write", "/home/u/testenv_on.conf", "on"),
-            ("write", "/home/u/command.txt", "python3 run.py -n dates_qi_prep.conf -kn kernel"),
-        ]
-        # Обе доп. записи произошли ДО execute(), execute — ДО отчёта.
-        kinds = [call[0] for call in recorded["calls"]]
-        assert kinds == ["write", "write", "write", "execute", "log_segment", "report_completed"]
-        # Сегмент лога подписан отдельной меткой — на стенде тест не запускался.
-        assert recorded["calls"][4] == ("log_segment", "Подготовка стенда (testenv)")
-        assert recorded["calls"][5] == ("report_completed", True, 0, None)
-
-    async def test_testenv_marker_write_failure_is_fatal(self, monkeypatch):
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            if remote_path == "/home/u/testenv_on.conf":
-                raise asyncssh.SFTPError(asyncssh.FX_FAILURE, "disk full")
-            recorded["calls"].append(("write", remote_path))
-
-        async def fake_execute(*args, **kwargs):
-            raise AssertionError("execute() must not run after a failed SFTP write")
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed", queue_item_id, succeeded, error))
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        await queue_loop._run_one_item(self._item(queue_item_id="qi_prep_fail"))
-
-        assert recorded["calls"] == [
-            ("write", "/home/u/starter.sh"),
-            ("report_completed", "qi_prep_fail", False,
-             "SFTP write of testenv marker failed: SFTPError"),
-        ]
-
-    async def test_command_file_write_failure_is_fatal(self, monkeypatch):
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            if remote_path == "/home/u/command.txt":
-                raise OSError("connection reset")
-            recorded["calls"].append(("write", remote_path))
-
-        async def fake_execute(*args, **kwargs):
-            raise AssertionError("execute() must not run after a failed SFTP write")
-
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            recorded["calls"].append(("report_completed", queue_item_id, succeeded, error))
-
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
-        monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
-
-        await queue_loop._run_one_item(self._item(queue_item_id="qi_prep_fail2"))
-
-        assert recorded["calls"] == [
-            ("write", "/home/u/starter.sh"),
-            ("write", "/home/u/testenv_on.conf"),
-            ("report_completed", "qi_prep_fail2", False,
-             "SFTP write of command.txt failed: OSError"),
-        ]
-
-    async def test_normal_item_does_not_write_testenv_files(self, monkeypatch):
-        """Без `prepare_only` (или с `prepare_only=False`) маркер и command.txt не пишутся."""
-        recorded = {"calls": []}
-
-        async def fake_write_remote_file(host, username, key, remote_path, content, **kwargs):
-            recorded["calls"].append(("write", remote_path))
+        async def fake_run(host, username, key, command, **kwargs):
+            recorded.append(("run", command))
+            return 0
 
         async def fake_execute(host, username, key, command, **kwargs):
+            recorded.append(("execute", command, kwargs.get("stop_command"), kwargs.get("use_pty")))
             return ExecutionResult(
                 connected=True, succeeded=True, exit_code=0, error=None,
                 output="ok", started_at=_STARTED, finished_at=_FINISHED,
             )
 
-        async def fake_log_segment(queue_item_id, **fields):
-            recorded["calls"].append(("log_segment", fields.get("label")))
+        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False, interrupted=None):
+            recorded.append(("report", succeeded, error))
 
-        async def fake_report(queue_item_id, *, succeeded, exit_code, error, timed_out=False):
-            pass
+        async def fake_segment(queue_item_id, **fields):
+            recorded.append(("segment", fields["command_text_masked"]))
 
-        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write_remote_file)
+        monkeypatch.setattr(queue_loop.ssh_executor, "write_remote_file", fake_write)
+        monkeypatch.setattr(queue_loop.ssh_executor, "run_remote_command", fake_run)
         monkeypatch.setattr(queue_loop.ssh_executor, "execute", fake_execute)
-        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_log_segment)
         monkeypatch.setattr(queue_loop.testing_client, "report_completed", fake_report)
+        monkeypatch.setattr(queue_loop.testing_client, "log_segment", fake_segment)
 
-        await queue_loop._run_one_item(self._item(prepare_only=False))
+    async def test_writes_files_in_order_with_modes_then_executes(self, monkeypatch):
+        recorded: list = []
+        self._patch(monkeypatch, recorded)
+        item = self._item(use_pty=True)
 
-        written = [call[1] for call in recorded["calls"] if call[0] == "write"]
-        assert written == ["/home/u/starter.sh"]
-        assert ("log_segment", "Выполнение теста") in recorded["calls"]
+        await queue_loop._run_one_item(item)
+
+        writes = [r for r in recorded if r[0] == "write"]
+        assert [(w[1], w[3]) for w in writes] == [
+            ("/home/u/starter.sh", "0755"), ("/home/u/git_token_qi.conf", "0600"),
+            ("/home/u/dates_qi.conf", "0644"), ("/home/u/testenv_marker.conf", "0644"),
+        ]
+        execute = next(r for r in recorded if r[0] == "execute")
+        assert recorded.index(execute) > recorded.index(writes[-1])
+        assert execute[1:] == (item["launch_command"], "STOP-TREE", True)
+        assert ("segment", item["launch_command_masked"]) in recorded
+        assert recorded[-1] == ("report", True, None)
+        # Очистки по умолчанию нет: сервер чистый.
+        assert not any(r[0] == "run" for r in recorded)
+
+    async def test_write_failure_is_fatal_and_skips_the_rest(self, monkeypatch):
+        recorded: list = []
+        self._patch(monkeypatch, recorded, fail_on="/home/u/git_token_qi.conf")
+
+        await queue_loop._run_one_item(self._item())
+
+        assert [r[1] for r in recorded if r[0] == "write"] == ["/home/u/starter.sh", "/home/u/git_token_qi.conf"]
+        assert not any(r[0] == "execute" for r in recorded)
+        assert recorded[-1][0] == "report" and recorded[-1][1] is False
+        assert "/home/u/git_token_qi.conf" in recorded[-1][2]
+        # Содержимое секретного файла в текст ошибки не попадает.
+        assert "Bearer x" not in recorded[-1][2]
+
+    async def test_cleanup_globs_run_before_writes(self, monkeypatch):
+        recorded: list = []
+        self._patch(monkeypatch, recorded)
+
+        await queue_loop._run_one_item(self._item(cleanup_globs=["/home/u/testenv_*.conf"]))
+
+        assert recorded[0] == ("run", "sudo rm -f -- /home/u/testenv_*.conf")
+        assert recorded[1][0] == "write"
+
+    async def test_unsafe_cleanup_glob_fails_item_without_running_it(self, monkeypatch):
+        recorded: list = []
+        self._patch(monkeypatch, recorded)
+
+        await queue_loop._run_one_item(self._item(cleanup_globs=["/home/u/x; rm -rf /"]))
+
+        assert not any(r[0] in ("run", "write", "execute") for r in recorded)
+        assert recorded[-1][0] == "report" and "unsafe cleanup glob" in recorded[-1][2]
 
 
 class TestInterruptWatcher:
@@ -974,8 +609,8 @@ class TestInterruptWatcher:
             "host": "10.0.0.7",
             "test_username": "u",
             "test_ssh_private_key": "keydata",
-            "command": ["sudo", "bash", "/home/u/starter.sh"],
-            "command_masked": ["sudo", "bash", "/home/u/starter.sh"],
+            "launch_command": 'sudo bash /home/u/starter.sh', "stop_command": "STOP-TREE", "files": [],
+            "launch_command_masked": 'sudo bash /home/u/starter.sh',
             "debug_mode": False,
             "is_retry": False,
         }
@@ -1215,7 +850,7 @@ class TestRunPollingLoop:
             "host": "10.0.0.9",
             "test_username": "u",
             "test_ssh_private_key": "keydata",
-            "command": ["cmd"],
+            "launch_command": 'cmd', "stop_command": "STOP-TREE", "files": [],
             "debug_mode": False,
             "is_retry": False,
         }

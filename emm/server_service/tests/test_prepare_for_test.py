@@ -1,4 +1,4 @@
-"""Тесты асинхронного контракта `prepare-for-test` (§5.1 плана ALLTA MIGRATION).
+"""Тесты асинхронного контракта `prepare-for-test`.
 
 Покрывает три HTTP-точки:
 
@@ -81,9 +81,46 @@ async def _set_bootstrap_password(db, os_version_id: str) -> None:
 
 
 @pytest.fixture
-def captured_dispatch(monkeypatch):
+def fake_acs(monkeypatch):
+    """Подмена ACS для выбора снимка в `pft_svc.start()`.
+
+    `state["names"]` — ответ `check-snapshots` (все серверы вперемешку);
+    `None` (по умолчанию) — «снимок любой версии есть»: выбор возвращает
+    точное `{hostname}-{os_version.name}`, чтобы тесты, которым ACS не
+    интересна, не описывали её. `state["error"]` — исключение, которым
+    ответит ACS. `state["list_calls"]` — сколько раз спрашивали список.
+    """
+    from src.services import acs_snapshot_lookup as lookup
+
+    state: dict = {"names": None, "error": None, "list_calls": 0}
+    real_find = lookup.find_snapshot_for_restore
+
+    async def fake_names(db):
+        state["list_calls"] += 1
+        if state["error"] is not None:
+            raise state["error"]
+        return list(state["names"])
+
+    async def fake_find(db, *, hostname, version_name):
+        if state["names"] is None and state["error"] is None:
+            state["list_calls"] += 1
+            return lookup.HostSnapshot(
+                name=lookup.snapshot_name(hostname, version_name),
+                version_name=version_name,
+                normalized_version=version_name,
+            )
+        return await real_find(db, hostname=hostname, version_name=version_name)
+
+    monkeypatch.setattr(lookup, "list_acs_snapshot_names", fake_names)
+    monkeypatch.setattr(lookup, "find_snapshot_for_restore", fake_find)
+    return state
+
+
+@pytest.fixture
+def captured_dispatch(monkeypatch, fake_acs):
     """Перехват `worker_client.dispatch_task` — им пользуется `pft_svc.start()`
-    для ACS-restore. Без перехвата тест реально писал бы Task/outbox row."""
+    для ACS-restore. Без перехвата тест реально писал бы Task/outbox row.
+    ACS (выбор снимка перед restore) подменяется `fake_acs`."""
     calls: list[dict] = []
 
     async def fake_dispatch(*, db=None, task_kind, target_server_id, payload,
@@ -300,6 +337,105 @@ class TestStartConflicts:
 
         srv_row = (await db.execute(select(Server).where(Server.id == srv.id))).scalar_one()
         assert srv_row.busy_state == BusyState.FREE  # бронь так и не бралась
+
+
+class TestStartAcsSnapshot:
+    """снимок для restore ищется в живом списке ACS по
+    `{hostname}-{version}` с нормализацией версии; в `acs.snapshot_restore`
+    уходит фактический хвост имени снимка, а не `os_version.name`."""
+
+    async def _start(self, client, db, make_server, fake_acs, names, *, hostname=None):
+        from uuid import uuid4
+
+        hostname = hostname or f"LowServer{uuid4().hex[:6]}"
+        srv = await make_server(hostname=hostname)
+        osv = await _make_os_version(db, name="1.7.10.52", kernels=["5.10.0"])
+        await _set_bootstrap_password(db, osv.id)
+        fake_acs["names"] = [name.format(h=hostname) for name in names]
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare-for-test", headers=_svc_hdr(),
+            json=_body(os_version_id=osv.id, correlation_id=f"qi_{hostname}"),
+        )
+        assert resp.status_code == 202, resp.text
+        return srv, resp.json()
+
+    async def test_compact_snapshot_name_restored_by_actual_tail(
+        self, client, make_server, db, configure_service_keys, captured_dispatch, fake_acs,
+    ):
+        srv, body = await self._start(
+            client, db, make_server, fake_acs, ["{h}-1710rc52", "other-1710rc52"],
+        )
+        assert body["status"] == "in_progress"
+        assert len(captured_dispatch) == 1
+        payload = captured_dispatch[0]["payload"]
+        assert payload["version_name"] == "1710rc52"
+        assert payload["hostname"] == srv.hostname
+
+    async def test_dotted_snapshot_name_restored_as_is(
+        self, client, make_server, db, configure_service_keys, captured_dispatch, fake_acs,
+    ):
+        _, body = await self._start(
+            client, db, make_server, fake_acs, ["{h}-1.7.10.52"],
+        )
+        assert body["status"] == "in_progress"
+        assert captured_dispatch[0]["payload"]["version_name"] == "1.7.10.52"
+
+    async def test_several_candidates_exact_match_wins(
+        self, client, make_server, db, configure_service_keys, captured_dispatch, fake_acs,
+    ):
+        _, body = await self._start(
+            client, db, make_server, fake_acs, ["{h}-1710rc52", "{h}-1.7.10.52"],
+        )
+        assert body["status"] == "in_progress"
+        assert captured_dispatch[0]["payload"]["version_name"] == "1.7.10.52"
+
+    async def test_missing_snapshot_fails_restore_without_dispatch(
+        self, client, make_server, db, configure_service_keys, captured_dispatch, fake_acs,
+    ):
+        """Снимок удалили, пока item стоял в очереди: `restore` падает сразу,
+        `restore-backup` не зовётся, бронь снята. Снимок хоста с похожим
+        префиксом (`{h}2-…`) и снимок другой версии не подхватываются."""
+        srv, body = await self._start(
+            client, db, make_server, fake_acs,
+            ["{h}2-1710rc52", "{h}2-1.7.10.52", "{h}-1710rc64"],
+        )
+        assert body["status"] == "failed"
+        assert captured_dispatch == []
+        assert fake_acs["list_calls"] == 1
+
+        row = (await db.execute(select(ServerPrepareForTestRequest).where(
+            ServerPrepareForTestRequest.id == body["prepare_request_id"],
+        ))).scalar_one()
+        assert row.failed_step == "restore"
+        assert "ACS_SNAPSHOT_NOT_FOUND" in row.error
+        assert f"{srv.hostname}-1.7.10.52" in row.error
+
+        srv_row = (await db.execute(select(Server).where(Server.id == srv.id))).scalar_one()
+        assert srv_row.busy_state == BusyState.FREE
+
+    async def test_acs_unavailable_fails_restore_without_dispatch(
+        self, client, make_server, db, configure_service_keys, captured_dispatch, fake_acs,
+    ):
+        from src.core.exceptions import ServiceUnavailableError
+
+        fake_acs["error"] = ServiceUnavailableError(
+            error_code="ACS_UNREACHABLE", message="Unable to connect to ACS",
+        )
+        srv = await make_server()
+        osv = await _make_os_version(db, name="1.7.10.64", kernels=["5.10.0"])
+        await _set_bootstrap_password(db, osv.id)
+        resp = await client.post(
+            f"{BASE}/{srv.id}/prepare-for-test", headers=_svc_hdr(),
+            json=_body(os_version_id=osv.id, correlation_id="qi_acs_down"),
+        )
+        assert resp.status_code == 202, resp.text
+        assert resp.json()["status"] == "failed"
+        assert captured_dispatch == []
+        row = (await db.execute(select(ServerPrepareForTestRequest).where(
+            ServerPrepareForTestRequest.id == resp.json()["prepare_request_id"],
+        ))).scalar_one()
+        assert row.failed_step == "restore"
+        assert row.error.startswith("ACS_UNREACHABLE")
 
 
 class TestStatusEndpoint:
@@ -547,7 +683,7 @@ PUBLIC_BASE = "/api/server/v1/servers"
 
 
 class TestTestCredentialsEndpoint:
-    """`GET /servers/{id}/test-credentials` — живая отладка (§5.3 плана).
+    """`GET /servers/{id}/test-credentials` — живая отладка.
 
     Гейт — `(server, view_test_credentials)`, засеян только роли `admin`
     (миграция `c4e91a7f3d68`) — `reader`/`operator` не проходят вообще, не

@@ -243,7 +243,7 @@ class TestDepartmentAdminNotBlocked:
         ``admin_token`` фикстура отдаёт ``platform_role=department_admin`` +
         ``service_roles={server_service: [admin]}`` в dep_a — это
         легитимный admin своего департамента, у него есть полный доступ к
-        бизнес-данным своего отдела (§7-8).
+        бизнес-данным своего отдела.
         """
         await make_server(department_id="dep_a")
         await make_server(department_id="dep_a")
@@ -432,7 +432,7 @@ class TestAnonymousNotIntrospected:
 
 class TestAccountAdminPureBlocking:
     """Сanity: account_admin блокируется НЕЗАВИСИМО от наличия service_roles в
-    его токене. По модели §7 платформенные роли не должны иметь сервисных
+    его токене. По модели безопасности платформенные роли не должны иметь сервисных
     ролей вообще, но даже если introspect соврёт и вернёт что-то — middleware
     блочит по ``platform_role``, а не по service_roles."""
 

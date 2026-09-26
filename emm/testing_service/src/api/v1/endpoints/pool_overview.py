@@ -56,6 +56,8 @@ async def get_pool_overview(
             {
                 "stand_id": stand.stand_id,
                 "server_id": stand.server_id,
+                "target_type": stand.target_type,
+                "vm_id": stand.vm_id,
                 "status": stand.status,
                 "busy_state": stand.busy_state,
                 "busy_service_name": stand.busy_service_name,

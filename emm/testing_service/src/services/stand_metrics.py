@@ -43,6 +43,7 @@ import httpx
 from src.core.config import get_settings
 from src.models import TestStand
 from src.services import server_client
+from src.services.stand_target import target_of
 
 logger = logging.getLogger("testing_service.stand_metrics")
 
@@ -130,10 +131,10 @@ async def _measure(ip: str) -> StandMetrics:
 
 async def _resolve_and_measure(stand: TestStand) -> StandMetrics:
     try:
-        info = await server_client.get_connection_info(stand.server_id)
+        info = await server_client.get_stand_connection_info(target_of(stand))
         ip = info.get("host")
     except Exception as exc:  # noqa: BLE001 — любой сбой резолва IP не должен ронять обзор пула
-        logger.debug("connection-info не отдал IP для %s: %s", stand.server_id, exc)
+        logger.debug("connection-info не отдал IP для %s: %s", target_of(stand).key, exc)
         return _ZERO
     if not ip:
         return _ZERO
@@ -143,8 +144,9 @@ async def _resolve_and_measure(stand: TestStand) -> StandMetrics:
 async def get_pool_metrics(stands: list[TestStand]) -> dict[str, StandMetrics]:
     """`test_stand.id` → `{cpu_percent, ram_percent}` для переданных стендов.
 
-    Кэш ключуется по `server_id` (не по `test_stand.id`) — IP/железо привязаны
-    к серверу, не к надстройке `test_stand`. Каждый непопавший в кэш стенд
+    Кэш ключуется по цели стенда (`server:<id>` / `vm:<id>`), не по
+    `test_stand.id` — IP/железо привязаны к серверу/ВМ, не к надстройке
+    `test_stand`. Каждый непопавший в кэш стенд
     скрейпится параллельно, а не по очереди — иначе N стендов × 2 похода ×
     таймаут легко перевалит за разумное время ответа одной карточки.
     """
@@ -153,7 +155,7 @@ async def get_pool_metrics(stands: list[TestStand]) -> dict[str, StandMetrics]:
     result: dict[str, StandMetrics] = {}
     to_fetch: list[TestStand] = []
     for stand in stands:
-        cached = _cache.get(stand.server_id)
+        cached = _cache.get(target_of(stand).key)
         if cached is not None and (now - cached[0]) < settings.stand_metrics_cache_seconds:
             result[stand.id] = cached[1]
         else:
@@ -165,6 +167,6 @@ async def get_pool_metrics(stands: list[TestStand]) -> dict[str, StandMetrics]:
     measured = await asyncio.gather(*[_resolve_and_measure(stand) for stand in to_fetch])
     fetched_at = time.monotonic()
     for stand, metrics in zip(to_fetch, measured):
-        _cache[stand.server_id] = (fetched_at, metrics)
+        _cache[target_of(stand).key] = (fetched_at, metrics)
         result[stand.id] = metrics
     return result

@@ -1,31 +1,29 @@
-"""Новые шаги подготовки стенда под прогон теста (`server.prepare_for_test`).
+"""Хвост пайплайна `prepare-for-test` (`server.prepare_for_test`).
 
-Хвост пайплайна `prepare-for-test`: восстановление диска и бутстрап управления
-к этому моменту уже сделаны существующей цепочкой `acs.snapshot_restore` →
-`server.prepare`, сервер managed, управляющая сессия под `dbos` работает.
-Здесь — то, чего в той цепочке не было:
+К этому моменту restore и бутстрап управления уже сделаны цепочкой
+`acs.snapshot_restore` → `server.prepare`. Дальше:
 
-  1. `user_provision` — завести (или переустановить) пользователя исполнения
-     теста с новым паролем и положить ему публичный ключ свежей пары;
-  2. `kernel_change` — доставить пакеты ядра и переключить на него
-     `GRUB_DEFAULT` (перенос `grub_default()` из legacy `allta_app`);
-  3. `mode_switch` — выставить режим безопасности Astra (`astra-modeswitch`,
-     перенос `TestRunProvision.provision()` из того же legacy);
-  4. `reboot_verify` — ребут и ожидание, пока сервер сам не отрапортует
-     `systemctl is-system-running == running`.
+  1. `user_provision` — учётка исполнения теста (пароль/ключ из stash);
+  2. `pam_fix` — PAM-правка профиля подготовки, если флаг; `skip_pam_fix`
+     в payload (флаг стенда сценария) снимает шаг независимо от профиля;
+  3. `stand_setup` с `phase=before_kernel`;
+  4. `kernel_change` — пакеты ядра + `GRUB_DEFAULT` + параметры из
+     `stand_setup` + `update-grub`;
+  5. `mode_switch` — режим безопасности Astra (`astra-modeswitch`); при
+     `skip_mode_switch` в payload (подготовка `revert_only`) шаг пропускается;
+  6. `reboot_verify` — ребут и ожидание готовности по профилю подготовки;
+  7. `stand_setup` с `phase=after_boot` и, если `reboot_after`, ещё один
+     `reboot_verify`.
 
-Смена режима идёт тем же общим ребутом, что и смена ядра — отдельного цикла
-ребута под неё не заводим, легаси делал так же.
+`server.stand_setup` использует тот же порядок — шаги 2–7 без учётки,
+смены ядра и режима.
 
-Все шаги идут от **платформенной** учётки `dbos` (управляющая сессия по
-per-server ключу) — учётка исполнения теста только заводится, ей самой мы не
-логинимся. Её пароль и публичный ключ приезжают одноразовым Redis-stash'ем,
-как bootstrap-креды у `server.prepare`: в `tasks.payload` едет только ссылка.
+Все шаги идут от платформенной учётки `dbos`; пароль и ключ тестовой
+учётки едут одноразовым Redis-stash'ем, в payload — только ссылка.
 
-Исход в любом случае докладывается server_service
-(`submit_prepare_for_test_result`) — он и решает, что отправить в
-testing_service. Задача одноразовая (server_service ставит `max_attempts=1`):
-авто-retry после половины переключённого grub'а сделал бы только хуже.
+Исход докладывается server_service (`submit_prepare_for_test_result`).
+Задача одноразовая: авто-retry после половины переключённого grub'а
+сделал бы только хуже.
 """
 
 from __future__ import annotations
@@ -46,6 +44,18 @@ from src.services.redis_stash_crypto import (
 )
 from src.tasks._account_helpers import resolve_ssh_creds
 from src.tasks._runner import run_task
+from src.tasks._stand_setup_helpers import (
+    PHASE_AFTER_BOOT,
+    PHASE_BEFORE_KERNEL,
+    STEP_PAM_FIX,
+    STEP_STAND_SETUP,
+    add_kernel_cmdline_params,
+    apply_pam_fix,
+    parse_provisioning,
+    parse_stand_setup,
+    run_setup_script,
+    update_grub,
+)
 from src.tasks.acs_snapshots import (
     _await_reachability,
     _resolve_ssh_port,
@@ -118,13 +128,42 @@ async def _read_test_creds(creds_key: str) -> dict:
         text, aad=aad_for_redis_stash(stash_id_from_key(creds_key)),
     )
     try:
-        return json.loads(plaintext)
+        stash = json.loads(plaintext)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise SshError(
             error_code="SSH_TEST_CREDS_MISSING",
             host="",
             message="test-user credentials payload is malformed",
         ) from exc
+    # Логин, пароль и публичный ключ обязательны: пустой пароль `create_user`
+    # молча пропустил бы (chpasswd не зовётся), а без ключа воркер
+    # testing_service не войдёт на стенд.
+    required = ("test_username", "test_password", "test_ssh_public_key")
+    if not isinstance(stash, dict) or not all(
+        isinstance(stash.get(name), str) and stash.get(name) for name in required
+    ):
+        raise SshError(
+            error_code="SSH_TEST_CREDS_MISSING",
+            host="",
+            message="test-user credentials payload lacks login, password or public key",
+        )
+    return stash
+
+
+async def _read_stash(key: str) -> dict:
+    """Прочитать произвольный stash по ссылке (скрипт настройки стенда)."""
+    if not isinstance(key, str) or not _TEST_CREDS_KEY_RE.fullmatch(key):
+        raise SshError(error_code="SSH_TEST_CREDS_MISSING", host="", message="invalid stash key reference")
+    raw = await redis_pool.get_redis().get(key)
+    if raw is None:
+        raise SshError(error_code="SSH_TEST_CREDS_MISSING", host="", message="stash is missing or expired")
+    text = raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else str(raw)
+    plaintext = decrypt_stash(text, aad=aad_for_redis_stash(stash_id_from_key(key)))
+    try:
+        data = json.loads(plaintext)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise SshError(error_code="SSH_TEST_CREDS_MISSING", host="", message="stash payload is malformed") from exc
+    return data if isinstance(data, dict) else {}
 
 
 async def _delete_test_creds(creds_key: str) -> None:
@@ -159,14 +198,8 @@ def _validate_mode(mode: str, host: str) -> str:
 async def _install_kernel_packages(ssh: SshClient, kernel: str) -> None:
     """Доставить linux-image / linux-headers / linux-astra-modules нужной версии.
 
-    Формы команд — 1:1 из legacy `allta_app/backup_image.py::grub_default`:
-    `dpkg -s <pkg> || apt-get install <pkg> -y`. Отличие одно и осознанное —
-    `&> /dev/null` заменён на POSIX-корректный `> /dev/null 2>&1`: legacy
-    полагался на bash, а `SshClient.run` идёт через `sh -c`, где `&>`
-    разбирается иначе и guard молча ломается.
-
     Ненулевой код возврата не валим здесь: apt может ругаться на уже
-    установленный пакет из другого источника, а настоящий сигнал провала —
+    установленный пакет из другого источника, настоящий сигнал провала —
     отсутствие menuentry для этого ядра на следующем шаге.
     """
     for package in (
@@ -189,11 +222,10 @@ async def _install_kernel_packages(ssh: SshClient, kernel: str) -> None:
 async def _switch_default_kernel(ssh: SshClient, kernel: str, host: str) -> str:
     """Переключить `GRUB_DEFAULT` на menuentry запрошенного ядра.
 
-    Механика legacy: вытащить `menuentry_id` нужного ядра из `grub.cfg`
-    (17-е поле строки), подставить его в `GRUB_DEFAULT` и прогнать
-    `update-grub`. Единственное отличие от оригинала — пустой результат grep'а
-    здесь ошибка, а не молчаливое `GRUB_DEFAULT=` (legacy крутил внешний
-    `while`-цикл и на пустом значении просто заходил на второй круг).
+    Вытаскивает `menuentry_id` нужного ядра из `grub.cfg` (17-е поле строки),
+    подставляет в `GRUB_DEFAULT`; пустой результат grep'а — ошибка.
+    `update-grub` вызывается отдельно, общий с параметрами ядра из
+    `stand_setup`.
     """
     # Форма 1:1 из legacy: под sudo идёт только `cat` (grub.cfg читается
     # root'ом), остальное — обычный пайп в шелле сессии. Оборачивать всё в
@@ -235,16 +267,6 @@ async def _switch_default_kernel(ssh: SshClient, kernel: str, host: str) -> str:
             returncode=rc,
             stderr=(stderr or "").strip(),
             message="failed to set GRUB_DEFAULT",
-        )
-    rc, _stdout, stderr = await ssh.run("update-grub", sudo=True)
-    if rc != 0:
-        raise SshError(
-            error_code="PREPARE_FOR_TEST_GRUB_WRITE_FAILED",
-            host=host,
-            cmd_sanitized="update-grub",
-            returncode=rc,
-            stderr=(stderr or "").strip(),
-            message="update-grub failed",
         )
     return menuentry
 
@@ -391,37 +413,117 @@ async def _wait_reboot_completed(host: str, ssh_port: int, settings) -> None:
         )
 
 
+async def _reboot_and_wait(creds: dict, server_id: str, host: str, ssh_port: int, settings) -> None:
+    async with ssh_client.build_session(creds, server_id) as ssh:
+        await _issue_reboot(ssh)
+    await _wait_reboot_completed(host, ssh_port, settings)
+
+
+def pipeline_mode(payload: dict, mode: str) -> str | None:
+    """Режим для `run_setup_pipeline`: None — шаг `mode_switch` не выполняется."""
+    return None if payload.get("skip_mode_switch") else mode
+
+
+def pipeline_provisioning(payload: dict) -> dict:
+    """Профиль подготовки для `run_setup_pipeline`; `skip_pam_fix` снимает PAM-правку."""
+    provisioning = parse_provisioning(payload.get("provisioning"))
+    if payload.get("skip_pam_fix"):
+        provisioning["disable_pam_lastlog_inactive"] = False
+    return provisioning
+
+
+async def run_setup_pipeline(
+    *,
+    creds: dict,
+    server_id: str,
+    host: str,
+    ssh_port: int,
+    settings,
+    provisioning: dict,
+    stand_setup: dict | None,
+    test_username: str,
+    kernel: str | None,
+    mode: str | None,
+    on_step,
+) -> str | None:
+    """Шаги 4–10 (после `user_provision`).
+
+    `kernel`/`mode` = None — операция «настройка без restore»:
+    ядро не переключается (только параметры из `stand_setup` + общий
+    `update-grub`), режим не трогается. `on_step(name)` сообщает текущий
+    шаг — от него зависит `failed_step` провала. Возвращает non-fatal
+    предупреждение смены режима.
+    """
+    mode_warning: str | None = None
+    kernel_params = (stand_setup or {}).get("kernel_cmdline_extra") or []
+    phase = (stand_setup or {}).get("phase", PHASE_AFTER_BOOT)
+
+    async with ssh_client.build_session(creds, server_id) as ssh:
+        if provisioning.get("disable_pam_lastlog_inactive"):
+            on_step(STEP_PAM_FIX)
+            await apply_pam_fix(ssh, host)
+
+        if stand_setup and phase == PHASE_BEFORE_KERNEL:
+            on_step(STEP_STAND_SETUP)
+            await run_setup_script(ssh, stand_setup, test_username, host)
+
+        on_step(STEP_KERNEL_CHANGE if kernel else STEP_STAND_SETUP)
+        grub_changed = await add_kernel_cmdline_params(ssh, kernel_params, host)
+        if kernel:
+            await _install_kernel_packages(ssh, kernel)
+            menuentry = await _switch_default_kernel(ssh, kernel, host)
+            logger.info("prepare_for_test: server_id=%s GRUB_DEFAULT -> %s", server_id, menuentry)
+            grub_changed = True
+        if grub_changed:
+            await update_grub(ssh, host)
+
+        if mode:
+            on_step(STEP_MODE_SWITCH)
+            mode_warning = await _switch_security_mode(ssh, mode, host)
+
+    def _session() -> SshClient:
+        return ssh_client.build_session(creds, server_id)
+
+    async def _reboot() -> None:
+        await _reboot_and_wait(creds, server_id, host, ssh_port, settings)
+
+    # Перезагрузка нужна, если менялись ядро/режим/параметры ядра или скрипт
+    # до смены ядра; у «настройки без restore» только со скриптом after_boot
+    # первая перезагрузка не нужна.
+    if kernel or mode or grub_changed or (stand_setup and phase == PHASE_BEFORE_KERNEL):
+        on_step(STEP_REBOOT_VERIFY)
+        await _reboot()
+        await verify_system_running(
+            host, _session, label="prepare_for_test: post-reboot",
+            provisioning=provisioning, reboot=_reboot,
+        )
+
+    if stand_setup and phase == PHASE_AFTER_BOOT and (stand_setup.get("script") or "").strip():
+        on_step(STEP_STAND_SETUP)
+        async with ssh_client.build_session(creds, server_id) as ssh:
+            await run_setup_script(ssh, stand_setup, test_username, host)
+        if stand_setup.get("reboot_after"):
+            on_step(STEP_REBOOT_VERIFY)
+            await _reboot()
+            await verify_system_running(
+                host, _session, label="prepare_for_test: after stand_setup",
+                provisioning=provisioning, reboot=_reboot,
+            )
+    return mode_warning
+
+
 @broker.task("server.prepare_for_test")
 async def server_prepare_for_test(task_id: str) -> None:
-    """Довести подготовленный сервер до состояния «можно гонять тест».
+    """Довести подготовленный сервер до состояния «можно гонять тест» (см. module docstring).
 
-    Что делает: под управляющей сессией `dbos` заводит пользователя исполнения
-    теста с новым паролем и ключом, доставляет пакеты запрошенного ядра и
-    переключает на него `GRUB_DEFAULT`, выставляет режим безопасности Astra
-    (`astra-modeswitch`), перезагружает сервер и ждёт, пока тот отрапортует
-    `systemctl is-system-running == running`. Исход докладывает
-    server_service, который дальше сам зовёт testing_service.
-
-    Параметры: `task_id`. Payload — `server_id`, `prepare_request_id`,
-    `kernel`, `mode` (`orel`/`smolensk`), `test_creds_key` (ссылка на
-    Redis-stash с логином/паролем/публичным ключом тестовой учётки),
+    Payload: `server_id`, `prepare_request_id`, `kernel`, `mode`,
+    `skip_mode_switch`, `skip_pam_fix`, `test_creds_key` (Redis-stash с кредами тестовой
+    учётки и скриптом настройки), `stand_setup`, `provisioning`,
     `host`/`ssh_port`, `is_managed`, `management_user`, `target_department_id`.
 
-    Возвращает: `{server_id, prepare_request_id, kernel, test_username,
-    succeeded}`.
-
-    Возможные ошибки: `SSH_TEST_CREDS_MISSING`, `SSH_USERADD_FAILED`/
-    `SSH_CHPASSWD_FAILED` (шаг `user_provision`),
-    `PREPARE_FOR_TEST_KERNEL_NOT_IN_GRUB`/`..._GRUB_WRITE_FAILED` (шаг
-    `kernel_change`), `PREPARE_FOR_TEST_MODE_SWITCH_FAILED` (шаг
-    `mode_switch` — `astra-modeswitch`/МРД/МКЦ упали либо `set` не применился
-    по повторному `get`), `PREPARE_FOR_TEST_REBOOT_*`/`SSH_SYSTEM_NOT_READY`
-    (шаг `reboot_verify`). В любом случае — callback с `succeeded=False` и
-    именем шага, затем task падает.
-
-    Связано: server_service `POST /internal/servers/{id}/prepare-for-test`,
-    callback `record_prepare_for_test_done`, audit action
-    `server.prepare_for_test`.
+    На любой ошибке — callback с `succeeded=False` и именем упавшего шага,
+    затем task падает. Связано: `POST /internal/servers/{id}/prepare-for-test`,
+    callback `record_prepare_for_test_done`.
     """
     async def _impl(payload: dict) -> dict:
         server_id = payload["server_id"]
@@ -430,14 +532,23 @@ async def server_prepare_for_test(task_id: str) -> None:
         creds_key = payload.get("test_creds_key")
         ssh_port = _resolve_ssh_port(payload)
         settings = get_settings()
-        failed_step = STEP_USER_PROVISION
+        step = {"name": STEP_USER_PROVISION}
         test_username = ""
         kernel = ""
+        mode = ""
         mode_warning: str | None = None
+        provisioning = pipeline_provisioning(payload)
+
+        def _on_step(name: str) -> None:
+            step["name"] = name
 
         try:
             stash = await _read_test_creds(creds_key)
             test_username = str(stash.get("test_username") or "")
+            raw_setup = dict(payload.get("stand_setup") or {})
+            if stash.get("stand_setup_script"):
+                raw_setup["script"] = stash["stand_setup_script"]
+            stand_setup = parse_stand_setup(raw_setup)
 
             creds = await resolve_ssh_creds(
                 payload, server_id, account_id=None,
@@ -462,27 +573,11 @@ async def server_prepare_for_test(task_id: str) -> None:
                     force_replace=True,
                 )
 
-                failed_step = STEP_KERNEL_CHANGE
-                await _install_kernel_packages(ssh, kernel)
-                menuentry = await _switch_default_kernel(ssh, kernel, host)
-                logger.info(
-                    "prepare_for_test: server_id=%s GRUB_DEFAULT -> %s",
-                    server_id, menuentry,
-                )
-
-                failed_step = STEP_MODE_SWITCH
-                mode_warning = await _switch_security_mode(ssh, mode, host)
-
-                failed_step = STEP_REBOOT_VERIFY
-                await _issue_reboot(ssh)
-
-            await _wait_reboot_completed(host, ssh_port, settings)
-
-            def _session() -> SshClient:
-                return ssh_client.build_session(creds, server_id)
-
-            await verify_system_running(
-                host, _session, label="prepare_for_test: post-reboot",
+            mode_warning = await run_setup_pipeline(
+                creds=creds, server_id=server_id, host=host, ssh_port=ssh_port,
+                settings=settings, provisioning=provisioning, stand_setup=stand_setup,
+                test_username=test_username, kernel=kernel,
+                mode=pipeline_mode(payload, mode), on_step=_on_step,
             )
         except Exception as exc:
             error_message = redact_error_message(
@@ -491,7 +586,7 @@ async def server_prepare_for_test(task_id: str) -> None:
             try:
                 await server_service_client.submit_prepare_for_test_result(
                     server_id, request_id, False, target_dept,
-                    failed_step=failed_step, error_message=error_message,
+                    failed_step=step["name"], error_message=error_message,
                 )
             except Exception:  # noqa: BLE001
                 logger.warning(
@@ -523,4 +618,75 @@ async def server_prepare_for_test(task_id: str) -> None:
         audit_target_type="server",
         impl=_impl,
         audit_safe_fields=AUDIT_SAFE_FIELDS,
+    )
+
+
+@broker.task("server.stand_setup")
+async def server_stand_setup(task_id: str) -> None:
+    """Настройка стенда без restore: `pam_fix` + `stand_setup` + reboot_verify.
+
+    Без restore, учётки, смены ядра и режима — для многоступенчатых тестов,
+    где между ступенями стенд перенастраивается, а не переналивается.
+    Бронь сервера держит вызывающий.
+
+    Payload: `server_id`, `stand_setup_request_id`, `stand_setup`,
+    `script_key`, `provisioning`, `test_username`, `host`/`ssh_port`,
+    `is_managed`, `management_user`, `target_department_id`. Исход —
+    callback `submit_stand_setup_result`.
+    """
+    async def _impl(payload: dict) -> dict:
+        server_id = payload["server_id"]
+        request_id = payload["stand_setup_request_id"]
+        target_dept = payload.get("target_department_id")
+        script_key = payload.get("script_key")
+        ssh_port = _resolve_ssh_port(payload)
+        settings = get_settings()
+        step = {"name": STEP_STAND_SETUP}
+        provisioning = parse_provisioning(payload.get("provisioning"))
+
+        def _on_step(name: str) -> None:
+            step["name"] = name
+
+        try:
+            raw_setup = dict(payload.get("stand_setup") or {})
+            if script_key:
+                stash = await _read_stash(script_key)
+                raw_setup["script"] = stash.get("stand_setup_script") or ""
+            stand_setup = parse_stand_setup(raw_setup)
+            creds = await resolve_ssh_creds(
+                payload, server_id, account_id=None,
+                target_dept=target_dept, is_managed=True,
+            )
+            ssh_client.apply_session_hints(creds, payload)
+            await ssh_client.attach_management_creds(creds, server_id)
+            host = str(creds.get("host") or creds.get("ssh_host") or server_id)
+            await run_setup_pipeline(
+                creds=creds, server_id=server_id, host=host, ssh_port=ssh_port,
+                settings=settings, provisioning=provisioning, stand_setup=stand_setup,
+                test_username=str(payload.get("test_username") or ""),
+                kernel=None, mode=None, on_step=_on_step,
+            )
+        except Exception as exc:
+            error_message = redact_error_message(f"{type(exc).__name__}: {exc}")[:LAST_ERROR_MAX_LEN]
+            try:
+                await server_service_client.submit_stand_setup_result(
+                    server_id, request_id, False, target_dept,
+                    failed_step=step["name"], error_message=error_message,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("stand_setup failed-callback errored server_id=%s", server_id, exc_info=True)
+            raise
+        finally:
+            if isinstance(script_key, str):
+                await _delete_test_creds(script_key)
+
+        await server_service_client.submit_stand_setup_result(server_id, request_id, True, target_dept)
+        return {"server_id": server_id, "stand_setup_request_id": request_id, "succeeded": True}
+
+    await run_task(
+        task_id,
+        audit_action="server.stand_setup",
+        audit_target_type="server",
+        impl=_impl,
+        audit_safe_fields={"server_id", "stand_setup_request_id", "succeeded"},
     )
